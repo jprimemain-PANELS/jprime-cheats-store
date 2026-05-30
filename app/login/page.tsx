@@ -119,7 +119,7 @@ export default function LoginPage() {
 
           <div className="text-center mb-10">
 
-          <h1 className="text-4xl md:text-3xl font-black tracking-tight mb-3 whitespace-nowrap">
+          <h1 className="text-2x1 md:text-3xl font-black tracking-tight mb-3 whitespace-nowrap">
 
               JPRIME CHEATS STORE
 
