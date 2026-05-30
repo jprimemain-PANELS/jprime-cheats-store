@@ -43,6 +43,10 @@ export default function Home() {
   const router =
     useRouter();
 
+  const [checkingAuth,
+  setCheckingAuth] =
+    useState(true);
+      
   const [activeCategory,
   setActiveCategory] =
     useState("mobile");
@@ -60,45 +64,47 @@ export default function Home() {
       null
     );
 
-  useEffect(() => {
+    useEffect(() => {
 
-    const user =
-      localStorage.getItem(
-        "user"
-      );
-
-    if (!user) {
-
-      router.push(
-        "/login"
-      );
-
-      return;
-    }
-
-    const copiedKey =
-      localStorage.getItem(
-        "latest_key"
-      );
-
-    if (copiedKey) {
-
-      setDeliveredKey(
-        copiedKey
-      );
-
-      setShowSuccess(true);
-
-      navigator.clipboard.writeText(
-        copiedKey
-      );
-
-      localStorage.removeItem(
-        "latest_key"
-      );
-    }
-
-  }, []);
+      const user =
+        localStorage.getItem(
+          "user"
+        );
+    
+      if (!user) {
+    
+        router.replace(
+          "/login"
+        );
+    
+        return;
+      }
+    
+      const copiedKey =
+        localStorage.getItem(
+          "latest_key"
+        );
+    
+      if (copiedKey) {
+    
+        setDeliveredKey(
+          copiedKey
+        );
+    
+        setShowSuccess(true);
+    
+        navigator.clipboard.writeText(
+          copiedKey
+        );
+    
+        localStorage.removeItem(
+          "latest_key"
+        );
+      }
+    
+      setCheckingAuth(false);
+    
+    }, [router]);
 
   const scrollToProducts =
     () => {
@@ -123,6 +129,21 @@ export default function Home() {
           "smooth",
       });
   };
+  
+  if (checkingAuth) {
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+  
+        <div className="text-white text-xl font-bold">
+  
+          Loading...
+  
+        </div>
+  
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background">
