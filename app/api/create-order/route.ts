@@ -60,7 +60,7 @@ export async function POST(
 
           order_meta: {
             return_url:
-              `http://localhost:3000/payment-success?product=${encodeURIComponent(product)}&duration=${encodeURIComponent(duration)}`,
+`${process.env.NEXT_PUBLIC_SITE_URL}/payment-success?product=${encodeURIComponent(product)}&duration=${encodeURIComponent(duration)}`
           },
         }),
       }
