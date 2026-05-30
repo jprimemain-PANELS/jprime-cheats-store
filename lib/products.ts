@@ -117,7 +117,7 @@ export const pcProducts: Product[] = [
   {
     id: "basic-customized-pc",
     name: "BASIC CUSTOMIZED PC PANEL ( MAIN ID )",
-    videoUrl: "https://res.cloudinary.com/dda4gh2wm/video/upload/q_auto/f_auto/v1780157629/BASIC_PC_PANEL_wuorib.mp4,
+    videoUrl: "https://res.cloudinary.com/dda4gh2wm/video/upload/q_auto/f_auto/v1780157629/BASIC_PC_PANEL_wuorib.mp4",
     category: "pc",
     prices: [
       { duration: "1 day", priceINR: "₹180" },
