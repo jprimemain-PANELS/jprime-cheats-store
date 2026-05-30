@@ -93,29 +93,45 @@ export function ProductCard({
       }
     >
 
-      <div className="relative aspect-video overflow-hidden bg-secondary/50">
+<div className="relative aspect-video overflow-hidden bg-secondary/50">
 
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+{product.videoUrl ? (
 
-          <div
-            className={`flex h-16 w-16 items-center justify-center rounded-full bg-primary/20 border border-primary/30 transition-all duration-300 ${
-              isHovered
-                ? "scale-110 bg-primary/30"
-                : ""
-            }`}
-          >
+  <video
+    controls
+    className="w-full h-full object-cover"
+  >
+    <source
+      src={product.videoUrl}
+      type="video/mp4"
+    />
+  </video>
 
-            <Play className="h-6 w-6 text-primary ml-1" />
+) : (
 
-          </div>
+  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
 
-          <span className="text-xs text-muted-foreground">
-            Demo Video
-          </span>
+    <div
+      className={`flex h-16 w-16 items-center justify-center rounded-full bg-primary/20 border border-primary/30 transition-all duration-300 ${
+        isHovered
+          ? "scale-110 bg-primary/30"
+          : ""
+      }`}
+    >
 
-        </div>
+      <Play className="h-6 w-6 text-primary ml-1" />
 
-      </div>
+    </div>
+
+    <span className="text-xs text-muted-foreground">
+      Demo Video
+    </span>
+
+  </div>
+
+)}
+
+</div>
 
       <div className="p-5 space-y-5">
 

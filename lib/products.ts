@@ -12,12 +12,14 @@ export interface Product {
   updateChannel: string;
   features: string[];
   videoPlaceholder?: string;
+  videoUrl?: string;
 }
 
 export const mobileProducts: Product[] = [
   {
     id: "drip-client-non-root",
     name: "DRIP CLIENT NON ROOT MOBILE",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20CLIENT%20NON%20ROOT%20MOBILE.mp4",
     category: "mobile",
     prices: [
       { duration: "1 day", priceINR: "₹95", priceUSD: "$1.38" },

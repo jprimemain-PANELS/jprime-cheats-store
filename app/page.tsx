@@ -33,6 +33,9 @@ from "@/components/floating-support";
 import { Footer }
 from "@/components/footer";
 
+import { supabase }
+from "@/lib/supabase";
+
 import {
   mobileProducts,
   pcProducts,
@@ -46,6 +49,10 @@ export default function Home() {
   const [checkingAuth,
   setCheckingAuth] =
     useState(true);
+
+  const [userData,
+  setUserData] =
+    useState<any>(null);
       
   const [activeCategory,
   setActiveCategory] =
@@ -59,6 +66,18 @@ export default function Home() {
   setDeliveredKey] =
     useState("");
 
+  const [showProfile,
+  setShowProfile] =
+    useState(false);
+  
+  const [purchaseHistory,
+  setPurchaseHistory] =
+    useState<any[]>([]);
+      
+  const [loadingHistory,
+  setLoadingHistory] =
+    useState(false);
+
   const productsRef =
     useRef<HTMLDivElement>(
       null
@@ -70,6 +89,13 @@ export default function Home() {
         localStorage.getItem(
           "user"
         );
+
+        if (user) {
+
+          setUserData(
+            JSON.parse(user)
+          );
+        }
     
       if (!user) {
     
@@ -129,21 +155,20 @@ export default function Home() {
           "smooth",
       });
   };
-  
   if (checkingAuth) {
 
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-  
-        <div className="text-white text-xl font-bold">
-  
-          Loading...
-  
-        </div>
-  
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+
+      <div className="text-white text-xl font-bold">
+
+        Loading...
+
       </div>
-    );
-  }
+
+    </div>
+  );
+}
 
   return (
     <main className="min-h-screen bg-background">
@@ -204,6 +229,11 @@ export default function Home() {
           scrollToProducts
         }
       />
+
+<div className="max-w-7xl mx-auto px-4 py-6">
+
+
+</div>
 
       <section
         ref={productsRef}
@@ -367,6 +397,176 @@ export default function Home() {
         </div>
 
       </section>
+
+      {/* Floating Profile Button */}
+
+<button
+  onClick={async () => {
+
+    setShowProfile(true);
+  
+    setLoadingHistory(true);
+  
+    const { data } =
+      await supabase
+        .from(
+          "purchase_history"
+        )
+        .select("*")
+        .eq(
+          "username",
+          userData?.username
+        )
+        .order(
+          "created_at",
+          {
+            ascending:
+              false,
+          }
+        );
+  
+    if (data) {
+  
+      setPurchaseHistory(
+        data
+      );
+    }
+  
+    setLoadingHistory(false);
+  
+  }}
+  className="fixed bottom-24 right-6 z-50 px-5 py-3 rounded-full bg-cyan-500 text-black font-bold shadow-[0_0_25px_rgba(0,255,255,0.8)] animate-pulse hover:scale-110 transition-all"
+>
+
+  👤 Profile
+
+</button>
+
+{showProfile && (
+
+  <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+
+<div className="bg-zinc-900/95 backdrop-blur-xl border border-cyan-500/50 rounded-3xl p-6 w-full max-w-md shadow-[0_0_50px_rgba(0,255,255,0.25)]">
+
+      <h2 className="text-2xl font-bold mb-4">
+
+        👤 My Profile
+
+      </h2>
+
+      <p>
+        Username: {userData?.username}
+      </p>
+
+      <p>
+        Email: {userData?.email}
+      </p>
+
+      <p>
+        Role: {userData?.role}
+        <hr className="my-4 border-zinc-700" />
+
+        <p className="text-cyan-400 font-bold">
+
+  📦 Total Purchases:
+  {" "}
+  {purchaseHistory.length}
+
+</p>
+
+<h3 className="text-lg font-bold mb-3">
+
+📦 Purchase History
+
+</h3>
+
+{loadingHistory ? (
+
+<p>
+Loading...
+</p>
+
+) : (
+
+<div className="space-y-3 max-h-64 overflow-y-auto">
+
+  {purchaseHistory.map(
+    (item, index) => (
+
+    <div
+      key={index}
+      className="bg-black/50 p-3 rounded-xl"
+    >
+
+      <p>
+
+        {item.product_name}
+
+      </p>
+
+      <p>
+
+        {item.duration}
+
+      </p>
+
+      <p className="text-zinc-400 text-sm">
+
+  Purchased:
+  {" "}
+  {new Date(
+    item.created_at
+  ).toLocaleDateString()}
+
+</p>
+
+<p className="text-cyan-400 break-all text-sm mb-2">
+
+{item.key_code}
+
+</p>
+
+<button
+onClick={() => {
+
+  navigator.clipboard.writeText(
+    item.key_code
+  );
+
+  alert(
+    "Key Copied 😎🔥"
+  );
+
+}}
+className="bg-cyan-500 text-black px-3 py-2 rounded-xl font-bold text-sm hover:scale-105 transition-all"
+>
+
+📋 Copy Key
+
+</button>
+
+    </div>
+  ))}
+
+</div>
+)}
+      </p>
+
+      <button
+        onClick={() =>
+          setShowProfile(false)
+        }
+        className="mt-6 w-full bg-cyan-500 text-black py-3 rounded-2xl font-bold"
+      >
+
+        Close
+
+      </button>
+
+    </div>
+
+  </div>
+)}
 
       <Footer />
 
