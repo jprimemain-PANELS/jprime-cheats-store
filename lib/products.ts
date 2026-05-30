@@ -34,6 +34,7 @@ export const mobileProducts: Product[] = [
   {
     id: "drip-client-root",
     name: "DRIP CLIENT ROOT MOBILE ( MAIN ID )",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20CLIENT%20NON%20ROOT%20MOBILE.mp4",
     category: "mobile",
     prices: [
       { duration: "1 day", priceINR: "₹98", priceUSD: "$1.40" },
@@ -46,6 +47,7 @@ export const mobileProducts: Product[] = [
   {
     id: "br-mod-root-mobile",
     name: "BR MOD ROOT MOBILE ( MAIN ID )",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/BR%20MOD%20ROOT%20MOBILE.mp4",
     category: "mobile",
     prices: [
       { duration: "1 day", priceINR: "₹99", priceUSD: "$1.30" },
@@ -59,6 +61,7 @@ export const mobileProducts: Product[] = [
   {
     id: "prime-hook-mobile",
     name: "PRIME HOOK MOBILE NON ROOT",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/PRIME%20HOOK%20NON%20ROOT.mp4",
     category: "mobile",
     prices: [
       { duration: "1 day", priceINR: "₹89" },
@@ -71,6 +74,7 @@ export const mobileProducts: Product[] = [
   {
     id: "hg-cheats-mobile",
     name: "HG CHEATS MOBILE NON ROOT",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/HG%20NON%20ROOT%20PANEL.mp4",
     category: "mobile",
     prices: [
       { duration: "1 day", priceINR: "₹130" },
@@ -83,6 +87,7 @@ export const mobileProducts: Product[] = [
   {
     id: "haxxcker-pro-root",
     name: "HAXXCKER PRO ROOT MOBILE ( MAIN ID )",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/HAXXCKER%20PRO.mp4",
     category: "mobile",
     prices: [
       { duration: "10 day", priceINR: "₹580" },
@@ -99,6 +104,7 @@ export const pcProducts: Product[] = [
   {
     id: "br-mod-pc-aim",
     name: "BR MOD PC AIM SILENT ( MAIN ID )",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/BR%20MOD%20PC%20PANEL.mp4",
     category: "pc",
     prices: [
       { duration: "1 day", priceINR: "₹129", priceUSD: "$1.40" },
@@ -111,6 +117,7 @@ export const pcProducts: Product[] = [
   {
     id: "basic-customized-pc",
     name: "BASIC CUSTOMIZED PC PANEL ( MAIN ID )",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20CLIENT%20NON%20ROOT%20MOBILE.mp4",
     category: "pc",
     prices: [
       { duration: "1 day", priceINR: "₹180" },
