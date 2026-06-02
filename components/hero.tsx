@@ -20,7 +20,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-secondary/50 border border-border/50 mb-8">
           <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-          <span className="text-sm text-muted-foreground">Premium Gaming Solutions</span>
+          <span className="text-sm text-muted-foreground">FREE FIRE PREMIUM PAID PANEL</span>
         </div>
 
         {/* Title */}
@@ -34,18 +34,72 @@ export function Hero({ onScrollToProducts }: HeroProps) {
           Premium FF Panel Purchase
         </p>
 
-        {/* Categories Preview */}
-        <div className="flex flex-wrap items-center justify-center gap-4 mb-16">
-          <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-secondary/30 border border-border/30">
-            <span className="text-sm font-medium text-foreground">Mobile Panel</span>
-          </div>
-          <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-secondary/30 border border-border/30">
-            <span className="text-sm font-medium text-foreground">PC Panel</span>
-          </div>
-          <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-secondary/30 border border-border/30">
-            <span className="text-sm font-medium text-foreground">iOS Panel</span>
-          </div>
-        </div>
+        {/* Voice Notes */}
+<div className="max-w-5xl mx-auto mb-16">
+
+  <div className="bg-zinc-900/40 border border-cyan-500/20 rounded-3xl p-6 backdrop-blur-xl">
+
+    <h2 className="text-xl sm:text-2xl font-bold text-cyan-400 mb-2">
+
+      📢 OUR SERVICE EXPLANATION
+
+    </h2>
+
+    <p className="text-zinc-400 mb-6">
+
+      New users, please listen before purchasing
+
+    </p>
+
+    <div className="grid md:grid-cols-3 gap-4">
+
+      <div className="bg-black/40 rounded-2xl p-4">
+
+        <h3 className="font-bold mb-3">
+          🇮🇳 Tamil
+        </h3>
+
+        <audio controls className="w-full">
+
+          <source src="https://res.cloudinary.com/dda4gh2wm/video/upload/v1780368063/tamil_eiy1qn.ogg" />
+
+        </audio>
+
+      </div>
+
+      <div className="bg-black/40 rounded-2xl p-4">
+
+        <h3 className="font-bold mb-3">
+          🇬🇧 English
+        </h3>
+
+        <audio controls className="w-full">
+
+          <source src="https://res.cloudinary.com/dda4gh2wm/video/upload/v1780367929/ENGLISH_EXPLAIN_ibnbhi.mp3" />
+
+        </audio>
+
+      </div>
+
+      <div className="bg-black/40 rounded-2xl p-4">
+
+        <h3 className="font-bold mb-3">
+          🇮🇳 Hindi
+        </h3>
+
+        <audio controls className="w-full">
+
+          <source src="https://res.cloudinary.com/dda4gh2wm/video/upload/v1780368110/HINDI_EXPLAIN_hhgjwf.mp3" />
+
+        </audio>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
 
         {/* Scroll Indicator */}
         <button
