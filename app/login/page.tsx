@@ -24,23 +24,23 @@ export default function LoginPage() {
   setEmail] =
     useState("");
 
+  const [mobileNumber, 
+  setMobileNumber] = 
+   useState("");
+
   async function handleAuth() {
 
     if (isLogin) {
 
       const { data, error } =
-        await supabase
-          .from("users")
-          .select("*")
-          .eq(
-            "username",
-            username
-          )
-          .eq(
-            "password",
-            password
-          )
-          .single();
+  await supabase
+    .from("users")
+    .select("*")
+    .eq("password", password)
+    .or(
+      `username.eq.${username},mobile_number.eq.${username}`
+    )
+    .single();
 
       if (error || !data) {
 
@@ -59,10 +59,22 @@ export default function LoginPage() {
       window.location.href =
         "/";
 
-    } else {
+    
+      } else {
 
-      const { data:
-        existingUser }
+        if (
+          !mobileNumber.trim() ||
+          mobileNumber.length < 10
+        ) {
+        
+          alert(
+            "Enter valid mobile number"
+          );
+        
+          return;
+        }
+      
+        const { data: existingUser }
         = await supabase
           .from("users")
           .select("*")
@@ -89,6 +101,7 @@ export default function LoginPage() {
               username,
               password,
               email,
+              mobile_number: mobileNumber,
               role: "user",
             },
           ]);
@@ -115,15 +128,25 @@ export default function LoginPage() {
 
       <div className="relative z-10 w-full max-w-md px-6">
 
-        <div className="bg-zinc-900/70 backdrop-blur-2xl border border-zinc-800 rounded-3xl p-10 shadow-[0_0_60px_rgba(0,200,255,0.08)]">
+        <div className="bg-zinc-900/80 backdrop-blur-2xl border border-cyan-500/20 rounded-3xl p-10 shadow-[0_0_50px_rgba(0,255,255,0.15)]">
 
           <div className="text-center mb-10">
 
-          <h1 className="text-2x1 md:text-3xl font-black tracking-tight mb-3 whitespace-nowrap">
+          <div className="text-center mb-3">
 
-              JPRIME CHEATS STORE
+  <h1 className="text-2xl md:text-5xl font-black tracking-[0.25em] text-cyan-400">
 
-            </h1>
+    JPRIME
+
+  </h1>
+
+  <p className="text-xs tracking-[0.5em] text-zinc-400 mt-2">
+
+    CHEATS STORE
+
+  </p>
+
+</div>
 
             <p className="text-zinc-400">
 
@@ -144,8 +167,22 @@ export default function LoginPage() {
                 e.target.value
               )
             }
-            className="w-full bg-zinc-800/80 border border-zinc-700 rounded-2xl p-4 mb-4 outline-none focus:border-cyan-400 transition-all"
+            className="w-full bg-black/40 border border-cyan-500/20 rounded-2xl p-4 mb-4 outline-none focus:border-cyan-400 focus:shadow-[0_0_20px_rgba(0,255,255,0.2)] transition-all"
           />
+
+{!isLogin && (
+
+<input
+  type="text"
+  placeholder="Mobile Number"
+  value={mobileNumber}
+  onChange={(e) =>
+    setMobileNumber(e.target.value)
+  }
+  className="w-full bg-black/40 border border-cyan-500/20 rounded-2xl p-4 mb-4 outline-none focus:border-cyan-400 focus:shadow-[0_0_20px_rgba(0,255,255,0.2)] transition-all"
+/>
+
+)}
 
           {!isLogin && (
 
@@ -176,7 +213,7 @@ export default function LoginPage() {
 
           <button
             onClick={handleAuth}
-            className="w-full bg-cyan-400 text-black py-4 rounded-2xl font-black text-lg hover:scale-[1.02] transition-all duration-300"
+            className="w-full bg-gradient-to-r from-cyan-400 to-blue-500 text-black py-4 rounded-2xl font-black text-lg hover:scale-[1.03] shadow-[0_0_25px_rgba(0,255,255,0.4)] transition-all duration-300"
           >
 
             {isLogin
