@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Menu, X, Smartphone, Monitor, Apple } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -32,9 +33,13 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
           {/* Logo */}
           <div className="flex items-center gap-3">
           <AuthButtons />
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
-              <span className="text-lg font-bold text-primary">JP</span>
-            </div>
+            <Image
+  src="/logo.png"
+  alt="J Prime Panels"
+  width={50}
+  height={50}
+  className="rounded-xl"
+/>
             <div className="hidden sm:block">
               <h1 className="text-lg font-semibold tracking-tight text-foreground">
                 JPRIME CHEATS
@@ -75,9 +80,13 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
             <SheetContent side="right" className="w-72 bg-background border-border">
               <div className="flex flex-col gap-6 pt-8">
                 <div className="flex items-center gap-3 px-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
-                    <span className="text-lg font-bold text-primary">JP</span>
-                  </div>
+                  <Image
+  src="/logo.png"
+  alt="J Prime Panels"
+  width={50}
+  height={50}
+  className="rounded-xl"
+/>
                   <div>
                     <h2 className="text-lg font-semibold text-foreground">JPRIME CHEATS</h2>
                     <p className="text-xs text-muted-foreground">Premium FF Panel</p>
