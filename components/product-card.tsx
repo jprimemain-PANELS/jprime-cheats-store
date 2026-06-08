@@ -45,11 +45,33 @@ export function ProductCard({
       null
     );
 
+  const [userRole,
+  setUserRole] =
+  useState("user");
+
   useEffect(() => {
 
-    loadStock();
+  loadStock();
 
-  }, [selectedPrice]);
+  const savedUser =
+    localStorage.getItem(
+      "user"
+    );
+
+  if (savedUser) {
+
+    const user =
+      JSON.parse(
+        savedUser
+      );
+
+    setUserRole(
+      user.role || "user"
+    );
+
+  }
+
+}, [selectedPrice]);
 
   async function loadStock() {
 
@@ -208,7 +230,9 @@ export function ProductCard({
                 <div className="flex items-baseline gap-1.5 mt-0.5">
 
                   <span className="text-sm font-semibold text-foreground">
-                    {price.priceINR}
+                    {userRole === "reseller"
+  ? price.resellerPrice || price.priceINR
+  : price.priceINR}
                   </span>
 
                 </div>
@@ -268,11 +292,12 @@ export function ProductCard({
                       duration:
                         selectedPrice.duration,
 
-                      price:
-                        selectedPrice.priceINR.replace(
-                          "₹",
-                          ""
-                        ),
+                        price:
+                        (
+                          userRole === "reseller"
+                            ? selectedPrice.resellerPrice || selectedPrice.priceINR
+                            : selectedPrice.priceINR
+                        ).replace("₹", ""),
                     }),
                   }
                 );

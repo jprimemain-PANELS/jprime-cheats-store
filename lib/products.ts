@@ -1,6 +1,7 @@
 export interface PriceTier {
   duration: string;
   priceINR: string;
+  resellerPrice?: string;
   priceUSD?: string;
 }
 
@@ -22,7 +23,7 @@ export const mobileProducts: Product[] = [
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20CLIENT%20NON%20ROOT%20MOBILE.mp4",
     category: "mobile",
     prices: [
-      { duration: "1 day", priceINR: "₹95", priceUSD: "$1.38" },
+      { duration: "1 day", priceINR: "₹95", resellerPrice: "₹49", priceUSD: "$1.38" },
       { duration: "3 day", priceINR: "₹185", priceUSD: "$2.20" },
       { duration: "7 day", priceINR: "₹349", priceUSD: "$3.75" },
       { duration: "15 day", priceINR: "₹640", priceUSD: "$6.90" },
