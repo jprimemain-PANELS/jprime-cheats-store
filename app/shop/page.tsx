@@ -5,6 +5,9 @@ import { supabase } from "@/lib/supabase";
 
 export default function ShopPage() {
 
+  const [user, setUser] =
+  useState<any>(null);
+
   const [products, setProducts] =
     useState<any[]>([]);
 
@@ -21,9 +24,20 @@ export default function ShopPage() {
     useState("");
 
   useEffect(() => {
-    loadProducts();
-    loadStock();
-  }, []);
+
+  const savedUser =
+    localStorage.getItem("user");
+
+  if (savedUser) {
+    setUser(
+      JSON.parse(savedUser)
+    );
+  }
+
+  loadProducts();
+  loadStock();
+
+}, []);
 
   async function loadProducts() {
 
@@ -73,20 +87,25 @@ export default function ShopPage() {
 
   const availableStock =
     selectedStock.length;
+  
+    async function handlePayment() {
 
-  async function handlePayment() {
-
-    if (availableStock === 0) {
-      alert("Out Of Stock");
-      return;
-    }
-
-    const response = await fetch(
-      "/api/create-order",
-      {
-        method: "POST",
+      console.log("PAY BUTTON CLICKED");
+    
+      if (availableStock === 0) {
+        alert("Out Of Stock");
+        return;
       }
-    );
+    
+      const response = await fetch(
+        "/api/create-order",
+        {
+          method: "POST",
+        }
+      );
+    
+      ...
+    }
 
     const result = await response.json();
 
@@ -170,10 +189,21 @@ export default function ShopPage() {
               );
 
             if (found) {
-              setSelectedPrice(
-                found.price
-              );
-            }
+
+  if (user?.role === "reseller") {
+
+    setSelectedPrice(
+      found.reseller_price
+    );
+
+  } else {
+
+    setSelectedPrice(
+      found.price
+    );
+
+  }
+}
           }}
           className="w-full p-3 rounded-xl bg-zinc-800 mb-6"
         >

@@ -463,10 +463,12 @@ export default function Home() {
       </p>
 
       <p>
-        Role: {userData?.role}
-        <hr className="my-4 border-zinc-700" />
+  Role: {userData?.role}
+</p>
 
-        <p className="text-cyan-400 font-bold">
+<hr className="my-4 border-zinc-700" />
+
+<p className="text-cyan-400 font-bold">
 
   📦 Total Purchases:
   {" "}
@@ -550,7 +552,7 @@ className="bg-cyan-500 text-black px-3 py-2 rounded-xl font-bold text-sm hover:s
 
 </div>
 )}
-      </p>
+      
 
       <button
         onClick={() =>

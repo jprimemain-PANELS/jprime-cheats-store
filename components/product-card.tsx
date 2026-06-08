@@ -241,6 +241,8 @@ export function ProductCard({
             className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 disabled:opacity-50"
             onClick={async () => {
 
+              console.log("BUY CLICKED");
+
               if (
                 availableStock === 0
               ) {
@@ -277,6 +279,10 @@ export function ProductCard({
 
               const result =
                 await response.json();
+
+                console.log(
+                  JSON.stringify(result, null, 2)
+                );
 
               const sessionId =
                 result.data
