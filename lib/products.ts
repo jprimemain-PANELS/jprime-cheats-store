@@ -110,7 +110,7 @@ export const pcProducts: Product[] = [
     prices: [
       { duration: "1 day", priceINR: "₹129", resellerPrice: "₹59", priceUSD: "$1.40" },
       { duration: "10 day", priceINR: "₹495", resellerPrice: "₹259", priceUSD: "$5.30" },
-      { duration: "31 day", priceINR: "₹839", resellerPrice: "₹520", priceUSD: "$8.95" },
+      { duration: "31 day", priceINR: "₹899", resellerPrice: "₹520", priceUSD: "$8.95" },
     ],
     updateChannel: "https://t.me/+vNW83oEZIzw3Y2Fl",
     features: ["⛨ ᴀɪᴍʙᴏᴛ ʟɪᴛᴇ","⛨ ᴀɪᴍꜰᴏᴠ 1200°","⛨ ɢʜᴏꜱᴛ","⛨ ᴜɴᴅᴇʀ ᴄᴀʀ","⛨ ᴛᴇʟᴇᴘᴏʀᴛ ᴡᴀʟʟ ᴄꜱ","⛨ ᴛᴇʟᴇᴘᴏʀᴛ ᴡᴀʟʟ ʙʀ","⛨ ꜱᴘᴇᴇᴅ ʜᴀᴄᴋ","⛨ ɢʜᴏꜱᴛ ꜱʏɴᴄ","⛨ ᴡᴀʟʟ ʜᴀᴄᴋ","⛨ ꜱᴄʀᴇᴇɴ ꜱᴛᴏᴘ","⛨ ᴇꜱᴘ ʟɪɴᴇ ʟᴏᴄᴀᴛɪᴏɴ","⛨ ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ","main id full safe"],
