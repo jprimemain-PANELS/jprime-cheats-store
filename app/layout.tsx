@@ -12,9 +12,9 @@ export const metadata: Metadata = {
   generator: 'v0.app',
 
   icons: {
-    icon: '/logo.png',
-    apple: '/logo.png',
-  },
+  icon: "/favicon.ico",
+  apple: "icon.png",
+},
 }
 
 export default function RootLayout({
