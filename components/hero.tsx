@@ -10,7 +10,7 @@ interface HeroProps {
 export function Hero({ onScrollToProducts }: HeroProps) {
   const [showAudio, setShowAudio] = useState(false);
   return (
-    <section className="relative min-h-[10vh] flex flex-col items-center justify-center px-4 py-17 overflow-hidden">
+    <section className="relative flex flex-col items-center justify-start px-4 pt-20 pb-2 overflow-hidden">
       {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-[100px]" />
@@ -32,7 +32,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
         </h1>
 
         {/* Tagline */}
-        <p className="text-xl sm:text-2xl text-muted-foreground mb-12 max-w-2xl mx-auto text-balance">
+        <p className="text-xl sm:text-2xl text-muted-foreground mb-6 max-w-2xl mx-auto text-balance">
           Free Fire Panel
         </p>
 
@@ -57,9 +57,9 @@ export function Hero({ onScrollToProducts }: HeroProps) {
     </p>
     <div className="flex justify-center mb-4">
   {showAudio ? (
-    <ChevronUp className="h-5 w-5 text-cyan-400" />
+    <ChevronUp className="h-6 w-6 text-cyan-400 animate-bounce" />
   ) : (
-    <ChevronDown className="h-5 w-5 text-cyan-400" />
+    <ChevronDown className="h-6 w-6 text-cyan-400 animate-bounce" />
   )}
 </div>
 
@@ -115,14 +115,6 @@ export function Hero({ onScrollToProducts }: HeroProps) {
 
 </div>
 
-        {/* Scroll Indicator */}
-        <button
-          onClick={onScrollToProducts}
-          className="inline-flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground transition-colors duration-300 group"
-        >
-          <span className="text-sm">Explore Products</span>
-          <ChevronDown className="h-5 w-5 animate-bounce" />
-        </button>
       </div>
     </section>
   );

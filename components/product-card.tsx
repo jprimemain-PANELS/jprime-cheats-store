@@ -1,23 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Check,
-  Play,
-  ShoppingCart,
-  Bell,
-} from "lucide-react";
-
+import { Check, Play, ShoppingCart, Bell, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
 import { supabase } from "@/lib/supabase";
-
-import type {
-  Product,
-  PriceTier,
-} from "@/lib/products";
+import type { Product, PriceTier, } from "@/lib/products";
 
 interface ProductCardProps {
   product: Product;
@@ -263,34 +252,39 @@ export function ProductCard({
                 return;
               }
 
-              const response =
-                await fetch(
-                  "/api/create-order",
-                  {
-                    method: "POST",
+const response =
+  await fetch(
+    "/api/create-upi-order",
+    {
+      method: "POST",
 
-                    headers: {
-                      "Content-Type":
-                        "application/json",
-                    },
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
 
-                    body: JSON.stringify({
+      body: JSON.stringify({
 
-                      product:
-                        product.name,
+        username:
+          JSON.parse(
+            localStorage.getItem("user") || "{}"
+          ).username,
 
-                      duration:
-                        selectedPrice.duration,
+        product_name:
+          product.name,
 
-                        price:
-                        (
-                          userRole === "reseller"
-                            ? selectedPrice.resellerPrice || selectedPrice.priceINR
-                            : selectedPrice.priceINR
-                        ).replace("₹", ""),
-                    }),
-                  }
-                );
+        duration:
+          selectedPrice.duration,
+
+        amount:
+          (
+            userRole === "reseller"
+              ? selectedPrice.resellerPrice || selectedPrice.priceINR
+              : selectedPrice.priceINR
+          ).replace("₹", ""),
+      }),
+    }
+  );
 
               const result =
                 await response.json();
@@ -299,39 +293,9 @@ export function ProductCard({
                   JSON.stringify(result, null, 2)
                 );
 
-              const sessionId =
-                result.data
-                  .payment_session_id;
-
-              const script =
-                document.createElement(
-                  "script"
-                );
-
-              script.src =
-                "https://sdk.cashfree.com/js/v3/cashfree.js";
-
-              script.onload = () => {
-
-                // @ts-ignore
-                const cashfree =
-                  window.Cashfree({
-                    mode:
-                      "sandbox",
-                  });
-
-                cashfree.checkout({
-                  paymentSessionId:
-                    sessionId,
-
-                  redirectTarget:
-                    "_self",
-                });
-              };
-
-              document.body.appendChild(
-                script
-              );
+                console.log(result);
+                window.location.href =
+                `/upi-payment?amount=${result.amount}`;
             }}
           >
 

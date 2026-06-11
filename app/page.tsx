@@ -435,7 +435,7 @@ export default function Home() {
     setLoadingHistory(false);
   
   }}
-  className="fixed top-20 right-4 z-40 p-3 rounded-full bg-cyan-500 text-black shadow-[0_0_20px_rgba(0,255,255,0.8)]"
+  className="fixed top-22 right-4 z-40 p-3 rounded-full bg-cyan-500 text-black shadow-[0_0_20px_rgba(0,255,255,0.8)]"
 >
 
   👤
