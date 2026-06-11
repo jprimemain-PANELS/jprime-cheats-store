@@ -8,7 +8,7 @@ interface HeroProps {
 
 export function Hero({ onScrollToProducts }: HeroProps) {
   return (
-    <section className="relative min-h-[40vh] flex flex-col items-center justify-center px-4 py-10 overflow-hidden">
+    <section className="relative min-h-[10vh] flex flex-col items-center justify-center px-4 py-17 overflow-hidden">
       {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-[100px]" />
