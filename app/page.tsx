@@ -328,15 +328,15 @@ export default function Home() {
 
               {activeCategory ===
                 "mobile" &&
-                "Premium mobile gaming solutions with root and non-root support"}
+                "Premium mobile panel with root and non-root support"}
 
               {activeCategory ===
                 "pc" &&
-                "Professional PC gaming tools with advanced features"}
+                "Professional PC panel with advanced features"}
 
               {activeCategory ===
                 "ios" &&
-                "Coming soon - Premium iOS solutions"}
+                "Coming soon - Premium iOS panel"}
 
             </p>
 
@@ -435,7 +435,7 @@ export default function Home() {
     setLoadingHistory(false);
   
   }}
-  className="fixed bottom-24 right-6 z-50 px-5 py-3 rounded-full bg-cyan-500 text-black font-bold shadow-[0_0_25px_rgba(0,255,255,0.8)] animate-pulse hover:scale-110 transition-all"
+  className="fixed bottom-20 right-8 z-50 px-4 py-2.5 rounded-full bg-cyan-500 text-black font-bold text-sm shadow-[0_0_25px_rgba(0,255,255,0.8)] animate-pulse hover:scale-105 transition-all"
 >
 
   👤 Profile
