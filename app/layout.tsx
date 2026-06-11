@@ -9,13 +9,13 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: 'JPRIME CHEATS STORE | Premium FF Panel Purchase',
   description: 'Premium FF Panel Purchase - Mobile, PC & iOS Gaming Solutions',
-  generator: 'v0.app',
 
-  icons: {
-  icon: "/favicon.ico",
-  apple: "icon.png",
-},
-}
+icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
+  },
+};
 
 export default function RootLayout({
   children,
