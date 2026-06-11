@@ -435,10 +435,10 @@ export default function Home() {
     setLoadingHistory(false);
   
   }}
-  className="fixed bottom-20 right-8 z-50 px-4 py-2.5 rounded-full bg-cyan-500 text-black font-bold text-sm shadow-[0_0_25px_rgba(0,255,255,0.8)] animate-pulse hover:scale-105 transition-all"
+  className="fixed top-20 right-4 z-40 p-3 rounded-full bg-cyan-500 text-black shadow-[0_0_20px_rgba(0,255,255,0.8)]"
 >
 
-  👤 Profile
+  👤
 
 </button>
 

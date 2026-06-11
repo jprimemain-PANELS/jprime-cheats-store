@@ -11,6 +11,8 @@ from "next/navigation";
 import { supabase }
 from "@/lib/supabase";
 
+import { LogOut } from "lucide-react";
+
 export function AuthButtons() {
 
   const router =
@@ -87,13 +89,13 @@ export function AuthButtons() {
       )}
 
       <button
-        onClick={logout}
-        className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2 rounded-xl text-sm font-bold hover:bg-red-500/20 transition-all"
-      >
+  onClick={logout}
+  className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl hover:bg-red-500/20 transition-all"
+>
 
-        LOGOUT
+  <LogOut className="h-5 w-5" />
 
-      </button>
+</button>
 
     </div>
   );
