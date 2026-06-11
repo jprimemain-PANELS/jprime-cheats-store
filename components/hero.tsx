@@ -1,12 +1,14 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { useState } from "react";
 
 interface HeroProps {
   onScrollToProducts: () => void;
 }
 
 export function Hero({ onScrollToProducts }: HeroProps) {
+  const [showAudio, setShowAudio] = useState(false);
   return (
     <section className="relative min-h-[10vh] flex flex-col items-center justify-center px-4 py-17 overflow-hidden">
       {/* Background Effects */}
@@ -37,7 +39,10 @@ export function Hero({ onScrollToProducts }: HeroProps) {
         {/* Voice Notes */}
 <div className="max-w-5xl mx-auto mb-8">
 
-  <div className="bg-zinc-900/40 border border-cyan-500/20 rounded-3xl p-6 backdrop-blur-xl">
+ <div
+  className="bg-zinc-900/40 border border-cyan-500/20 rounded-3xl p-6 backdrop-blur-xl cursor-pointer"
+  onClick={() => setShowAudio(!showAudio)}
+>
 
     <h2 className="text-xl sm:text-2xl font-bold text-cyan-400 mb-2">
 
@@ -45,13 +50,21 @@ export function Hero({ onScrollToProducts }: HeroProps) {
 
     </h2>
 
-    <p className="text-zinc-400 mb-6">
+    <p className="text-zinc-400 mb-3">
 
       New users, please listen before purchasing
 
     </p>
+    <div className="flex justify-center mb-4">
+  {showAudio ? (
+    <ChevronUp className="h-5 w-5 text-cyan-400" />
+  ) : (
+    <ChevronDown className="h-5 w-5 text-cyan-400" />
+  )}
+</div>
 
-    <div className="grid md:grid-cols-3 gap-4">
+    {showAudio && (
+<div className="grid md:grid-cols-3 gap-4">
 
       <div className="bg-black/40 rounded-2xl p-4">
 
@@ -96,6 +109,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
       </div>
 
     </div>
+    )}
 
   </div>
 
