@@ -8,7 +8,7 @@ interface HeroProps {
 
 export function Hero({ onScrollToProducts }: HeroProps) {
   return (
-    <section className="relative min-h-[70vh] flex flex-col items-center justify-center px-4 py-20 overflow-hidden">
+    <section className="relative min-h-[40vh] flex flex-col items-center justify-center px-4 py-10 overflow-hidden">
       {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-[100px]" />
@@ -20,7 +20,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-secondary/50 border border-border/50 mb-8">
           <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-          <span className="text-sm text-muted-foreground">FREE FIRE PREMIUM PAID PANEL</span>
+          <span className="text-sm text-muted-foreground">@JPRIMEADMIN-GARENA</span>
         </div>
 
         {/* Title */}
@@ -31,11 +31,11 @@ export function Hero({ onScrollToProducts }: HeroProps) {
 
         {/* Tagline */}
         <p className="text-xl sm:text-2xl text-muted-foreground mb-12 max-w-2xl mx-auto text-balance">
-          Premium FF Panel Purchase
+          Free Fire Panel
         </p>
 
         {/* Voice Notes */}
-<div className="max-w-5xl mx-auto mb-16">
+<div className="max-w-5xl mx-auto mb-8">
 
   <div className="bg-zinc-900/40 border border-cyan-500/20 rounded-3xl p-6 backdrop-blur-xl">
 

@@ -31,7 +31,7 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
           <AuthButtons />
             <Image
   src="/logo.png"
