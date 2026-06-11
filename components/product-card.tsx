@@ -244,17 +244,7 @@ export function ProductCard({
 
         </div>
 
-        <div className="bg-secondary/30 rounded-lg p-3 text-sm">
-
-          Available Stock:
-          {" "}
-          <span className="font-bold text-primary">
-            {availableStock === null
-              ? "Loading..."
-              : availableStock}
-          </span>
-
-        </div>
+      
 
         <div className="flex gap-2 pt-2">
 
