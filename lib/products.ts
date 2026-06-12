@@ -38,7 +38,7 @@ export const mobileProducts: Product[] = [
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/drip%20proxy.mp4",
     category: "mobile",
     prices: [
-      { duration: "1 day", priceINR: "₹95", resellerPrice: "₹49", priceUSD: "$1.38" },
+      { duration: "1 day", priceINR: "₹95", resellerPrice: "₹1", priceUSD: "$1.38" },
       { duration: "3 day", priceINR: "₹135", resellerPrice: "₹62",priceUSD: "$2.20" },
       { duration: "7 day", priceINR: "₹275", resellerPrice: "₹139",priceUSD: "$3.75" },
       { duration: "31 day", priceINR: "₹545", resellerPrice: "₹299",priceUSD: "$9.80" },
