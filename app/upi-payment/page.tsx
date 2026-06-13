@@ -38,6 +38,7 @@ function UpiPaymentContent() {
           filter: `amount=eq.${amount}` // Uses optimized numerical precision tracking
         },
         async (payload) => {
+          console.log("Realtime Payload:", payload);
           // Verify that the table row switch matches our target user and shifts to success
           if (payload.new.status === "success" && payload.new.username === username) {
             setPaymentStatus("success");
