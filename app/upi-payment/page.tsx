@@ -21,84 +21,86 @@ function UpiPaymentContent() {
     return () => clearTimeout(t);
   }, []);
 
-  // ── DIAGNOSTIC REALTIME SUBSCRIPTION LISTENER ──
-  useEffect(() => {
-    if (!amount || amount === "0.00" || !username) {
-      console.warn("⚠️ Realtime aborted missing params:", { amount, username });
-      return;
-    }
+  // ── UNFILTERED DIAGNOSTIC REALTIME SUBSCRIPTION ──
+useEffect(() => {
+  if (!amount || amount === "0.00" || !username) {
+    console.warn("⚠️ Realtime aborted missing params:", { amount, username });
+    return;
+  }
 
-    console.log("⚙️ Starting setup for user:", username, "watching text amount:", amount);
+  console.log(`⚙️ Listening to ALL updates on 'payment_orders'. Checking manually for User: ${username} | Amount: ${amount}`);
 
-    // FIX: Encapsulate string filtering parameters explicitly for TEXT database formats
-    const textFilterString = `amount=eq.${amount}`;
-    console.log("Applied Filter Syntax:", textFilterString);
+  const channel = supabase
+    .channel(`live-payment-unfiltered-${amount}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "payment_orders"
+        // FILTER COMPLETELY REMOVED TO CAPTURE ALL TRAFFIC
+      },
+      async (payload) => {
+        // SUCCESS: The websocket is working perfectly if this fires!
+        console.log("🔥 [RAW RECEIVING PAYLOAD]:", payload);
 
-    const channel = supabase
-      .channel(`live-payment-stream-${amount}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "payment_orders",
-          filter: textFilterString
-        },
-        async (payload) => {
-          // DEBUG LOG 1: Catch any broadcast that hits our filter
-          console.log("🔥 [RECEIVING PAYLOAD]:", payload);
+        const dbStatus = payload.new?.status;
+        const dbUsername = payload.new?.username;
+        const dbAmount = payload.new?.amount;
 
-          const dbStatus = payload.new?.status;
-          const dbUsername = payload.new?.username;
+        console.log("📋 [MANUAL MATCH EVALUATION]:", {
+          expectedStatus: "success",
+          actualStatus: dbStatus,
+          expectedUser: username,
+          actualUser: dbUsername,
+          expectedAmount: amount,
+          actualAmount: dbAmount,
+          statusMatch: dbStatus === "success",
+          userMatch: String(dbUsername) === String(username),
+          amountMatch: String(dbAmount) === String(amount)
+        });
 
-          console.log("📋 [VALUE EVALUATION]:", {
-            expectedStatus: "success",
-            actualStatus: dbStatus,
-            expectedUser: username,
-            actualUser: dbUsername,
-            statusMatch: dbStatus === "success",
-            userMatch: dbUsername === username
-          });
+        // Perform validation checks manually on the client instance
+        if (
+          dbStatus === "success" && 
+          String(dbUsername) === String(username) && 
+          String(dbAmount) === String(amount)
+        ) {
+          console.log("✅ Manual matches successful! Flipping UI viewport display...");
+          setPaymentStatus("success");
 
-          if (dbStatus === "success" && dbUsername === username) {
-            console.log("✅ Checkpoint met! Flipping UI viewport display...");
-            setPaymentStatus("success");
+          console.log("📦 Querying purchase history log ledger details...");
+          const { data, error } = await supabase
+            .from("purchase_history")
+            .select("key_code")
+            .eq("username", username)
+            .order("id", { ascending: false })
+            .limit(1)
+            .single();
 
-            console.log("📦 Querying purchase history log ledger details...");
-            const { data, error } = await supabase
-              .from("purchase_history")
-              .select("key_code")
-              .eq("username", username)
-              .order("id", { ascending: false })
-              .limit(1)
-              .single();
-
-            if (error) {
-              console.error("❌ Failed fetching matching token key:", error.message);
-            } else if (data) {
-              console.log("🔑 Token extracted successfully:", data.key_code);
-              setReleasedKey(data.key_code);
-            }
-          } else {
-            console.warn("⚠️ Payload dropped because verification conditionals didn't align.");
+          if (error) {
+            console.error("❌ Failed fetching matching token key:", error.message);
+          } else if (data) {
+            console.log("🔑 Token extracted successfully:", data.key_code);
+            setReleasedKey(data.key_code);
           }
         }
-      );
-
-    // DEBUG LOG 2: Listen directly to websocket network connection updates
-    channel.subscribe((status, err) => {
-      console.log(`📡 [CONNECTION LOG]: Status changed to -> ${status}`);
-      setChannelState(status);
-      if (err) {
-        console.error("❌ Realtime connection engine failure:", err);
       }
-    });
+    );
 
-    return () => {
-      console.log("🔌 Disconnecting active websocket listener channel link...");
-      supabase.removeChannel(channel);
-    };
-  }, [username, amount]);
+  channel.subscribe((status, err) => {
+    console.log(`📡 [CONNECTION LOG]: Status changed to -> ${status}`);
+    setChannelState(status);
+    if (err) {
+      console.error("❌ Realtime connection engine failure:", err);
+    }
+  });
+
+  return () => {
+    console.log("🔌 Disconnecting active unfiltered link...");
+    supabase.removeChannel(channel);
+  };
+}, [username, amount]);
 
   const upiLink = `upi://pay?pa=7200817883@fam&pn=Jenith&am=${amount}&cu=INR`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(upiLink)}&color=ffffff&bgcolor=0A0B0D`;
