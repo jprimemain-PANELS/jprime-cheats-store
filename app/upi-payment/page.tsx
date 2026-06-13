@@ -17,8 +17,10 @@ function UpiPaymentContent() {
   const [releasedKey, setReleasedKey] = useState<string | null>(null);
 
   useEffect(() => {
+    
     const t = setTimeout(() => setIsLoaded(true), 50);
     return () => clearTimeout(t);
+    
   }, []);
 
   // ── OPTIMIZED REALTIME SUBSCRIPTION LISTENER (RLS COMPATIBLE) ──
@@ -37,11 +39,13 @@ function UpiPaymentContent() {
           table: "payment_orders",
           filter: `amount=eq.${amount}` // Uses optimized numerical precision tracking
         },
-        async (payload) => {
-          console.log("Realtime Payload:", payload);
-          // Verify that the table row switch matches our target user and shifts to success
-          if (payload.new.status === "success" && payload.new.username === username) {
-            setPaymentStatus("success");
+async (payload) => {
+  console.log("Realtime Payload:", payload);
+
+  if (
+    payload.new.status === "success" &&
+    payload.new.username === username
+  ) {
 
             // Reach directly into your purchase_history log table to grab the unlocked key
             const { data, error } = await supabase
