@@ -2,16 +2,68 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+// Import your existing configured Supabase client instance
+import { supabase } from "@/lib/supabase"; 
 
 function UpiPaymentContent() {
   const params = useSearchParams();
   const amount = params.get("amount") || "0.00";
+  const username = params.get("username") || ""; // Extracted safely from the updated URL parameter
+  
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // ── AUTOMATION STATES ──
+  const [paymentStatus, setPaymentStatus] = useState<"pending" | "success">("pending");
+  const [releasedKey, setReleasedKey] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setIsLoaded(true), 50);
     return () => clearTimeout(t);
   }, []);
+
+  // ── OPTIMIZED REALTIME SUBSCRIPTION LISTENER (RLS COMPATIBLE) ──
+  useEffect(() => {
+    // Defensive check: Do not initialize connection if basic parameters are missing
+    if (!amount || amount === "0.00" || !username) return;
+
+    // Open a direct realtime channel filtered on the unique dynamic price amount
+    const channel = supabase
+      .channel(`live-payment-stream-${amount}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "payment_orders",
+          filter: `amount=eq.${amount}` // Uses optimized numerical precision tracking
+        },
+        async (payload) => {
+          // Verify that the table row switch matches our target user and shifts to success
+          if (payload.new.status === "success" && payload.new.username === username) {
+            setPaymentStatus("success");
+
+            // Reach directly into your purchase_history log table to grab the unlocked key
+            const { data, error } = await supabase
+              .from("purchase_history")
+              .select("key_code")
+              .eq("username", username)
+              .order("id", { ascending: false })
+              .limit(1)
+              .single();
+
+            if (!error && data) {
+              setReleasedKey(data.key_code);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    // Safely unsubscribe and remove network channels on component unmount
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [username, amount]);
 
   // Backend parameters kept exactly the same
   const upiLink = `upi://pay?pa=7200817883@fam&pn=Jenith&am=${amount}&cu=INR`;
@@ -57,7 +109,7 @@ function UpiPaymentContent() {
               Secure Checkout Protocol
             </span>
             <h2 className="text-2xl font-light tracking-[0.18em] uppercase text-white">
-            JPRIME CHEATS
+              JPRIME CHEATS
             </h2>
             <div className="h-[1px] w-16 bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent mt-3.5" />
           </div>
@@ -70,47 +122,71 @@ function UpiPaymentContent() {
             </p>
           </div>
 
-          {/* QR Code Segment */}
-          <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center">
-            <div className="w-full aspect-square max-w-[250px] bg-[#0A0B0D] p-3 rounded-xl border border-white/[0.02]">
-              <img
-                src={qrUrl}
-                alt="UPI QR Representation"
-                className="w-full h-full rounded-md opacity-90 grayscale-[10%] contrast-[110%]"
-              />
-            </div>
-            
-            <div className="mt-4 flex items-center gap-2 text-[10px] text-neutral-400 tracking-wider font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              Scan with any preferred UPI application
-            </div>
-          </div>
+          {/* ── DYNAMIC CARD WORKFLOW CONDITIONAL WRAPPER ── */}
+          {paymentStatus === "pending" ? (
+            <>
+              {/* QR Code Segment */}
+              <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center">
+                <div className="w-full aspect-square max-w-[250px] bg-[#0A0B0D] p-3 rounded-xl border border-white/[0.02]">
+                  <img
+                    src={qrUrl}
+                    alt="UPI QR Representation"
+                    className="w-full h-full rounded-md opacity-90 grayscale-[10%] contrast-[110%]"
+                  />
+                </div>
+                
+                <div className="mt-4 flex items-center gap-2 text-[10px] text-neutral-400 tracking-wider font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  Scan with any preferred UPI application
+                </div>
+              </div>
 
-          {/* Professional Transaction Summary Ledger */}
-          <div className="space-y-3.5 mb-7 border-t border-b border-white/[0.05] py-4.5 px-0.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-neutral-400 tracking-wide">Merchant</span>
-              <span className="font-medium text-neutral-200 tracking-wide">JPrime cheats</span>
-            </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-neutral-400 tracking-wide">Network</span>
-              <span className="font-mono text-neutral-300 text-[11px]">UPI.INSTANT.SECURE</span>
-            </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-neutral-400 tracking-wide">Status</span>
-              <span className="text-cyan-400 tracking-wider text-[11px] font-medium uppercase">
-                Awaiting Payment
-              </span>
-            </div>
-          </div>
+              {/* Professional Transaction Summary Ledger */}
+              <div className="space-y-3.5 mb-7 border-t border-b border-white/[0.05] py-4.5 px-0.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-400 tracking-wide">Merchant</span>
+                  <span className="font-medium text-neutral-200 tracking-wide">JPrime cheats</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-400 tracking-wide">Network</span>
+                  <span className="font-mono text-neutral-300 text-[11px]">UPI.INSTANT.SECURE</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-400 tracking-wide">Status</span>
+                  <span className="text-cyan-400 tracking-wider text-[11px] font-medium uppercase animate-pulse">
+                    Awaiting Payment
+                  </span>
+                </div>
+              </div>
 
-          {/* Action Button (Solid True-Cyan Interactive State) */}
-          <a
-            href={upiLink}
-            className="group relative flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-cyan-400"
-          >
-            PAY NOW
-          </a>
+              {/* Action Button (Solid True-Cyan Interactive State) */}
+              <a
+                href={upiLink}
+                className="group relative flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+              >
+                PAY NOW
+              </a>
+            </>
+          ) : (
+            /* ── INTERFACE REVEAL SWAP WHEN PAYMENT REACHES SUCCESS STATUS ── */
+            <div className="border border-emerald-500/30 bg-emerald-950/10 p-6 rounded-xl text-center shadow-[inset_0_1px_20px_rgba(16,185,129,0.05)]">
+              <div className="flex items-center justify-center gap-2 text-emerald-400 font-mono text-[10px] tracking-[0.25em] uppercase mb-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Authentication Complete
+              </div>
+              <h3 className="text-xl font-light tracking-[0.1em] text-white uppercase mb-4">
+                Payment Received
+              </h3>
+              
+              <div className="bg-[#050506] border border-white/[0.04] px-4 py-4 rounded-xl font-mono text-cyan-400 text-base font-bold tracking-wider break-all shadow-inner select-all cursor-pointer hover:border-cyan-500/20 transition-colors">
+                {releasedKey || "DECRYPTING KEY..."}
+              </div>
+              
+              <p className="text-[10px] text-neutral-500 font-mono mt-3 uppercase tracking-wider">
+                Click inside box to select and copy token
+              </p>
+            </div>
+          )}
 
         </div>
 

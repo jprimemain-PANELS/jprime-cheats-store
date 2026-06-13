@@ -289,13 +289,22 @@ const response =
               const result =
                 await response.json();
 
+                const savedUserRaw =
+                localStorage.getItem("user");
+              
+              const currentUser =
+                JSON.parse(savedUserRaw || "{}");
+              
+              const currentUsername =
+                currentUser.username;
+
                 console.log(
                   JSON.stringify(result, null, 2)
                 );
 
                 console.log(result);
                 window.location.href =
-                `/upi-payment?amount=${result.amount}`;
+`/upi-payment?amount=${result.amount}&username=${currentUsername}`;
             }}
           >
 

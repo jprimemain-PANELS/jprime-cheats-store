@@ -32,8 +32,8 @@ export function Hero({ onScrollToProducts }: HeroProps) {
         </h1>
 
         {/* Tagline */}
-        <p className="text-xl sm:text-2xl text-muted-foreground mb-6 max-w-2xl mx-auto text-balance">
-          Free Fire Panel
+        <p className="text-xl sm:text-1xl text-muted-foreground mb-6 max-w-1xl mx-auto text-balance">
+          Free Fire - Professional Mobile Panel for CS & BR Rank Push & all mod - Trusted by 10000+ Users
         </p>
 
         {/* Voice Notes */}
