@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase"; 
 
 function UpiPaymentContent() {
   const params = useSearchParams();
+  const router = useRouter();
   const amount = params.get("amount") || "0.00";
   const username = params.get("username") || ""; 
   
@@ -14,12 +15,59 @@ function UpiPaymentContent() {
   const [releasedKey, setReleasedKey] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
 
+  // Centralized tracking identifier string for this explicit payment session link
+  const viewedKey = `order_completed_${username}_${amount}`;
+
+  // Smooth fade-in UI load trigger
   useEffect(() => {
     const t = setTimeout(() => setIsLoaded(true), 50);
     return () => clearTimeout(t);
   }, []);
 
-  // ── AUTOMATIC COPY WITH SECURE ERROR HANDLER ──
+  // ── REDIRECTION GUARD: BLOCK COMPLETED SESSIONS ONLY IF SEEN ──
+  useEffect(() => {
+    if (!amount || amount === "0.00" || !username) return;
+
+    const checkExistingOrder = async () => {
+      const { data, error } = await supabase
+        .from("payment_orders")
+        .select("status, product_name, duration")
+        .eq("username", username)
+        .eq("amount", amount)
+        .maybeSingle();
+
+      if (!error && data && data.status === "success") {
+        // Check if the user has already finished viewing this key screen before
+        const isAlreadyViewed = localStorage.getItem(viewedKey);
+        
+        if (isAlreadyViewed === "true") {
+          router.replace("/");
+        } else {
+          // If the order is successful but no flag exists (e.g. user refreshed during the 5s window),
+          // bypass the QR code and show them the key screen so they don't lose their product.
+          setPaymentStatus("success");
+          
+          const { data: historyData, error: historyError } = await supabase
+            .from("purchase_history")
+            .select("key_code")
+            .eq("username", username)
+            .eq("product_name", data.product_name) // Match exact product
+            .eq("duration", data.duration)         // Match exact duration
+            .order("id", { ascending: false })
+            .limit(1)
+            .single();
+
+          if (!historyError && historyData) {
+            setReleasedKey(historyData.key_code);
+          }
+        }
+      }
+    };
+
+    checkExistingOrder();
+  }, [username, amount, router, viewedKey]);
+
+  // ── AUTOMATIC COPY & FLAG-PROTECTED REDIRECT PROTOCOL (5 SECONDS) ──
   useEffect(() => {
     if (!releasedKey) return;
   
@@ -31,12 +79,21 @@ function UpiPaymentContent() {
         setCopyMessage("⚠️ Copy failed. Use COPY KEY button.");
       });
   
-    const timer = setTimeout(() => {
+    const msgTimer = setTimeout(() => {
       setCopyMessage("");
     }, 3000);
+
+    // Save the completion flag to localStorage and redirect home after exactly 5 seconds
+    const redirectTimer = setTimeout(() => {
+      localStorage.setItem(viewedKey, "true");
+      router.replace("/");
+    }, 5000);
   
-    return () => clearTimeout(timer);
-  }, [releasedKey]);
+    return () => {
+      clearTimeout(msgTimer);
+      clearTimeout(redirectTimer);
+    };
+  }, [releasedKey, router, viewedKey]);
 
   // ── MANUAL COPY WITH SECURE ERROR HANDLER ──
   const copyKey = async () => {
@@ -53,7 +110,7 @@ function UpiPaymentContent() {
     }
   };
 
-  // ── PRODUCTION-READY REALTIME SUBSCRIPTION ──
+  // ── STABLE REALTIME SUBSCRIPTION WITH LOCK PROTECTION ──
   useEffect(() => {
     if (!amount || amount === "0.00" || !username) return;
 
@@ -70,8 +127,9 @@ function UpiPaymentContent() {
           const dbStatus = payload.new?.status;
           const dbUsername = payload.new?.username;
           const dbAmount = payload.new?.amount;
+          const dbProductName = payload.new?.product_name;
+          const dbDuration = payload.new?.duration;
 
-          // Deduplication handling + verification matching checks
           if (
             paymentStatus !== "success" &&
             dbStatus === "success" && 
@@ -80,10 +138,13 @@ function UpiPaymentContent() {
           ) {
             setPaymentStatus("success");
 
+            // Isolate the exact purchase using product info from the realtime payload
             const { data, error } = await supabase
               .from("purchase_history")
               .select("key_code")
               .eq("username", username)
+              .eq("product_name", dbProductName)
+              .eq("duration", dbDuration)
               .order("id", { ascending: false })
               .limit(1)
               .single();
@@ -215,7 +276,7 @@ function UpiPaymentContent() {
                 Click inside box to select and copy token
               </p>
 
-              {/* MANUAL INTERACTIVE ACTION ACTION BUTTON */}
+              {/* MANUAL INTERACTIVE ACTION BUTTON */}
               <button
                 onClick={copyKey}
                 className="mt-4 w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-[0.2em] py-3 rounded-xl transition-all shadow-md active:scale-[0.98]"
