@@ -165,7 +165,7 @@ export default function AdminPage() {
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-[0.2em] text-white uppercase font-mono">
-              JPRIMEGLOBAL <span className="text-cyan-400 font-normal">// MAIN SYSTEM</span>
+              JPRIMECHEATS <span className="text-cyan-400 font-normal">// MAIN SYSTEM</span>
             </h1>
             <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-widest mt-0.5">
               Secure Central Registry & Inventory Dispatch

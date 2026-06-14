@@ -169,14 +169,14 @@ export default function Home() {
               {/* DYNAMIC HEADER ANCHOR */}
               <div className="text-center mb-12">
                 <h2 className="text-3xl sm:text-4xl font-black text-white tracking-wide uppercase">
-                  {activeCategory === "mobile" && "Mobile Systems"}
-                  {activeCategory === "pc" && "PC Engine Products"}
-                  {activeCategory === "ios" && "iOS Architecture"}
+                  {activeCategory === "mobile" && "Mobile Panel"}
+                  {activeCategory === "pc" && "PC Engine Panel"}
+                  {activeCategory === "ios" && "iOS Panel"}
                 </h2>
                 <p className="text-zinc-400 text-sm font-medium mt-3 max-w-2xl mx-auto">
-                  {activeCategory === "mobile" && "Premium mobile internal tools supporting deployment workflows."}
-                  {activeCategory === "pc" && "High performance desktop configurations built with precision frameworks."}
-                  {activeCategory === "ios" && "Elegantly constructed ecosystems matching premium security criteria."}
+                  {activeCategory === "mobile" && "Premium rooted & non rooted mobile panels"}
+                  {activeCategory === "pc" && "High performance desktop pc safe panels"}
+                  {activeCategory === "ios" && "Elegantly constructed ios main id safe panel"}
                 </p>
               </div>
 
@@ -252,7 +252,7 @@ export default function Home() {
                   <User className="h-4 w-4" />
                 </div>
                 <h2 className="text-xl font-black text-white tracking-wide">
-                  Account Management
+                  Profile Management
                 </h2>
               </div>
               <button 
