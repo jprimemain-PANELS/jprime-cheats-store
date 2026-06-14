@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 
-export default function TermsAndConditionsPage() {
+export default function PrivacyPolicyPage() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
@@ -35,7 +35,7 @@ export default function TermsAndConditionsPage() {
         />
       </div>
 
-      {/* ── CENTRAL TERMS & CONDITIONS CARD ── */}
+      {/* ── CENTRAL PRIVACY POLICY CARD ── */}
       <div className={`flex-1 flex items-center justify-center w-full max-w-4xl relative z-10 transition-all duration-700 ease-out ${isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-[0.99]"}`}>
         
         <div className="bg-[#0A0B0D] border border-white/[0.06] hover:border-cyan-500/20 rounded-2xl p-6 sm:p-10 shadow-[0_0_50px_-12px_rgba(6,182,212,0.15),0_32px_64px_-16px_rgba(0,0,0,0.85)] transition-colors duration-500 w-full">
@@ -46,182 +46,162 @@ export default function TermsAndConditionsPage() {
               Legal Documentation
             </span>
             <h1 className="text-3xl font-light tracking-[0.18em] uppercase text-white">
-              Terms & Conditions
+              Privacy Policy
             </h1>
             <div className="h-[1px] w-24 bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent mt-3.5" />
           </div>
 
-          {/* Welcome Statements */}
+          {/* Core Introduction Framework */}
           <div className="space-y-4 mb-8 border-b border-white/[0.05] pb-6">
             <h2 className="text-lg font-light text-white uppercase tracking-wider text-center sm:text-left">
-              Welcome to JPRIME CHEATS
+              JPRIME CHEATS
             </h2>
             <p className="text-sm text-gray-300 font-light leading-relaxed">
-              These Terms & Conditions govern your use of JPRIME CHEATS and our services. By accessing our website or purchasing any product, you agree to these terms.
+              At JPRIME CHEATS, we respect your privacy and are committed to protecting your personal information.
             </p>
           </div>
 
-          {/* ── CLAUSES SECTIONS ── */}
+          {/* ── POLICY DISCLOSURE SECTIONS ── */}
           <div className="space-y-6">
 
-            {/* 1. About Our Services */}
+            {/* 1. Information We Collect */}
             <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
                 <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  1. About Our Services
-                </h3>
-              </div>
-              <p className="text-sm text-gray-300 font-light leading-relaxed">
-                JPRIME CHEATS provides digital products and software licenses through our website. All products are delivered digitally after successful payment confirmation.
-              </p>
-            </section>
-
-            {/* 2. User Requirements */}
-            <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
-                <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  2. User Requirements
+                  1. Information We Collect
                 </h3>
               </div>
               <p className="text-gray-300 mb-3 text-sm font-light">
-                By using our services, you confirm that:
+                We may collect limited information required to process orders and provide support, including:
               </p>
               <ul className="list-disc pl-6 text-gray-300 space-y-1.5 text-sm font-light">
-                <li>The information you provide is accurate.</li>
-                <li>You are responsible for your account and purchase details.</li>
-                <li>You will use our website lawfully and responsibly.</li>
-                <li>You understand the product information before purchasing.</li>
+                <li>Username</li>
+                <li>Email address (if provided)</li>
+                <li>Purchase information</li>
+                <li>Payment confirmation details</li>
+                <li>Support messages</li>
+              </ul>
+              <p className="text-gray-300 mt-3 text-sm font-light">
+                We only collect information necessary to deliver our services.
+              </p>
+            </section>
+
+            {/* 2. Main ID & Panel User Privacy */}
+            <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
+                <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
+                  2. Main ID & Panel User Privacy
+                </h3>
+              </div>
+              <p className="text-gray-300 mb-3 text-sm font-light">
+                If you use any JPRIME CHEATS product, including Main ID Panels, your privacy remains protected.
+              </p>
+              <p className="text-gray-300 mb-2 text-sm font-light">
+                We do NOT:
+              </p>
+              <ul className="list-disc pl-6 text-gray-300 space-y-1.5 text-sm font-light">
+                <li>Share your account information</li>
+                <li>Share your gameplay activity</li>
+                <li>Share your rankings or achievements</li>
+                <li>Sell customer information</li>
+                <li>Provide customer data to third parties</li>
+              </ul>
+              <p className="text-gray-300 mt-3 text-sm font-light">
+                Your information remains private within our system.
+              </p>
+            </section>
+
+            {/* 3. How We Use Information */}
+            <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
+                <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
+                  3. How We Use Information
+                </h3>
+              </div>
+              <p className="text-gray-300 mb-3 text-sm font-light">
+                We use collected information to:
+              </p>
+              <ul className="list-disc pl-6 text-gray-300 space-y-1.5 text-sm font-light">
+                <li>Process purchases</li>
+                <li>Deliver license keys</li>
+                <li>Verify payments</li>
+                <li>Provide customer support</li>
+                <li>Improve our services</li>
+                <li>Prevent fraudulent transactions</li>
               </ul>
             </section>
 
-            {/* 3. Products & Pricing */}
+            {/* 4. Information Security */}
             <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
                 <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  3. Products & Pricing
-                </h3>
-              </div>
-              <ul className="list-disc pl-6 text-gray-300 space-y-1.5 text-sm font-light">
-                <li>Product availability may change at any time.</li>
-                <li>Prices may be updated without prior notice.</li>
-                <li>We reserve the right to modify, update, or discontinue products when necessary.</li>
-              </ul>
-            </section>
-
-            {/* 4. Payments */}
-            <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
-                <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  4. Payments
-                </h3>
-              </div>
-              <ul className="list-disc pl-6 text-gray-300 space-y-1.5 text-sm font-light">
-                <li>We accept supported payment methods displayed on our website.</li>
-                <li>By making a purchase, you authorize payment for the selected product and duration.</li>
-                <li>Orders are processed automatically after payment confirmation.</li>
-              </ul>
-            </section>
-
-            {/* 5. Refund Policy */}
-            <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
-                <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  5. Refund Policy
+                  4. Information Security
                 </h3>
               </div>
               <p className="text-sm text-gray-300 font-light leading-relaxed">
-                Please refer to our Refund Policy page for complete refund information. Digital products are delivered instantly after payment confirmation, and refund eligibility is reviewed according to our Refund Policy.
+                We use reasonable security measures to protect customer information. While no online system can guarantee absolute security, we continuously work to keep your information safe.
               </p>
             </section>
 
-            {/* 6. Support */}
+            {/* 5. Cookies & Website Analytics */}
             <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
                 <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  6. Support
-                </h3>
-              </div>
-              <p className="text-sm text-gray-300 font-light leading-relaxed mb-3">
-                If you experience any issues with your purchase, our support team will assist you as quickly as possible.
-              </p>
-              <div className="text-xs font-mono text-gray-300 space-y-1 bg-[#050506] border border-white/[0.02] p-3 rounded-lg max-w-sm">
-                <div>Support Contact:</div>
-                <div>Telegram: <a href="https://t.me/JPRIMEADMIN" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">@JPRIMEADMIN</a></div>
-                <div>Website: <a href="https://www.jprimecheats.store" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">https://www.jprimecheats.store</a></div>
-              </div>
-            </section>
-
-            {/* 7. Intellectual Property */}
-            <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
-                <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  7. Intellectual Property
+                  5. Cookies & Website Analytics
                 </h3>
               </div>
               <p className="text-sm text-gray-300 font-light leading-relaxed">
-                All website content, branding, logos, designs, software, and digital materials belong to JPRIME CHEATS and may not be copied, redistributed, or reproduced without permission.
+                Our website may use cookies and basic analytics tools to improve website performance and user experience. These tools help us understand website traffic and improve service quality.
               </p>
             </section>
 
-            {/* 8. Service Availability */}
+            {/* 6. Third-Party Services */}
             <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
                 <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  8. Service Availability
+                  6. Third-Party Services
                 </h3>
               </div>
               <p className="text-sm text-gray-300 font-light leading-relaxed">
-                We strive to keep our services available at all times. However, temporary interruptions may occur due to maintenance, updates, or technical issues.
+                Payments may be processed through trusted payment providers. These providers operate under their own privacy policies and security standards.
               </p>
             </section>
 
-            {/* 9. Limitation of Liability */}
+            {/* 7. Policy Updates */}
             <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
                 <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  9. Limitation of Liability
-                </h3>
-              </div>
-              <ul className="list-disc pl-6 text-gray-300 space-y-1.5 text-sm font-light">
-                <li>JPRIME CHEATS shall not be responsible for indirect, incidental, or consequential damages arising from the use of our products or services.</li>
-                <li>Users are responsible for ensuring their device meets the required specifications before purchase.</li>
-              </ul>
-            </section>
-
-            {/* 10. Changes to Terms */}
-            <section className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 hover:bg-cyan-950/[0.02] transition-colors duration-300">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
-                <h3 className="text-sm uppercase tracking-[0.12em] font-semibold text-white">
-                  10. Changes to Terms
+                  7. Policy Updates
                 </h3>
               </div>
               <p className="text-sm text-gray-300 font-light leading-relaxed">
-                We may update these Terms & Conditions from time to time. Continued use of our services after updates means you accept the revised terms.
+                This Privacy Policy may be updated occasionally to reflect service improvements or legal requirements. Updates will be published on this page.
               </p>
             </section>
 
-            {/* 11. Contact Information Framework node */}
+            {/* 8. Contact Us Node */}
             <section className="bg-[#0E1013] border border-cyan-500/[0.08] p-5 sm:p-6 rounded-xl shadow-[0_0_24px_-12px_rgba(6,182,212,0.1)]">
               <div className="flex items-center gap-2 mb-4">
                 <span className="w-1 h-3 bg-cyan-500 rounded-full shadow-[0_0_6px_#22d3ee]" />
                 <h3 className="text-base font-semibold text-white tracking-wide">
-                  11. Contact Information
+                  8. Contact Us
                 </h3>
               </div>
               
-              <div className="mb-4 text-sm text-white font-medium">
+              <div className="mb-2 text-sm text-white font-medium">
                 JPRIME CHEATS
               </div>
+              
+              <p className="text-xs text-neutral-400 mb-4 font-light">
+                Support is available through Telegram support.
+              </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-300">
                 <div className="bg-[#050506] border border-white/[0.03] p-4 rounded-xl flex items-center justify-between font-mono text-xs hover:border-cyan-500/20 transition-all duration-300">

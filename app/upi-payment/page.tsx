@@ -79,9 +79,10 @@ function UpiPaymentContent() {
         setCopyMessage("⚠️ Copy failed. Use COPY KEY button.");
       });
   
+    // Increased by extra 5 seconds: Message popup now clears after 8 seconds (8000ms)
     const msgTimer = setTimeout(() => {
       setCopyMessage("");
-    }, 3000);
+    }, 8000);
 
     // Save the completion flag to localStorage and redirect home after exactly 5 seconds
     const redirectTimer = setTimeout(() => {
@@ -104,9 +105,10 @@ function UpiPaymentContent() {
     } catch {
       setCopyMessage("⚠️ Copy failed. Use COPY KEY button.");
     } finally {
+      // Manual copy popup timing extended to 8 seconds as well for alignment stability
       setTimeout(() => {
         setCopyMessage("");
-      }, 3000);
+      }, 8000);
     }
   };
 
