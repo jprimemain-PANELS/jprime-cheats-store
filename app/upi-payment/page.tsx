@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase"; 
 
@@ -14,9 +14,15 @@ function UpiPaymentContent() {
   const [paymentStatus, setPaymentStatus] = useState<"pending" | "success">("pending");
   const [releasedKey, setReleasedKey] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
+  
+  // ── TIMER STATES ──
+  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
+  const [isExpired, setIsExpired] = useState(false);
 
   // Centralized tracking identifier string for this explicit payment session link
   const viewedKey = `order_completed_${username}_${amount}`;
+  // Unique localStorage tag to block expired instances completely on reload
+  const expiredKey = `payment_expired_${username}_${amount}`;
 
   // Smooth fade-in UI load trigger
   useEffect(() => {
@@ -24,9 +30,15 @@ function UpiPaymentContent() {
     return () => clearTimeout(t);
   }, []);
 
-  // ── REDIRECTION GUARD: BLOCK COMPLETED SESSIONS ONLY IF SEEN ──
+  // ── REDIRECTION GUARD: BLOCK COMPLETED & EXPIRED SESSIONS IMMEDIATELY ──
   useEffect(() => {
     if (!amount || amount === "0.00" || !username) return;
+
+    // Direct Pre-flight localStorage check before running intensive DB queries
+    if (localStorage.getItem(expiredKey) === "true") {
+      router.replace("/");
+      return;
+    }
 
     const checkExistingOrder = async () => {
       const { data, error } = await supabase
@@ -65,7 +77,38 @@ function UpiPaymentContent() {
     };
 
     checkExistingOrder();
-  }, [username, amount, router, viewedKey]);
+  }, [username, amount, router, viewedKey, expiredKey]);
+
+  // ── 5-MINUTE ECOSYSTEM TIMEOUT PROTOCOL ──
+  useEffect(() => {
+    // Break tracking loop if payment succeeds or if it has already been tripped
+    if (paymentStatus === "success" || isExpired) return;
+
+    const countdown = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdown);
+          setIsExpired(true);
+          localStorage.setItem(expiredKey, "true");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(countdown);
+  }, [paymentStatus, isExpired, expiredKey]);
+
+  // ── EXPIRED AUTO-REDIRECT ENGINE (5 SECONDS) ──
+  useEffect(() => {
+    if (!isExpired) return;
+
+    const homeRedirectTimer = setTimeout(() => {
+      router.replace("/");
+    }, 5000);
+
+    return () => clearTimeout(homeRedirectTimer);
+  }, [isExpired, router]);
 
   // ── AUTOMATIC COPY & FLAG-PROTECTED REDIRECT PROTOCOL (5 SECONDS) ──
   useEffect(() => {
@@ -79,7 +122,7 @@ function UpiPaymentContent() {
         setCopyMessage("⚠️ Copy failed. Use COPY KEY button.");
       });
   
-    // Increased by extra 5 seconds: Message popup now clears after 8 seconds (8000ms)
+    // Message popup clears after 8 seconds (8000ms)
     const msgTimer = setTimeout(() => {
       setCopyMessage("");
     }, 8000);
@@ -105,7 +148,6 @@ function UpiPaymentContent() {
     } catch {
       setCopyMessage("⚠️ Copy failed. Use COPY KEY button.");
     } finally {
-      // Manual copy popup timing extended to 8 seconds as well for alignment stability
       setTimeout(() => {
         setCopyMessage("");
       }, 8000);
@@ -114,7 +156,7 @@ function UpiPaymentContent() {
 
   // ── STABLE REALTIME SUBSCRIPTION WITH LOCK PROTECTION ──
   useEffect(() => {
-    if (!amount || amount === "0.00" || !username) return;
+    if (!amount || amount === "0.00" || !username || isExpired) return;
 
     const channel = supabase
       .channel(`live-payment-unfiltered-${amount}`)
@@ -163,7 +205,7 @@ function UpiPaymentContent() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [username, amount, paymentStatus]);
+  }, [username, amount, paymentStatus, isExpired]);
 
   const upiLink = `upi://pay?pa=7200817883@fam&pn=Jenith&am=${amount}&cu=INR`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(upiLink)}&color=ffffff&bgcolor=0A0B0D`;
@@ -172,6 +214,10 @@ function UpiPaymentContent() {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+  // Clock calculations
+  const minutes = String(Math.floor(timeLeft / 60)).padStart(2, "0");
+  const seconds = String(timeLeft % 60).padStart(2, "0");
 
   return (
     <div className="min-h-screen w-full bg-[#050506] text-[#F3F4F6] font-sans flex items-center justify-center p-4 antialiased selection:bg-cyan-500 selection:text-black relative overflow-hidden">
@@ -224,14 +270,41 @@ function UpiPaymentContent() {
           {paymentStatus === "pending" ? (
             <>
               {/* QR Render Segment */}
-              <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center">
-                <div className="w-full aspect-square max-w-[250px] bg-[#0A0B0D] p-3 rounded-xl border border-white/[0.02]">
-                  <img src={qrUrl} alt="UPI QR Representation" className="w-full h-full rounded-md opacity-90 grayscale-[10%] contrast-[110%]" />
+              <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center relative overflow-hidden">
+                <div className={`w-full aspect-square max-w-[250px] bg-[#0A0B0D] p-3 rounded-xl border border-white/[0.02] transition-all duration-500 ${isExpired ? "blur-md opacity-30 scale-95 select-none pointer-events-none" : "opacity-90"}`}>
+                  <img src={qrUrl} alt="UPI QR Representation" className="w-full h-full rounded-md grayscale-[10%] contrast-[110%]" />
                 </div>
-                <div className="mt-4 flex items-center gap-2 text-[10px] text-neutral-400 tracking-wider font-mono">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                  Scan with any preferred UPI application
-                </div>
+                
+                {/* ── EXPIRY ERROR BANNER OVERLAY ── */}
+                {isExpired && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-black/40 animate-fadeIn">
+                    <div className="bg-red-500/10 border border-red-500/30 px-4 py-3 rounded-xl text-center shadow-lg backdrop-blur-sm max-w-[85%]">
+                      <div className="text-red-500 font-bold text-xs uppercase tracking-widest mb-1">
+                        ⚠ Payment Session Expired
+                      </div>
+                      <p className="text-[9px] text-neutral-400 font-mono uppercase tracking-wider">
+                        Returning to system index in 5s...
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── COUNTDOWN CLOCK ELEMENT FRAMEWORK ── */}
+                {!isExpired ? (
+                  <div className="mt-4 flex flex-col items-center gap-1">
+                    <div className="text-base font-mono font-light tracking-[0.2em] text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.25)]">
+                      {minutes}:{seconds}
+                    </div>
+                    <div className="flex items-center gap-2 text-[9px] text-neutral-500 tracking-wider font-mono uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                      Session Expiry Countdown
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 text-base font-mono font-light tracking-[0.2em] text-red-500/40 select-none">
+                    00:00
+                  </div>
+                )}
               </div>
 
               {/* Transaction Ledger Info Details */}
@@ -246,22 +319,25 @@ function UpiPaymentContent() {
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-neutral-400 tracking-wide">Status</span>
-                  <span className="text-cyan-400 tracking-wider text-[11px] font-medium uppercase animate-pulse">
-                    Awaiting Payment
+                  <span className={`tracking-wider text-[11px] font-medium uppercase ${isExpired ? "text-red-500" : "text-cyan-400 animate-pulse"}`}>
+                    {isExpired ? "Session Terminated" : "Awaiting Payment"}
                   </span>
                 </div>
               </div>
 
-              <a href={upiLink} className="group relative flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-cyan-400">
-                PAY NOW
-              </a>
+              {/* Pay Button conditional representation node */}
+              {!isExpired && (
+                <a href={upiLink} className="group relative flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-cyan-400">
+                  PAY NOW
+                </a>
+              )}
             </>
           ) : (
             /* SUCCESS VIEW DESIGN INTERFACE */
             <div className="border border-emerald-500/30 bg-emerald-950/10 p-6 rounded-xl text-center shadow-[inset_0_1px_20px_rgba(16,185,129,0.05)]">
               <div className="flex items-center justify-center gap-2 text-emerald-400 font-mono text-[10px] tracking-[0.25em] uppercase mb-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Authentication Complete
+                <h4 className="inline">Authentication Complete</h4>
               </div>
               <h3 className="text-xl font-light tracking-[0.1em] text-white uppercase mb-4">
                 Payment Received
@@ -307,6 +383,13 @@ function UpiPaymentContent() {
           15% { opacity: 0.15; }
           25% { transform: translate(20%, 20%); opacity: 0; }
           100% { transform: translate(20%, 20%); opacity: 0; }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.97); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
       `}} />
     </div>
