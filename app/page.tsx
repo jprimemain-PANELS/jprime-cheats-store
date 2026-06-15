@@ -170,7 +170,7 @@ export default function Home() {
               <div className="text-center mb-12">
                 <h2 className="text-3xl sm:text-4xl font-black text-white tracking-wide uppercase">
                   {activeCategory === "mobile" && "Mobile Panel"}
-                  {activeCategory === "pc" && "PC Engine Panel"}
+                  {activeCategory === "pc" && "PC Panel"}
                   {activeCategory === "ios" && "iOS Panel"}
                 </h2>
                 <p className="text-zinc-400 text-sm font-medium mt-3 max-w-2xl mx-auto">

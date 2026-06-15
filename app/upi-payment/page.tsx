@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense, useRef } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase"; 
 
@@ -15,13 +15,15 @@ function UpiPaymentContent() {
   const [releasedKey, setReleasedKey] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
   
+  // Strict Row Tracking State for targeted duplicate protection mutations
+  const [paymentId, setPaymentId] = useState<number | null>(null);
+  
   // ── TIMER STATES ──
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
   const [isExpired, setIsExpired] = useState(false);
 
-  // Centralized tracking identifier string for this explicit payment session link
+  // Centralized tracking identifiers matching your original build
   const viewedKey = `order_completed_${username}_${amount}`;
-  // Unique localStorage tag to block expired instances completely on reload
   const expiredKey = `payment_expired_${username}_${amount}`;
 
   // Smooth fade-in UI load trigger
@@ -30,11 +32,10 @@ function UpiPaymentContent() {
     return () => clearTimeout(t);
   }, []);
 
-  // ── REDIRECTION GUARD: BLOCK COMPLETED & EXPIRED SESSIONS IMMEDIATELY ──
+  // ── REDIRECTION GUARD: BLOCK EXPIRED & ALREADY USED ORDERS IMMEDIATELY ──
   useEffect(() => {
     if (!amount || amount === "0.00" || !username) return;
 
-    // Direct Pre-flight localStorage check before running intensive DB queries
     if (localStorage.getItem(expiredKey) === "true") {
       router.replace("/");
       return;
@@ -43,34 +44,44 @@ function UpiPaymentContent() {
     const checkExistingOrder = async () => {
       const { data, error } = await supabase
         .from("payment_orders")
-        .select("status, product_name, duration")
+        .select("id, status, used, product_name, duration")
         .eq("username", username)
         .eq("amount", amount)
+        .order("id", { ascending: false }) // Target the newest row
+        .limit(1)
         .maybeSingle();
 
-      if (!error && data && data.status === "success") {
-        // Check if the user has already finished viewing this key screen before
-        const isAlreadyViewed = localStorage.getItem(viewedKey);
-        
-        if (isAlreadyViewed === "true") {
-          router.replace("/");
-        } else {
-          // If the order is successful but no flag exists (e.g. user refreshed during the 5s window),
-          // bypass the QR code and show them the key screen so they don't lose their product.
-          setPaymentStatus("success");
-          
-          const { data: historyData, error: historyError } = await supabase
-            .from("purchase_history")
-            .select("key_code")
-            .eq("username", username)
-            .eq("product_name", data.product_name) // Match exact product
-            .eq("duration", data.duration)         // Match exact duration
-            .order("id", { ascending: false })
-            .limit(1)
-            .single();
+      if (!error && data) {
+        // Cache the specific database row ID immediately onto local component state
+        setPaymentId(data.id);
 
-          if (!historyError && historyData) {
-            setReleasedKey(historyData.key_code);
+        // DUPLICATE PROTECTION CRITERIA: If order succeeded and was already claimed, reject entry
+        if (data.status === "success" && data.used === true) {
+          router.replace("/");
+          return;
+        }
+
+        if (data.status === "success" && !data.used) {
+          const isAlreadyViewed = localStorage.getItem(viewedKey);
+          
+          if (isAlreadyViewed === "true") {
+            router.replace("/");
+          } else {
+            setPaymentStatus("success");
+            
+            const { data: historyData, error: historyError } = await supabase
+              .from("purchase_history")
+              .select("key_code")
+              .eq("username", username)
+              .eq("product_name", data.product_name) 
+              .eq("duration", data.duration)         
+              .order("id", { ascending: false })
+              .limit(1)
+              .single();
+
+            if (!historyError && historyData) {
+              setReleasedKey(historyData.key_code);
+            }
           }
         }
       }
@@ -79,9 +90,8 @@ function UpiPaymentContent() {
     checkExistingOrder();
   }, [username, amount, router, viewedKey, expiredKey]);
 
-  // ── 5-MINUTE ECOSYSTEM TIMEOUT PROTOCOL ──
+  // ── 5-MINUTE TIMEOUT PROTOCOL ──
   useEffect(() => {
-    // Break tracking loop if payment succeeds or if it has already been tripped
     if (paymentStatus === "success" || isExpired) return;
 
     const countdown = setInterval(() => {
@@ -110,7 +120,7 @@ function UpiPaymentContent() {
     return () => clearTimeout(homeRedirectTimer);
   }, [isExpired, router]);
 
-  // ── AUTOMATIC COPY & FLAG-PROTECTED REDIRECT PROTOCOL (5 SECONDS) ──
+  // ── KEY DELIVERED: SECURE TARGETED ROW INVALIDATION PROTOCOL ──
   useEffect(() => {
     if (!releasedKey) return;
   
@@ -122,14 +132,33 @@ function UpiPaymentContent() {
         setCopyMessage("⚠️ Copy failed. Use COPY KEY button.");
       });
   
-    // Message popup clears after 8 seconds (8000ms)
     const msgTimer = setTimeout(() => {
       setCopyMessage("");
     }, 8000);
 
-    // Save the completion flag to localStorage and redirect home after exactly 5 seconds
-    const redirectTimer = setTimeout(() => {
+    // Flag payload execution using targeted paymentId bounds
+    const markOrderAsUsed = async () => {
       localStorage.setItem(viewedKey, "true");
+      
+      if (paymentId) {
+        await supabase
+          .from("payment_orders")
+          .update({ used: true })
+          .eq("id", paymentId); // Strictly update only this specific row
+      } else {
+        // Safe robust fallback query array if row sequence ID extraction hasn't resolved locally yet
+        await supabase
+          .from("payment_orders")
+          .update({ used: true })
+          .eq("username", username)
+          .eq("amount", amount)
+          .eq("status", "success");
+      }
+    };
+
+    markOrderAsUsed();
+
+    const redirectTimer = setTimeout(() => {
       router.replace("/");
     }, 5000);
   
@@ -137,9 +166,9 @@ function UpiPaymentContent() {
       clearTimeout(msgTimer);
       clearTimeout(redirectTimer);
     };
-  }, [releasedKey, router, viewedKey]);
+  }, [releasedKey, paymentId, username, amount, router, viewedKey]);
 
-  // ── MANUAL COPY WITH SECURE ERROR HANDLER ──
+  // ── MANUAL COPY HANDLER ──
   const copyKey = async () => {
     if (!releasedKey) return;
     try {
@@ -154,7 +183,7 @@ function UpiPaymentContent() {
     }
   };
 
-  // ── STABLE REALTIME SUBSCRIPTION WITH LOCK PROTECTION ──
+  // ── REALTIME SUBSCRIPTION WITH TARGETED ROW IDENTIFICATION EXTRACTION ──
   useEffect(() => {
     if (!amount || amount === "0.00" || !username || isExpired) return;
 
@@ -168,11 +197,16 @@ function UpiPaymentContent() {
           table: "payment_orders"
         },
         async (payload) => {
+          const dbId = payload.new?.id;
           const dbStatus = payload.new?.status;
+          const dbUsed = payload.new?.used;
           const dbUsername = payload.new?.username;
           const dbAmount = payload.new?.amount;
           const dbProductName = payload.new?.product_name;
           const dbDuration = payload.new?.duration;
+
+          // DUPLICATE PROTECTION: Completely ignore updates if the order row is marked used
+          if (dbUsed === true) return;
 
           if (
             paymentStatus !== "success" &&
@@ -180,9 +214,11 @@ function UpiPaymentContent() {
             String(dbUsername) === String(username) && 
             String(dbAmount) === String(amount)
           ) {
+            // Isolate and trap the exact database row identifier from incoming transaction payloads
+            if (dbId) setPaymentId(dbId);
+            
             setPaymentStatus("success");
 
-            // Isolate the exact purchase using product info from the realtime payload
             const { data, error } = await supabase
               .from("purchase_history")
               .select("key_code")
@@ -215,40 +251,37 @@ function UpiPaymentContent() {
     maximumFractionDigits: 2,
   });
 
-  // Clock calculations
   const minutes = String(Math.floor(timeLeft / 60)).padStart(2, "0");
   const seconds = String(timeLeft % 60).padStart(2, "0");
 
   return (
-    <div className="min-h-screen w-full bg-[#050506] text-[#F3F4F6] font-sans flex items-center justify-center p-4 antialiased selection:bg-cyan-500 selection:text-black relative overflow-hidden">
+    <div className="min-h-screen w-full bg-[#050506] text-[#F3F4F6] font-sans flex items-center justify-center p-4 antialiased selection:bg-cyan-500 selection:text-black relative z-0 overflow-hidden">
       
-      {/* ── FLOATING VALIDATION NOTIFICATION POPUP ── */}
+      {/* FLOATING VALIDATION NOTIFICATION POPUP */}
       {copyMessage && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-black px-4 py-2 rounded-lg font-bold shadow-lg text-xs tracking-wider uppercase">
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-emerald-500 text-black px-4 py-2 rounded-lg font-bold shadow-lg text-xs tracking-wider uppercase">
           {copyMessage}
         </div>
       )}
 
-      {/* BACKGROUND GRAPHIC SWEEPS */}
-      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+      {/* BACKGROUND EFFECTS */}
+      <div className="absolute inset-0 pointer-events-none -z-20" aria-hidden="true">
         <div className="absolute inset-0 bg-gradient-to-tr from-[#08090a] via-[#050506] to-[#0d0f12]" />
         <div 
-          className="absolute -inset-[100%] opacity-15"
+          className="absolute -inset-[100%] opacity-15 -z-10"
           style={{
             background: "linear-gradient(135deg, transparent 42%, rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.01) 55%, transparent 58%)",
             animation: "steel-glint 8s cubic-bezier(0.25, 1, 0.5, 1) infinite",
           }}
         />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-cyan-500/[0.02] rounded-full blur-[140px]" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-cyan-500/[0.02] rounded-full blur-[140px] -z-10" />
       </div>
 
-      {/* MAIN INTERFACE CONTEXT CARD */}
+      {/* CORE DISPLAY CARD */}
       <div className={`transition-all duration-700 ease-out ${isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-[0.99]"} w-full max-w-[440px] relative z-10`}>
-        
-        <div className="bg-[#0A0B0D] border border-white/[0.06] rounded-2xl p-6 sm:p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.85)]">
+        <div className="bg-[#0A0B0D] border border-white/[0.06] rounded-2xl p-6 sm:p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.85)] relative z-20">
           
-          {/* Header Typography Group */}
-          <div className="flex flex-col items-center text-center mb-8">
+          <div className="flex flex-col items-center text-center mb-8 relative z-30">
             <span className="text-[10px] tracking-[0.35em] uppercase font-semibold text-cyan-400 mb-1.5">
               Secure Checkout Protocol
             </span>
@@ -258,27 +291,23 @@ function UpiPaymentContent() {
             <div className="h-[1px] w-16 bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent mt-3.5" />
           </div>
 
-          {/* Amount Box */}
-          <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 text-center mb-6">
+          <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 text-center mb-6 relative z-30">
             <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 mb-1">Amount Due</p>
             <p className="text-4xl font-extralight tracking-tight text-white font-mono">
               ₹{formatted}
             </p>
           </div>
 
-          {/* DYNAMIC VIEWS CONDITIONAL HOOKS */}
           {paymentStatus === "pending" ? (
             <>
-              {/* QR Render Segment */}
-              <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center relative overflow-hidden">
-                <div className={`w-full aspect-square max-w-[250px] bg-[#0A0B0D] p-3 rounded-xl border border-white/[0.02] transition-all duration-500 ${isExpired ? "blur-md opacity-30 scale-95 select-none pointer-events-none" : "opacity-90"}`}>
+              <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center relative overflow-hidden z-30">
+                <div className={`w-full aspect-square max-w-[250px] bg-[#0A0B0D] p-3 rounded-xl border border-white/[0.02] transition-all duration-500 ${isExpired ? "blur-md opacity-30 scale-95 select-none pointer-events-none" : "opacity-90"} relative z-10`}>
                   <img src={qrUrl} alt="UPI QR Representation" className="w-full h-full rounded-md grayscale-[10%] contrast-[110%]" />
                 </div>
                 
-                {/* ── EXPIRY ERROR BANNER OVERLAY ── */}
                 {isExpired && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-black/40 animate-fadeIn">
-                    <div className="bg-red-500/10 border border-red-500/30 px-4 py-3 rounded-xl text-center shadow-lg backdrop-blur-sm max-w-[85%]">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-black/40 backdrop-blur-sm z-40 animate-fadeIn">
+                    <div className="bg-red-500/10 border border-red-500/30 px-4 py-3 rounded-xl text-center shadow-lg max-w-[85%]">
                       <div className="text-red-500 font-bold text-xs uppercase tracking-widest mb-1">
                         ⚠ Payment Session Expired
                       </div>
@@ -289,9 +318,8 @@ function UpiPaymentContent() {
                   </div>
                 )}
 
-                {/* ── COUNTDOWN CLOCK ELEMENT FRAMEWORK ── */}
                 {!isExpired ? (
-                  <div className="mt-4 flex flex-col items-center gap-1">
+                  <div className="mt-4 flex flex-col items-center gap-1 relative z-10">
                     <div className="text-base font-mono font-light tracking-[0.2em] text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.25)]">
                       {minutes}:{seconds}
                     </div>
@@ -301,14 +329,13 @@ function UpiPaymentContent() {
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-4 text-base font-mono font-light tracking-[0.2em] text-red-500/40 select-none">
+                  <div className="mt-4 text-base font-mono font-light tracking-[0.2em] text-red-500/40 select-none relative z-10">
                     00:00
                   </div>
                 )}
               </div>
 
-              {/* Transaction Ledger Info Details */}
-              <div className="space-y-3.5 mb-7 border-t border-b border-white/[0.05] py-4.5 px-0.5">
+              <div className="space-y-3.5 mb-7 border-t border-b border-white/[0.05] py-4.5 px-0.5 relative z-30">
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-neutral-400 tracking-wide">Merchant</span>
                   <span className="font-medium text-neutral-200 tracking-wide">JPrime cheats</span>
@@ -325,16 +352,14 @@ function UpiPaymentContent() {
                 </div>
               </div>
 
-              {/* Pay Button conditional representation node */}
               {!isExpired && (
-                <a href={upiLink} className="group relative flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-cyan-400">
+                <a href={upiLink} className="group relative flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-cyan-400 z-30 shadow-[0_4px_20px_rgba(6,182,212,0.15)]">
                   PAY NOW
                 </a>
               )}
             </>
           ) : (
-            /* SUCCESS VIEW DESIGN INTERFACE */
-            <div className="border border-emerald-500/30 bg-emerald-950/10 p-6 rounded-xl text-center shadow-[inset_0_1px_20px_rgba(16,185,129,0.05)]">
+            <div className="border border-emerald-500/30 bg-emerald-950/10 p-6 rounded-xl text-center shadow-[inset_0_1px_20px_rgba(16,185,129,0.05)] relative z-30 animate-fadeIn">
               <div className="flex items-center justify-center gap-2 text-emerald-400 font-mono text-[10px] tracking-[0.25em] uppercase mb-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 <h4 className="inline">Authentication Complete</h4>
@@ -354,7 +379,6 @@ function UpiPaymentContent() {
                 Click inside box to select and copy token
               </p>
 
-              {/* MANUAL INTERACTIVE ACTION BUTTON */}
               <button
                 onClick={copyKey}
                 className="mt-4 w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-[0.2em] py-3 rounded-xl transition-all shadow-md active:scale-[0.98]"
@@ -366,14 +390,12 @@ function UpiPaymentContent() {
 
         </div>
 
-        {/* Secure Institutional Footer References */}
-        <div className="mt-6 flex items-center justify-between text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-mono px-3">
+        <div className="mt-6 flex items-center justify-between text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-mono px-3 relative z-20">
           <span>End-to-End Encrypted</span>
           <div className="flex items-center gap-2">
             <span>SSL</span><span>•</span><span>PCI-DSS</span><span>•</span><span>UPI 2.0</span>
           </div>
         </div>
-
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
