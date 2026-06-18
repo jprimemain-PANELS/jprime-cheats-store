@@ -25,7 +25,14 @@ export default function LoginPage() {
         return;
       }
 
-      localStorage.setItem("user", JSON.stringify(data));
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          username: data.username,
+          email: data.email,
+          role: data.role,
+        })
+      );
       window.location.href = "/";
     } else {
       if (!mobileNumber.trim() || mobileNumber.length < 10) {
