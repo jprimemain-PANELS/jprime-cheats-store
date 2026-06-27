@@ -35,7 +35,7 @@ export const mobileProducts: Product[] = [
   {
     id: "drip-client-root",
     name: "DRIP CLIENT NON ROOT MOBILE ( PROXY )",
-    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/drip%20proxy.mp4",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20PROXY%20MOBILE.mp4",
     category: "mobile",
     prices: [
       { duration: "1 day", priceINR: "₹95", resellerPrice: "₹42", priceUSD: "$1.38" },
@@ -129,6 +129,20 @@ export const pcProducts: Product[] = [
     ],
     updateChannel: "https://t.me/jprimeallcustompcpanel",
     features: ["☉ ᴀɪᴍʙᴏᴛ ɢʟᴏʙᴀʟ","☉ ᴀɪᴍʙᴏᴛ ᴇxᴛᴇʀɴᴀʟ","☉ ꜱɴɪᴘᴇʀ ꜱᴡɪᴛᴄʜ","☉ ꜱɴɪᴘᴇʀ ꜱᴄᴏᴘᴇ","☉ ɢʟɪᴛᴄʜ ꜰɪʀᴇ","☉ ᴇꜱᴘ ʟɪɴᴇ ʙᴏx","☉ ᴇꜱᴘ ᴀʟᴇʀᴛ","☉ ᴇꜱᴘ ɪɴꜰᴏʀᴍᴀᴛɪᴏɴ ᴡᴇᴀᴘᴏɴ","☉ ᴀᴜᴛᴏ ʀᴇꜰʀᴇꜱʜ","☉ ꜱᴛʀᴇᴀᴍᴇʀ ᴍᴏᴅᴇ"],
+  },
+  {
+    id: "brutal-customized-pc",
+    name: "AIM COVER PANEL ( Rank push )",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/AIM%20COVER%20PC.mp4",
+    category: "pc",
+    prices: [
+      { duration: "1 day", resellerPrice: "₹80", priceINR: "₹180" },
+      { duration: "11 day", resellerPrice: "₹255", priceINR: "₹539" },
+      { duration: "31 day", resellerPrice: "₹489", priceINR: "₹1399" },
+      { duration: "Lifetime", resellerPrice: "₹1900", priceINR: "₹3299" },
+    ],
+    updateChannel: "https://t.me/jprimeallcustompcpanel",
+    features: ["⛨ ᴀɪᴍ ᴅᴏᴡɴᴋɪʟʟ","⛨ ᴀɪᴍꜰᴏᴠ 1200°","⛨ ᴜᴘ ᴘʟᴀʏᴇʀ","⛨ ᴛᴇʟᴇ ᴋɪʟʟ 10ᴍ","⛨ᴛᴇʟᴇᴘᴏʀᴛ ʜᴀᴄᴋ ᴄꜱ","⛨ᴛᴇʟᴇᴘᴏʀᴛ ʜᴀᴄᴋ ʙʀ","⛨ ᴍᴇᴅᴋɪᴛ ʀᴜɴ","⛨ ꜱᴘᴇᴇᴅ ʜᴀᴄᴋ ᴊᴏʏꜱᴛɪᴄᴋ","⛨ ᴄʟɪᴍʙ ᴜᴘ","⛨ ɴᴏ ʀᴇᴄᴏɪʟ","⛨ ᴀᴜᴛᴏ ꜱᴡɪᴛᴄʜ","⛨ ꜰᴀꜱᴛ ꜱᴡɪᴛᴄʜ","⛨ ᴇꜱᴘ ʟɪɴᴇ ʟᴏᴄᴀᴛɪᴏɴ","⛨ ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ"],
   },
 ];
 

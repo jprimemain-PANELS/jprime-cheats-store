@@ -1,9 +1,373 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { User, Lock, Phone, Mail, ArrowRight } from "lucide-react";
+import { Renderer, Program, Mesh, Triangle } from "ogl";
 
+/* ==========================================================================
+   LIGHTFALL SHADER SYSTEM (INTERACTIVE BACKGROUND)
+   ========================================================================== */
+const MAX_COLORS = 8;
+
+const hexToRGB = (hex) => {
+  const c = hex.replace("#", "").padEnd(6, "0");
+  const r = parseInt(c.slice(0, 2), 16) / 255;
+  const g = parseInt(c.slice(2, 4), 16) / 255;
+  const b = parseInt(c.slice(4, 6), 16) / 255;
+  return [r, g, b];
+};
+
+const prepColors = (input) => {
+  const base = (input && input.length ? input : ["#A6C8FF", "#5227FF", "#FF9FFC"]).slice(0, MAX_COLORS);
+  const count = base.length;
+  const arr = [];
+  for (let i = 0; i < MAX_COLORS; i++) arr.push(hexToRGB(base[Math.min(i, base.length - 1)]));
+  const avg = [0, 0, 0];
+  for (let i = 0; i < count; i++) {
+    avg[0] += arr[i][0];
+    avg[1] += arr[i][1];
+    avg[2] += arr[i][2];
+  }
+  avg[0] /= count;
+  avg[1] /= count;
+  avg[2] /= count;
+  return { arr, count, avg };
+};
+
+const vertex = `
+attribute vec2 position;
+attribute vec2 uv;
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position, 0.0, 1.0);
+}
+`;
+
+const fragment = `
+precision highp float;
+
+uniform vec3  iResolution;
+uniform vec2  iMouse;
+uniform float iTime;
+
+uniform vec3  uColor0;
+uniform vec3  uColor1;
+uniform vec3  uColor2;
+uniform vec3  uColor3;
+uniform vec3  uColor4;
+uniform vec3  uColor5;
+uniform vec3  uColor6;
+uniform vec3  uColor7;
+uniform int   uColorCount;
+
+uniform vec3  uBgColor;
+uniform vec3  uMouseColor;
+uniform float uSpeed;
+uniform int   uStreakCount;
+uniform float uStreakWidth;
+uniform float uStreakLength;
+uniform float uGlow;
+uniform float uDensity;
+uniform float uTwinkle;
+uniform float uZoom;
+uniform float uBgGlow;
+uniform float uOpacity;
+uniform float uMouseEnabled;
+uniform float uMouseStrength;
+uniform float uMouseRadius;
+
+varying vec2 vUv;
+
+vec3 palette(float h) {
+  int count = uColorCount;
+  if (count < 1) count = 1;
+  int idx = int(floor(clamp(h, 0.0, 0.999999) * float(count)));
+  if (idx <= 0) return uColor0;
+  if (idx == 1) return uColor1;
+  if (idx == 2) return uColor2;
+  if (idx == 3) return uColor3;
+  if (idx == 4) return uColor4;
+  if (idx == 5) return uColor5;
+  if (idx == 6) return uColor6;
+  return uColor7;
+}
+
+vec3 tanhv(vec3 x) {
+  vec3 e = exp(-2.0 * x);
+  return (1.0 - e) / (1.0 + e);
+}
+
+vec2 sceneC(vec2 frag, vec2 r) {
+  vec2 P = (frag + frag - r) / r.x;
+  float z = 0.0;
+  float d = 1e3;
+  vec4 O = vec4(0.0);
+  for (int k = 0; k < 39; k++) {
+    if (d <= 1e-4) break;
+    O = z * normalize(vec4(P, uZoom, 0.0)) - vec4(0.0, 4.0, 1.0, 0.0) / 4.5;
+    d = 1.0 - sqrt(length(O * O));
+    z += d;
+  }
+  return vec2(O.x, atan(O.z, O.y));
+}
+
+void mainImage(out vec4 o, vec2 C) {
+  vec2 r = iResolution.xy;
+  vec2 uv0 = (C + C - r) / r.x;
+  float T = 0.1 * iTime * uSpeed + 9.0;
+  float angRings = max(1.0, floor(6.28318530718 * max(uDensity, 0.05) + 0.5));
+  vec2 Y = vec2(5e-3, 6.28318530718 / angRings);
+
+  vec2 c0 = sceneC(C, r);
+  vec2 cdx = sceneC(C + vec2(1.0, 0.0), r);
+  vec2 cdy = sceneC(C + vec2(0.0, 1.0), r);
+  vec2 dCx = cdx - c0;
+  vec2 dCy = cdy - c0;
+  dCx.y -= 6.28318530718 * floor(dCx.y / 6.28318530718 + 0.5);
+  dCy.y -= 6.28318530718 * floor(dCy.y / 6.28318530718 + 0.5);
+  vec2 fw = abs(dCx) + abs(dCy);
+  C = c0;
+
+  vec2 P = vec2(2.0, 1.0) * uv0 - (r / r.x) * vec2(0.0, 1.0);
+  vec4 O = vec4(uBgColor * 90.0 * uBgGlow / (1e3 * dot(P, P) + 6.0), 0.0);
+
+  float mGlow = 0.0;
+  if (uMouseEnabled > 0.5) {
+    vec2 mN = (iMouse + iMouse - r) / r.x;
+    float md = length(uv0 - mN);
+    mGlow = exp(-md * md / max(uMouseRadius * uMouseRadius, 1e-4)) * uMouseStrength;
+    O.rgb += uMouseColor * mGlow * 0.25;
+  }
+
+  float zr = 5e-4 * uStreakWidth;
+  vec2 rr = vec2(max(length(fw), 1e-5));
+  float tail = 19.0 / max(uStreakLength, 0.05);
+
+  for (int m = 0; m < 16; m++) {
+    if (m >= uStreakCount) break;
+    float jf = float(m) + 1.0;
+    float ic = fract(sin(dot(vec2(jf, floor(C.x / Y.x + 0.5)), vec2(7.0, 11.0)) * 73.0));
+    vec2 Pp = C - (T + T * ic) * vec2(0.0, 1.0);
+    Pp -= floor(Pp / Y + 0.5) * Y;
+    float h = fract(8663.0 * ic);
+    vec3 col = palette(h);
+    float weight = mix(1.5, 1.0 + sin(T + 7.0 * h + 4.0), uTwinkle);
+    weight *= (1.0 + mGlow * 2.0);
+    vec2 inner = vec2(length(max(Pp, vec2(-1.0, 0.0))), length(Pp) - zr) - zr;
+    vec2 sm = vec2(1.0) - smoothstep(-rr, rr, inner);
+    O.rgb += dot(sm, vec2(exp(tail * Pp.y), 3.0)) * col * weight;
+    C.x += Y.x / 8.0;
+  }
+
+  vec3 colr = sqrt(tanhv(max(O.rgb * uGlow - vec3(0.04, 0.08, 0.02), 0.0)));
+  o = vec4(colr, uOpacity);
+}
+
+void main() {
+  vec4 color;
+  mainImage(color, vUv * iResolution.xy);
+  gl_FragColor = color;
+}
+`;
+
+const Lightfall = ({
+  className,
+  dpr,
+  paused = false,
+  colors = ["#06b6d4", "#3b82f6", "#000000"],
+  backgroundColor = "#020204",
+  speed = 0.5,
+  streakCount = 2,
+  streakWidth = 1,
+  streakLength = 1,
+  glow = 1,
+  density = 0.6,
+  twinkle = 1,
+  zoom = 3,
+  backgroundGlow = 0.5,
+  opacity = 1,
+  mouseInteraction = true,
+  mouseStrength = 0.5,
+  mouseRadius = 1,
+  mouseDampening = 0.15,
+  mixBlendMode
+}) => {
+  const containerRef = useRef(null);
+  const rafRef = useRef(null);
+  const programRef = useRef(null);
+  const meshRef = useRef(null);
+  const geometryRef = useRef(null);
+  const rendererRef = useRef(null);
+  const mouseTargetRef = useRef([0, 0]);
+  const lastTimeRef = useRef(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const renderer = new Renderer({
+      dpr: dpr ?? (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1),
+      alpha: true,
+      antialias: true
+    });
+    rendererRef.current = renderer;
+    const gl = renderer.gl;
+    const canvas = gl.canvas;
+
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    canvas.style.display = "block";
+    container.appendChild(canvas);
+
+    const { arr, count, avg } = prepColors(colors);
+
+    const uniforms = {
+      iResolution: { value: [gl.drawingBufferWidth, gl.drawingBufferHeight, 1] },
+      iMouse: { value: [0, 0] },
+      iTime: { value: 0 },
+      uColor0: { value: arr[0] },
+      uColor1: { value: arr[1] },
+      uColor2: { value: arr[2] },
+      uColor3: { value: arr[3] },
+      uColor4: { value: arr[4] },
+      uColor5: { value: arr[5] },
+      uColor6: { value: arr[6] },
+      uColor7: { value: arr[7] },
+      uColorCount: { value: count },
+      uBgColor: { value: hexToRGB(backgroundColor) },
+      uMouseColor: { value: avg },
+      uSpeed: { value: speed },
+      uStreakCount: { value: Math.max(1, Math.min(16, Math.round(streakCount))) },
+      uStreakWidth: { value: streakWidth },
+      uStreakLength: { value: streakLength },
+      uGlow: { value: glow },
+      uDensity: { value: density },
+      uTwinkle: { value: twinkle },
+      uZoom: { value: zoom },
+      uBgGlow: { value: backgroundGlow },
+      uOpacity: { value: opacity },
+      uMouseEnabled: { value: mouseInteraction ? 1 : 0 },
+      uMouseStrength: { value: mouseStrength },
+      uMouseRadius: { value: mouseRadius }
+    };
+
+    const program = new Program(gl, { vertex, fragment, uniforms });
+    programRef.current = program;
+
+    const geometry = new Triangle(gl);
+    geometryRef.current = geometry;
+    const mesh = new Mesh(gl, { geometry, program });
+    meshRef.current = mesh;
+
+    const resize = () => {
+      const rect = container.getBoundingClientRect();
+      renderer.setSize(rect.width, rect.height);
+      uniforms.iResolution.value = [gl.drawingBufferWidth, gl.drawingBufferHeight, 1];
+    };
+
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+
+    const onPointerMove = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scale = renderer.dpr || 1;
+      const x = (e.clientX - rect.left) * scale;
+      const y = (rect.height - (e.clientY - rect.top)) * scale;
+      mouseTargetRef.current = [x, y];
+      if (mouseDampening <= 0) {
+        uniforms.iMouse.value = [x, y];
+      }
+    };
+    if (mouseInteraction) {
+      canvas.addEventListener("pointermove", onPointerMove);
+    }
+
+    const loop = (t) => {
+      rafRef.current = requestAnimationFrame(loop);
+      uniforms.iTime.value = t * 0.001;
+      if (mouseDampening > 0) {
+        if (!lastTimeRef.current) lastTimeRef.current = t;
+        const dt = (t - lastTimeRef.current) / 1000;
+        lastTimeRef.current = t;
+        const tau = Math.max(1e-4, mouseDampening);
+        let factor = 1 - Math.exp(-dt / tau);
+        if (factor > 1) factor = 1;
+        const target = mouseTargetRef.current;
+        const cur = uniforms.iMouse.value;
+        cur[0] += (target[0] - cur[0]) * factor;
+        cur[1] += (target[1] - cur[1]) * factor;
+      } else {
+        lastTimeRef.current = t;
+      }
+      if (!paused && programRef.current && meshRef.current) {
+        try {
+          renderer.render({ scene: meshRef.current });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (mouseInteraction) canvas.removeEventListener("pointermove", onPointerMove);
+      ro.disconnect();
+      if (canvas.parentElement === container) {
+        container.removeChild(canvas);
+      }
+      const callIfFn = (obj, key) => {
+        if (obj && typeof obj[key] === "function") {
+          obj[key].call(obj);
+        }
+      };
+      callIfFn(programRef.current, "remove");
+      callIfFn(geometryRef.current, "remove");
+      callIfFn(meshRef.current, "remove");
+      callIfFn(rendererRef.current, "destroy");
+      programRef.current = null;
+      geometryRef.current = null;
+      meshRef.current = null;
+      rendererRef.current = null;
+    };
+  }, [
+    dpr,
+    paused,
+    colors,
+    backgroundColor,
+    speed,
+    streakCount,
+    streakWidth,
+    streakLength,
+    glow,
+    density,
+    twinkle,
+    zoom,
+    backgroundGlow,
+    opacity,
+    mouseInteraction,
+    mouseStrength,
+    mouseRadius,
+    mouseDampening
+  ]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`absolute inset-0 w-full h-full overflow-hidden ${className ?? ""}`}
+      style={{
+        ...(mixBlendMode && { mixBlendMode })
+      }}
+    />
+  );
+};
+
+/* ==========================================================================
+   MAIN AUTHENTICATION PAGE COMPONENT
+   ========================================================================== */
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
@@ -30,7 +394,7 @@ export default function LoginPage() {
         JSON.stringify({
           username: data.username,
           email: data.email,
-          role: data.role,
+          role: data.role
         })
       );
       window.location.href = "/";
@@ -57,8 +421,8 @@ export default function LoginPage() {
           password,
           email,
           mobile_number: mobileNumber,
-          role: "user",
-        },
+          role: "user"
+        }
       ]);
 
       if (error) {
@@ -71,139 +435,147 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#020204] text-zinc-100 flex items-center justify-center p-4 relative overflow-hidden font-sans antialiased selection:bg-cyan-400 selection:text-black">
+    <div className="min-h-screen bg-[#020204] text-zinc-100 flex items-center justify-center p-4 relative overflow-hidden font-sans antialiased selection:bg-cyan-500 selection:text-black">
       
-      {/* ================= CINEMATIC BACKGROUND SYSTEM ================= */}
-      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-        {/* Deep Global Aurora Shift */}
-        <div className="absolute top-[-30%] left-1/2 -translate-x-1/2 w-[1200px] h-[800px] bg-gradient-to-b from-cyan-500/[0.08] via-blue-600/[0.03] to-transparent rounded-full blur-[160px] animate-cosmic-pulse" />
-        
-        {/* Luxury Linear Light Pillars */}
-        <div className="absolute top-0 left-[15%] w-[1px] h-full bg-gradient-to-b from-transparent via-cyan-500/10 to-transparent blur-[1px] animate-pillar-drift" />
-        <div className="absolute top-0 right-[20%] w-[1px] h-full bg-gradient-to-b from-transparent via-blue-500/5 to-transparent blur-[1px] animate-pillar-drift-delayed" />
-
-        {/* Micro Shimmer Starfield */}
-        <div className="absolute inset-0 opacity-30">
-          <div className="absolute w-[2px] h-[2px] bg-white rounded-full top-[25%] left-[30%] animate-shimmer" style={{ animationDelay: '0s' }} />
-          <div className="absolute w-[2px] h-[2px] bg-cyan-300 rounded-full top-[65%] left-[75%] animate-shimmer" style={{ animationDelay: '2s' }} />
-          <div className="absolute w-[3px] h-[3px] bg-white rounded-full top-[15%] left-[80%] animate-shimmer" style={{ animationDelay: '4s' }} />
-          <div className="absolute w-[2px] h-[2px] bg-blue-400 rounded-full top-[85%] left-[20%] animate-shimmer" style={{ animationDelay: '1s' }} />
-        </div>
+      {/* ================= DYNAMIC SHADER BACKGROUND SYSTEM ================= */}
+      <div className="absolute inset-0 pointer-events-none z-0">
+        <Lightfall
+          colors={["#06b6d4", "#2563eb", "#020204"]}
+          backgroundColor="#020204"
+          speed={0.4}
+          streakCount={3}
+          streakWidth={1.2}
+          streakLength={1.5}
+          glow={1.2}
+          density={0.5}
+          twinkle={1}
+          zoom={2.5}
+          backgroundGlow={0.3}
+          opacity={1}
+          mouseInteraction={true}
+          mouseStrength={0.6}
+          mouseRadius={1.2}
+        />
       </div>
 
       {/* ================= INTERFACE CONTENT SYSTEM ================= */}
       <div className="relative z-10 w-full max-w-md">
         
-        {/* LUXURY CHASSIS PANEL WITH ADVANCED SWORD REFLECTION */}
-        <div className="bg-[#07080b]/90 backdrop-blur-3xl border border-zinc-800/50 rounded-[2.25rem] p-8 md:p-12 shadow-[0_40px_100px_rgba(0,0,0,0.9)] relative overflow-hidden group/card transition-all duration-500 hover:border-zinc-700/60">
+        {/* PREMIUM MATTE INTERFACE PANEL WITH RAZOR EDGES */}
+        <div className="bg-[#050608]/90 backdrop-blur-2xl border border-zinc-800/50 rounded-3xl p-8 md:p-12 shadow-[0_40px_100px_rgba(0,0,0,0.85)] relative overflow-hidden group/card transition-all duration-500 hover:border-zinc-700/60">
           
-          {/* MULTI-STAGE SWORD GLINT LAYER (Razor edge + deep sun metallic flare) */}
+          {/* MICRO GRAPHIC GLINT LAYER */}
           <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
-            {/* 1. Primary Razor Sharp Steel Edge */}
-            <div className="absolute top-[-150%] left-[-150%] w-[300%] h-[300%] bg-gradient-to-tr from-transparent via-white/[0.18] to-transparent transform rotate-[35deg] animate-sword-edge" />
-            
-            {/* 2. Secondary Deep Sun Soft Prism Reflection Flare */}
-            <div className="absolute top-[-150%] left-[-150%] w-[300%] h-[300%] bg-gradient-to-tr from-transparent via-cyan-400/[0.06] to-transparent transform rotate-[35deg] animate-sword-flare" />
-            
-            {/* 3. Corner Flash Interceptor */}
-            <div className="absolute inset-0 border border-cyan-400/0 group-hover/card:border-cyan-400/10 rounded-[2.25rem] transition-all duration-700 animate-border-flash" />
+            <div className="absolute top-[-150%] left-[-150%] w-[300%] h-[300%] bg-gradient-to-tr from-transparent via-white/[0.08] to-transparent transform rotate-[35deg] animate-sword-edge" />
+            <div className="absolute top-[-150%] left-[-150%] w-[300%] h-[300%] bg-gradient-to-tr from-transparent via-cyan-500/[0.03] to-transparent transform rotate-[35deg] animate-sword-flare" />
           </div>
 
-          {/* BRAND TEXT HEADMARK */}
-          <div className="text-center mb-10 relative z-20">
-            <h1 className="text-5xl font-black tracking-[0.25em] text-white drop-shadow-[0_4px_20px_rgba(255,255,255,0.02)]">
+          {/* BRAND TYPOGRAPHY: CORPORATE MATTE MINIMALISM */}
+          <div className="text-center mb-10 relative z-20 select-none">
+            <h1 className="text-4xl font-light tracking-[0.35em] text-white/95 uppercase leading-none pl-[0.35em]">
               JPRIME
             </h1>
-            <p className="text-[11px] font-bold tracking-[0.45em] text-cyan-400 mt-3 uppercase">
-              CHEATS STORE
+            <p className="text-[10px] font-medium tracking-[0.65em] text-cyan-400/80 mt-3.5 uppercase pl-[0.65em]">
+              GLOBAL
             </p>
             
-            <p className="text-zinc-400 text-sm font-medium mt-8">
-              {isLogin ? "Sign in to continue" : "Create your credentials"}
+            <div className="w-8 h-[1px] bg-zinc-800 mx-auto mt-6 mb-4" />
+            
+            <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em]">
+              {isLogin ? "Authentication Protocol" : "Registration Protocol"}
             </p>
           </div>
 
-          {/* INPUT CHANNELS */}
-          <div className="space-y-4 relative z-20">
+          {/* PROFESSIONAL LOGIN BOXES (FLAT HIGH-CONTRAST INSET DESIGN) */}
+          <div className="space-y-3.5 relative z-20">
             
-            {/* INPUT FIELD: USERNAME */}
-            <div className="relative group/input">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500 group-focus-within/input:text-cyan-400 transition-colors duration-200">
-                <User className="h-4 w-4" />
+            {/* INPUT CHANNELS: USERNAME */}
+            <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
+              {/* Active Visual Indicator Anchor */}
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-zinc-800 group-focus-within/input:bg-cyan-400 transition-colors duration-300" />
+              
+              <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 text-zinc-500 group-focus-within/input:text-zinc-300 transition-colors duration-200">
+                <User className="h-4 w-4 stroke-[1.5]" />
               </span>
               <input
                 type="text"
                 placeholder="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-zinc-950/60 border border-zinc-800/80 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold tracking-wide text-white placeholder-zinc-600 outline-none focus:border-cyan-500/50 focus:bg-zinc-950 focus:shadow-[0_0_35px_rgba(6,182,212,0.06)] transition-all duration-300"
+                className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
               />
             </div>
 
-            {/* INPUT FIELD: MOBILE NUMBER */}
+            {/* CONDITIONAL HANDLING FIELDS */}
             {!isLogin && (
-              <div className="relative animate-form-reveal">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500">
-                  <Phone className="h-4 w-4" />
-                </span>
-                <input
-                  type="text"
-                  placeholder="Mobile Number"
-                  value={mobileNumber}
-                  onChange={(e) => setMobileNumber(e.target.value)}
-                  className="w-full bg-zinc-950/60 border border-zinc-800/80 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold tracking-wide text-cyan-400 placeholder-zinc-600 outline-none focus:border-cyan-500/50 focus:bg-zinc-950 focus:shadow-[0_0_35px_rgba(6,182,212,0.06)] transition-all duration-300"
-                />
+              <div className="space-y-3.5捷 animate-form-reveal">
+                
+                {/* INPUT CHANNELS: EMAIL */}
+                <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-zinc-800 group-focus-within/input:bg-cyan-400 transition-colors duration-300" />
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 text-zinc-500 group-focus-within/input:text-zinc-300 transition-colors duration-200">
+                    <Mail className="h-4 w-4 stroke-[1.5]" />
+                  </span>
+                  <input
+                    type="email"
+                    placeholder="Email Address (optional)"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
+                  />
+                </div>
+
+                {/* INPUT CHANNELS: MOBILE */}
+                <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-zinc-800 group-focus-within/input:bg-cyan-400 transition-colors duration-300" />
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 text-zinc-500 group-focus-within/input:text-zinc-300 transition-colors duration-200">
+                    <Phone className="h-4 w-4 stroke-[1.5]" />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Mobile Number"
+                    value={mobileNumber}
+                    onChange={(e) => setMobileNumber(e.target.value)}
+                    className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
+                  />
+                </div>
+
               </div>
             )}
 
-            {/* INPUT FIELD: EMAIL ADDRESS */}
-            {!isLogin && (
-              <div className="relative animate-form-reveal">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500">
-                  <Mail className="h-4 w-4" />
-                </span>
-                <input
-                  type="email"
-                  placeholder="Email (optional)"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-zinc-950/60 border border-zinc-800/80 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold tracking-wide text-white placeholder-zinc-600 outline-none focus:border-cyan-500/50 focus:bg-zinc-950 focus:shadow-[0_0_35px_rgba(6,182,212,0.06)] transition-all duration-300"
-                />
-              </div>
-            )}
-
-            {/* INPUT FIELD: PASSWORD */}
-            <div className="relative group/input">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-500 group-focus-within/input:text-cyan-400 transition-colors duration-200">
-                <Lock className="h-4 w-4" />
+            {/* INPUT CHANNELS: PASSWORD */}
+            <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-zinc-800 group-focus-within/input:bg-cyan-400 transition-colors duration-300" />
+              <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 text-zinc-500 group-focus-within/input:text-zinc-300 transition-colors duration-200">
+                <Lock className="h-4 w-4 stroke-[1.5]" />
               </span>
               <input
                 type="password"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-zinc-950/60 border border-zinc-800/80 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold tracking-wide text-white placeholder-zinc-600 outline-none focus:border-cyan-500/50 focus:bg-zinc-950 focus:shadow-[0_0_35px_rgba(6,182,212,0.06)] transition-all duration-300"
+                className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
               />
             </div>
 
           </div>
 
-          {/* PRIMARY INTERACTIVE TRIGGER BUTTON */}
+          {/* CORPORATE FLAT CONSOLE EXECUTION BUTTON */}
           <div className="mt-8 relative z-20">
             <button
               onClick={handleAuth}
-              className="w-full bg-cyan-500 hover:bg-cyan-400 text-black py-4.5 rounded-2xl font-black text-sm tracking-[0.25em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] shadow-[0_4px_35px_rgba(6,182,212,0.25)] hover:shadow-[0_4px_50px_rgba(6,182,212,0.55)] flex items-center justify-center gap-2"
+              className="w-full bg-zinc-100 hover:bg-white text-black py-4 rounded-xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-2 shadow-[0_4px_30px_rgba(255,255,255,0.05)]"
             >
               <span>{isLogin ? "LOG IN" : "SIGN UP"}</span>
-              <ArrowRight className="h-4 w-4 stroke-[3]" />
+              <ArrowRight className="h-3.5 w-3.5 stroke-[2.5]" />
             </button>
           </div>
 
-          {/* ALTERNATE CONNECTOR LINK */}
-          <div className="mt-8 text-center relative z-20 border-t border-zinc-900 pt-6">
+          {/* ALTERNATE LINK INTERACTION */}
+          <div className="mt-8 text-center relative z-20 border-t border-zinc-900 pt-5">
             <button
               onClick={() => setIsLogin(!isLogin)}
-              className="text-zinc-600 hover:text-zinc-300 font-bold text-xs tracking-wider uppercase transition-colors duration-200"
+              className="text-zinc-500 hover:text-zinc-400 font-medium text-[11px] tracking-wider uppercase transition-colors duration-200"
             >
               {isLogin ? "Create an account" : "Return to login handle"}
             </button>
@@ -213,65 +585,26 @@ export default function LoginPage() {
 
       </div>
 
-      {/* CORE HIGH-END VISUAL LAYER ANIMATIONS */}
+      {/* COMPACT CLEAN MOTION UTILITIES */}
       <style dangerouslySetInnerHTML={{ __html: `
-        /* --- NEXT-LEVEL MULTI-STAGE SWORD REFLECTION --- */
         @keyframes swordEdge {
           0% { transform: translate(-35%, -35%) rotate(35deg); opacity: 0; }
-          5% { opacity: 1; }
-          22% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
+          4% { opacity: 1; }
+          20% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
           100% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
         }
         @keyframes swordFlare {
           0% { transform: translate(-35%, -35%) rotate(35deg); opacity: 0; }
-          4% { opacity: 0; }
-          8% { opacity: 1; }
-          26% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
+          3% { opacity: 0; }
+          7% { opacity: 1; }
+          24% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
           100% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
         }
-        @keyframes borderFlash {
-          0%, 100% { border-color: rgba(6, 182, 212, 0); shadow: none; }
-          12% { border-color: rgba(6, 182, 212, 0.35); }
-          22% { border-color: rgba(6, 182, 212, 0); }
-        }
         .animate-sword-edge {
-          animation: swordEdge 6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+          animation: swordEdge 8s cubic-bezier(0.25, 1, 0.5, 1) infinite;
         }
         .animate-sword-flare {
-          animation: swordFlare 6s cubic-bezier(0.25, 1, 0.3, 1) infinite;
-        }
-        .animate-border-flash {
-          animation: borderFlash 6s ease-in-out infinite;
-        }
-
-        /* --- AMBIENT BACKGROUND ANIMATION CHANNELS --- */
-        @keyframes cosmicPulse {
-          0%, 100% { opacity: 0.6; transform: translate(-50%, 0) scale(1); }
-          50% { opacity: 1; transform: translate(-50%, -3%) scale(1.05); }
-        }
-        .animate-cosmic-pulse {
-          animation: cosmicPulse 10s ease-in-out infinite;
-        }
-        @keyframes pillarDrift {
-          0%, 100% { transform: translateX(0px); opacity: 0.4; }
-          50% { transform: translateX(30px); opacity: 0.8; }
-        }
-        @keyframes pillarDriftDelayed {
-          0%, 100% { transform: translateX(0px); opacity: 0.3; }
-          50% { transform: translateX(-40px); opacity: 0.6; }
-        }
-        .animate-pillar-drift {
-          animation: pillarDrift 14s ease-in-out infinite;
-        }
-        .animate-pillar-drift-delayed {
-          animation: pillarDriftDelayed 18s ease-in-out infinite;
-        }
-        @keyframes shimmer {
-          0%, 100% { opacity: 0.2; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1.2); }
-        }
-        .animate-shimmer {
-          animation: shimmer 4s ease-in-out infinite;
+          animation: swordFlare 8s cubic-bezier(0.25, 1, 0.5, 1) infinite;
         }
         @keyframes formReveal {
           from { opacity: 0; transform: translateY(-4px); }
