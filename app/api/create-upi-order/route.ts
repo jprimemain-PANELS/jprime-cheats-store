@@ -1,7 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
-export async function POST(request: NextRequest) {
+import {
+  supabase,
+} from "@/lib/supabase";
+
+const FP_CREATE_ORDER_URL =
+  "https://xyzcheats.com/gateway/create_order.php";
+
+export async function POST(
+  request: NextRequest
+) {
   try {
     const body = await request.json();
 
@@ -12,57 +23,251 @@ export async function POST(request: NextRequest) {
       amount,
     } = body;
 
-    const { count } =
-    await supabase
-      .from("payment_orders")
-      .select("*", {
-        count: "exact",
-        head: true,
-      });
-  
-  const uniquePaise =
-    ((count || 0) % 99) + 1;
-  
-  const finalAmount =
-  (
-    Number(amount) +
-    uniquePaise / 100
-  ).toFixed(2);
-
-    const { data, error } =
-      await supabase
-        .from("payment_orders")
-        .insert([
-          {
-            username,
-            product_name,
-            duration,
-            amount: finalAmount,
-            status: "pending",
-          },
-        ])
-        .select()
-        .single();
-
-    console.log("INSERT DATA:", data);
-    console.log("INSERT ERROR:", error);
-
-    if (error) {
-      return NextResponse.json({
-        success: false,
-        error: error.message,
-      });
+    // Validate required information
+    if (
+      !username ||
+      !product_name ||
+      !duration ||
+      !amount
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Missing required order information",
+        },
+        {
+          status: 400,
+        }
+      );
     }
 
+    const numericAmount =
+      Number(amount);
+
+    if (
+      !Number.isFinite(numericAmount) ||
+      numericAmount <= 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid payment amount",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    // Secret key exists only on server
+    const apiKey =
+      process.env.FP_API_KEY;
+
+    if (!apiKey) {
+      console.error(
+        "FP_API_KEY is missing"
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Payment gateway is not configured",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // Create order with FP payment gateway
+    const gatewayUrl =
+      new URL(FP_CREATE_ORDER_URL);
+
+    gatewayUrl.searchParams.set(
+      "amount",
+      String(numericAmount)
+    );
+
+    gatewayUrl.searchParams.set(
+      "api_key",
+      apiKey
+    );
+
+    const gatewayResponse =
+      await fetch(
+        gatewayUrl.toString(),
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+    const responseText =
+      await gatewayResponse.text();
+
+    let gatewayData: any;
+
+    try {
+      gatewayData =
+        JSON.parse(responseText);
+    } catch {
+      console.error(
+        "Invalid gateway response:",
+        responseText
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Payment gateway returned an invalid response",
+        },
+        {
+          status: 502,
+        }
+      );
+    }
+
+    if (
+      !gatewayResponse.ok ||
+      gatewayData?.status !==
+        "success" ||
+      !gatewayData?.data?.order_id ||
+      !gatewayData?.data?.qr_url
+    ) {
+      console.error(
+        "Gateway order creation failed:",
+        gatewayData
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            gatewayData?.message ||
+            "Failed to create payment order",
+        },
+        {
+          status: 502,
+        }
+      );
+    }
+
+    const gatewayOrder =
+      gatewayData.data;
+
+    // Save the gateway order in Supabase
+    const {
+      data: savedOrder,
+      error: insertError,
+    } = await supabase
+      .from("payment_orders")
+      .insert([
+        {
+          username:
+            String(username),
+
+          product_name:
+            String(product_name),
+
+          duration:
+            String(duration),
+
+          amount:
+            String(gatewayOrder.amount),
+
+          status: "pending",
+
+          used: false,
+
+          gateway_order_id:
+          String(
+            gatewayOrder.order_id
+          ),
+        
+        qr_url:
+          gatewayOrder.qr_url ||
+          null,
+        
+        upi_link:
+          gatewayOrder.upi_link ||
+          null,
+        
+        expires_at:
+          gatewayOrder.expires_at ||
+          null,
+        },
+      ])
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error(
+        "PAYMENT ORDER INSERT ERROR:",
+        insertError
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            insertError.message,
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // Send safe order details to frontend
+    // FP_API_KEY is never returned.
     return NextResponse.json({
       success: true,
-      order: data,
-      amount: finalAmount,
+
+      order: savedOrder,
+
+      payment: {
+        order_id:
+          gatewayOrder.order_id,
+
+        qr_url:
+          gatewayOrder.qr_url,
+
+        upi_link:
+          gatewayOrder.upi_link,
+
+        upi_id:
+          gatewayOrder.upi_id,
+
+        amount:
+          gatewayOrder.amount,
+
+        created_at:
+          gatewayOrder.created_at,
+
+        expires_at:
+          gatewayOrder.expires_at,
+      },
     });
   } catch (error) {
-    return NextResponse.json({
-      success: false,
-      error,
-    });
+    console.error(
+      "CREATE UPI ORDER ERROR:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown server error",
+      },
+      {
+        status: 500,
+      }
+    );
   }
 }

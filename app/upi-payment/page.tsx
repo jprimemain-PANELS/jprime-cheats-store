@@ -1,430 +1,749 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase"; 
+import React, {
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
+
+type PaymentOrder = {
+  order_id: string;
+  amount: string | number;
+  status: string;
+  used: boolean;
+  qr_url: string | null;
+  upi_link: string | null;
+  expires_at: string | null;
+};
 
 function UpiPaymentContent() {
   const params = useSearchParams();
   const router = useRouter();
-  const amount = params.get("amount") || "0.00";
-  const username = params.get("username") || ""; 
-  
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<"pending" | "success">("pending");
-  const [releasedKey, setReleasedKey] = useState<string | null>(null);
-  const [copyMessage, setCopyMessage] = useState("");
-  
-  // Strict Row Tracking State for targeted duplicate protection mutations
-  const [paymentId, setPaymentId] = useState<number | null>(null);
-  
-  // ── TIMER STATES ──
-  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
-  const [isExpired, setIsExpired] = useState(false);
 
-  // Centralized tracking identifiers matching your original build
-  const viewedKey = `order_completed_${username}_${amount}`;
-  const expiredKey = `payment_expired_${username}_${amount}`;
+  const orderId =
+    params.get("order_id") || "";
 
-  // Smooth fade-in UI load trigger
+  const [order, setOrder] =
+    useState<PaymentOrder | null>(
+      null
+    );
+
+  const [isLoading, setIsLoading] =
+    useState(true);
+
+  const [paymentStatus, setPaymentStatus] =
+    useState<
+      | "pending"
+      | "success"
+      | "expired"
+      | "error"
+    >("pending");
+
+  const [releasedKey, setReleasedKey] =
+    useState<string | null>(null);
+
+  const [copyMessage, setCopyMessage] =
+    useState("");
+
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+  const [timeLeft, setTimeLeft] =
+    useState(300);
+
+  const verifyingRef =
+    useRef(false);
+
+  const successHandledRef =
+    useRef(false);
+
+  // ─────────────────────────────────────
+  // LOAD EXACT PAYMENT ORDER
+  // ─────────────────────────────────────
+
   useEffect(() => {
-    const t = setTimeout(() => setIsLoaded(true), 50);
-    return () => clearTimeout(t);
-  }, []);
-
-  // ── REDIRECTION GUARD: BLOCK EXPIRED & ALREADY USED ORDERS IMMEDIATELY ──
-  useEffect(() => {
-    if (!amount || amount === "0.00" || !username) return;
-
-    if (localStorage.getItem(expiredKey) === "true") {
+    if (!orderId) {
       router.replace("/");
       return;
     }
 
-    const checkExistingOrder = async () => {
-      const { data, error } = await supabase
-        .from("payment_orders")
-        .select("id, status, used, product_name, duration")
-        .eq("username", username)
-        .eq("amount", amount)
-        .order("id", { ascending: false }) // Target the newest row
-        .limit(1)
-        .maybeSingle();
+    async function loadOrder() {
+      try {
+        const response =
+          await fetch(
+            "/api/get-payment-order",
+            {
+              method: "POST",
 
-      if (!error && data) {
-        // Cache the specific database row ID immediately onto local component state
-        setPaymentId(data.id);
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
 
-        // DUPLICATE PROTECTION CRITERIA: If order succeeded and was already claimed, reject entry
-        if (data.status === "success" && data.used === true) {
-          router.replace("/");
+              body: JSON.stringify({
+                order_id: orderId,
+              }),
+
+              cache: "no-store",
+            }
+          );
+
+        const result =
+          await response.json();
+
+        if (
+          !response.ok ||
+          !result.success ||
+          !result.order
+        ) {
+          setErrorMessage(
+            result.error ||
+              "Payment order not found."
+          );
+
+          setPaymentStatus("error");
+          setIsLoading(false);
           return;
         }
 
-        if (data.status === "success" && !data.used) {
-          const isAlreadyViewed = localStorage.getItem(viewedKey);
-          
-          if (isAlreadyViewed === "true") {
-            router.replace("/");
-          } else {
-            setPaymentStatus("success");
-            
-            const { data: historyData, error: historyError } = await supabase
-              .from("purchase_history")
-              .select("key_code")
-              .eq("username", username)
-              .eq("product_name", data.product_name) 
-              .eq("duration", data.duration)         
-              .order("id", { ascending: false })
-              .limit(1)
-              .single();
+        setOrder(result.order);
 
-            if (!historyError && historyData) {
-              setReleasedKey(historyData.key_code);
-            }
-          }
+        if (
+          result.order.status ===
+          "success"
+        ) {
+          setPaymentStatus("success");
         }
-      }
-    };
 
-    checkExistingOrder();
-  }, [username, amount, router, viewedKey, expiredKey]);
+        if (
+          result.order.expires_at
+        ) {
+          const expiryTime =
+            new Date(
+              result.order.expires_at
+            ).getTime();
 
-  // ── 5-MINUTE TIMEOUT PROTOCOL ──
-  useEffect(() => {
-    if (paymentStatus === "success" || isExpired) return;
+          const remainingSeconds =
+            Math.max(
+              0,
+              Math.floor(
+                (expiryTime -
+                  Date.now()) /
+                  1000
+              )
+            );
 
-    const countdown = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(countdown);
-          setIsExpired(true);
-          localStorage.setItem(expiredKey, "true");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(countdown);
-  }, [paymentStatus, isExpired, expiredKey]);
-
-  // ── EXPIRED AUTO-REDIRECT ENGINE (5 SECONDS) ──
-  useEffect(() => {
-    if (!isExpired) return;
-
-    const homeRedirectTimer = setTimeout(() => {
-      router.replace("/");
-    }, 5000);
-
-    return () => clearTimeout(homeRedirectTimer);
-  }, [isExpired, router]);
-
-  // ── KEY DELIVERED: SECURE TARGETED ROW INVALIDATION PROTOCOL ──
-  useEffect(() => {
-    if (!releasedKey) return;
-  
-    navigator.clipboard.writeText(releasedKey)
-      .then(() => {
-        setCopyMessage("✅ Key copied to clipboard!");
-      })
-      .catch(() => {
-        setCopyMessage("⚠️ Copy failed. Use COPY KEY button.");
-      });
-  
-    const msgTimer = setTimeout(() => {
-      setCopyMessage("");
-    }, 8000);
-
-    // Flag payload execution using targeted paymentId bounds
-    const markOrderAsUsed = async () => {
-      localStorage.setItem(viewedKey, "true");
-      
-      if (paymentId) {
-        await supabase
-          .from("payment_orders")
-          .update({ used: true })
-          .eq("id", paymentId); // Strictly update only this specific row
-      } else {
-        // Safe robust fallback query array if row sequence ID extraction hasn't resolved locally yet
-        await supabase
-          .from("payment_orders")
-          .update({ used: true })
-          .eq("username", username)
-          .eq("amount", amount)
-          .eq("status", "success");
-      }
-    };
-
-    markOrderAsUsed();
-
-    const redirectTimer = setTimeout(() => {
-      router.replace("/");
-    }, 5000);
-  
-    return () => {
-      clearTimeout(msgTimer);
-      clearTimeout(redirectTimer);
-    };
-  }, [releasedKey, paymentId, username, amount, router, viewedKey]);
-
-  // ── MANUAL COPY HANDLER ──
-  const copyKey = async () => {
-    if (!releasedKey) return;
-    try {
-      await navigator.clipboard.writeText(releasedKey);
-      setCopyMessage("✅ Key copied to clipboard!");
-    } catch {
-      setCopyMessage("⚠️ Copy failed. Use COPY KEY button.");
-    } finally {
-      setTimeout(() => {
-        setCopyMessage("");
-      }, 8000);
-    }
-  };
-
-  // ── REALTIME SUBSCRIPTION WITH TARGETED ROW IDENTIFICATION EXTRACTION ──
-  useEffect(() => {
-    if (!amount || amount === "0.00" || !username || isExpired) return;
-
-    const channel = supabase
-      .channel(`live-payment-unfiltered-${amount}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "payment_orders"
-        },
-        async (payload) => {
-          const dbId = payload.new?.id;
-          const dbStatus = payload.new?.status;
-          const dbUsed = payload.new?.used;
-          const dbUsername = payload.new?.username;
-          const dbAmount = payload.new?.amount;
-          const dbProductName = payload.new?.product_name;
-          const dbDuration = payload.new?.duration;
-
-          // DUPLICATE PROTECTION: Completely ignore updates if the order row is marked used
-          if (dbUsed === true) return;
+          setTimeLeft(
+            remainingSeconds
+          );
 
           if (
-            paymentStatus !== "success" &&
-            dbStatus === "success" && 
-            String(dbUsername) === String(username) && 
-            String(dbAmount) === String(amount)
+            remainingSeconds <= 0 &&
+            result.order.status !==
+              "success"
           ) {
-            // Isolate and trap the exact database row identifier from incoming transaction payloads
-            if (dbId) setPaymentId(dbId);
-            
-            setPaymentStatus("success");
-
-            const { data, error } = await supabase
-              .from("purchase_history")
-              .select("key_code")
-              .eq("username", username)
-              .eq("product_name", dbProductName)
-              .eq("duration", dbDuration)
-              .order("id", { ascending: false })
-              .limit(1)
-              .single();
-
-            if (!error && data) {
-              setReleasedKey(data.key_code);
-            }
+            setPaymentStatus(
+              "expired"
+            );
           }
         }
-      );
 
-    channel.subscribe();
+        setIsLoading(false);
+      } catch (error) {
+        console.error(
+          "LOAD ORDER ERROR:",
+          error
+        );
+
+        setErrorMessage(
+          "Unable to load payment order."
+        );
+
+        setPaymentStatus("error");
+        setIsLoading(false);
+      }
+    }
+
+    loadOrder();
+  }, [orderId, router]);
+
+  // ─────────────────────────────────────
+  // VERIFY PAYMENT WITH OUR SERVER
+  // ─────────────────────────────────────
+
+  const verifyPayment =
+    useCallback(async () => {
+      if (
+        !orderId ||
+        verifyingRef.current ||
+        successHandledRef.current ||
+        paymentStatus === "expired" ||
+        paymentStatus === "error"
+      ) {
+        return;
+      }
+
+      verifyingRef.current = true;
+
+      try {
+        const response =
+          await fetch(
+            "/api/verify-payment",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body: JSON.stringify({
+                gateway_order_id:
+                  orderId,
+              }),
+
+              cache: "no-store",
+            }
+          );
+
+        const result =
+          await response.json();
+
+        console.log(
+          "VERIFY RESULT:",
+          result
+        );
+
+        if (
+          result.status === "pending"
+        ) {
+          return;
+        }
+
+        if (
+          result.status === "success"
+        ) {
+          successHandledRef.current =
+            true;
+
+          setPaymentStatus("success");
+
+          if (result.key) {
+            setReleasedKey(
+              result.key
+            );
+          }
+
+          return;
+        }
+
+        if (
+          result.status ===
+          "out_of_stock"
+        ) {
+          setErrorMessage(
+            "Payment received successfully, but the selected product is currently out of stock. Please contact support."
+          );
+
+          setPaymentStatus("error");
+          return;
+        }
+
+        if (
+          result.status ===
+          "amount_mismatch"
+        ) {
+          setErrorMessage(
+            "Payment verification failed because the paid amount does not match the order."
+          );
+
+          setPaymentStatus("error");
+          return;
+        }
+
+        if (
+          !response.ok ||
+          !result.success
+        ) {
+          console.error(
+            "VERIFY API ERROR:",
+            result
+          );
+        }
+      } catch (error) {
+        console.error(
+          "VERIFY PAYMENT ERROR:",
+          error
+        );
+      } finally {
+        verifyingRef.current = false;
+      }
+    }, [
+      orderId,
+      paymentStatus,
+    ]);
+
+  // ─────────────────────────────────────
+  // AUTOMATIC PAYMENT CHECK EVERY 3 SEC
+  // ─────────────────────────────────────
+
+  useEffect(() => {
+    if (
+      isLoading ||
+      !order ||
+      paymentStatus !== "pending"
+    ) {
+      return;
+    }
+
+    // Check immediately once.
+    verifyPayment();
+
+    const interval =
+      window.setInterval(() => {
+        verifyPayment();
+      }, 3000);
 
     return () => {
-      supabase.removeChannel(channel);
+      window.clearInterval(
+        interval
+      );
     };
-  }, [username, amount, paymentStatus, isExpired]);
+  }, [
+    isLoading,
+    order,
+    paymentStatus,
+    verifyPayment,
+  ]);
 
-  const upiLink = `upi://pay?pa=7200817883@fam&pn=Jenith&am=${amount}&cu=INR`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(upiLink)}&color=ffffff&bgcolor=0A0B0D`;
+  // ─────────────────────────────────────
+  // REAL EXPIRY COUNTDOWN
+  // ─────────────────────────────────────
 
-  const formatted = Number(amount || 0).toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  useEffect(() => {
+    if (
+      !order?.expires_at ||
+      paymentStatus !== "pending"
+    ) {
+      return;
+    }
 
-  const minutes = String(Math.floor(timeLeft / 60)).padStart(2, "0");
-  const seconds = String(timeLeft % 60).padStart(2, "0");
+    const updateCountdown = () => {
+      const expiryTime =
+        new Date(
+          order.expires_at as string
+        ).getTime();
+
+      const remainingSeconds =
+        Math.max(
+          0,
+          Math.floor(
+            (expiryTime -
+              Date.now()) /
+              1000
+          )
+        );
+
+      setTimeLeft(
+        remainingSeconds
+      );
+
+      if (remainingSeconds <= 0) {
+        setPaymentStatus(
+          "expired"
+        );
+      }
+    };
+
+    updateCountdown();
+
+    const timer =
+      window.setInterval(
+        updateCountdown,
+        1000
+      );
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [
+    order?.expires_at,
+    paymentStatus,
+  ]);
+
+  // ─────────────────────────────────────
+  // AUTO COPY RELEASED KEY
+  // ─────────────────────────────────────
+
+  useEffect(() => {
+    if (!releasedKey) return;
+
+    navigator.clipboard
+      .writeText(releasedKey)
+      .then(() => {
+        setCopyMessage(
+          "✅ Key copied to clipboard!"
+        );
+      })
+      .catch(() => {
+        setCopyMessage(
+          "⚠️ Auto-copy failed. Use COPY KEY."
+        );
+      });
+
+    const timer =
+      window.setTimeout(() => {
+        setCopyMessage("");
+      }, 8000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [releasedKey]);
+
+  // ─────────────────────────────────────
+  // MANUAL COPY
+  // ─────────────────────────────────────
+
+  const copyKey = async () => {
+    if (!releasedKey) return;
+
+    try {
+      await navigator.clipboard.writeText(
+        releasedKey
+      );
+
+      setCopyMessage(
+        "✅ Key copied to clipboard!"
+      );
+    } catch {
+      setCopyMessage(
+        "⚠️ Copy failed. Please select the key manually."
+      );
+    }
+
+    window.setTimeout(() => {
+      setCopyMessage("");
+    }, 8000);
+  };
+
+  // ─────────────────────────────────────
+  // DISPLAY VALUES
+  // ─────────────────────────────────────
+
+  const formattedAmount =
+    Number(
+      order?.amount || 0
+    ).toLocaleString(
+      "en-IN",
+      {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }
+    );
+
+  const minutes =
+    String(
+      Math.floor(timeLeft / 60)
+    ).padStart(2, "0");
+
+  const seconds =
+    String(
+      timeLeft % 60
+    ).padStart(2, "0");
+
+  // ─────────────────────────────────────
+  // LOADING SCREEN
+  // ─────────────────────────────────────
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#050506] text-cyan-400 flex items-center justify-center font-mono text-xs tracking-widest uppercase">
+        Connecting to Payment Gateway...
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen w-full bg-[#050506] text-[#F3F4F6] font-sans flex items-center justify-center p-4 antialiased selection:bg-cyan-500 selection:text-black relative z-0 overflow-hidden">
-      
-      {/* FLOATING VALIDATION NOTIFICATION POPUP */}
+    <div className="min-h-screen w-full bg-[#050506] text-[#F3F4F6] font-sans flex items-center justify-center p-4 antialiased selection:bg-cyan-500 selection:text-black relative overflow-hidden">
+
       {copyMessage && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-emerald-500 text-black px-4 py-2 rounded-lg font-bold shadow-lg text-xs tracking-wider uppercase">
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-emerald-500 text-black px-4 py-2 rounded-lg font-bold shadow-lg text-xs tracking-wider uppercase text-center">
           {copyMessage}
         </div>
       )}
 
-      {/* BACKGROUND EFFECTS */}
-      <div className="absolute inset-0 pointer-events-none -z-20" aria-hidden="true">
+      {/* BACKGROUND */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        aria-hidden="true"
+      >
         <div className="absolute inset-0 bg-gradient-to-tr from-[#08090a] via-[#050506] to-[#0d0f12]" />
-        <div 
-          className="absolute -inset-[100%] opacity-15 -z-10"
-          style={{
-            background: "linear-gradient(135deg, transparent 42%, rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.01) 55%, transparent 58%)",
-            animation: "steel-glint 8s cubic-bezier(0.25, 1, 0.5, 1) infinite",
-          }}
-        />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-cyan-500/[0.02] rounded-full blur-[140px] -z-10" />
+
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-cyan-500/[0.03] rounded-full blur-[140px]" />
       </div>
 
-      {/* CORE DISPLAY CARD */}
-      <div className={`transition-all duration-700 ease-out ${isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-[0.99]"} w-full max-w-[440px] relative z-10`}>
-        <div className="bg-[#0A0B0D] border border-white/[0.06] rounded-2xl p-6 sm:p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.85)] relative z-20">
-          
-          <div className="flex flex-col items-center text-center mb-8 relative z-30">
+      <div className="w-full max-w-[440px] relative z-10">
+
+        <div className="bg-[#0A0B0D] border border-white/[0.06] rounded-2xl p-6 sm:p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.85)]">
+
+          {/* HEADER */}
+          <div className="flex flex-col items-center text-center mb-8">
+
             <span className="text-[10px] tracking-[0.35em] uppercase font-semibold text-cyan-400 mb-1.5">
               Secure Checkout Protocol
             </span>
+
             <h2 className="text-2xl font-light tracking-[0.18em] uppercase text-white">
               JPRIME CHEATS
             </h2>
+
             <div className="h-[1px] w-16 bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent mt-3.5" />
+
           </div>
 
-          <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 text-center mb-6 relative z-30">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 mb-1">Amount Due</p>
-            <p className="text-4xl font-extralight tracking-tight text-white font-mono">
-              ₹{formatted}
+          {/* AMOUNT */}
+          <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 text-center mb-6">
+
+            <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 mb-1">
+              Amount Due
             </p>
+
+            <p className="text-4xl font-extralight tracking-tight text-white font-mono">
+              ₹{formattedAmount}
+            </p>
+
           </div>
 
-          {paymentStatus === "pending" ? (
+          {/* PENDING PAYMENT */}
+          {paymentStatus ===
+            "pending" && (
             <>
-              <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center relative overflow-hidden z-30">
-                <div className={`w-full aspect-square max-w-[250px] bg-[#0A0B0D] p-3 rounded-xl border border-white/[0.02] transition-all duration-500 ${isExpired ? "blur-md opacity-30 scale-95 select-none pointer-events-none" : "opacity-90"} relative z-10`}>
-                  <img src={qrUrl} alt="UPI QR Representation" className="w-full h-full rounded-md grayscale-[10%] contrast-[110%]" />
-                </div>
-                
-                {isExpired && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-black/40 backdrop-blur-sm z-40 animate-fadeIn">
-                    <div className="bg-red-500/10 border border-red-500/30 px-4 py-3 rounded-xl text-center shadow-lg max-w-[85%]">
-                      <div className="text-red-500 font-bold text-xs uppercase tracking-widest mb-1">
-                        ⚠ Payment Session Expired
-                      </div>
-                      <p className="text-[9px] text-neutral-400 font-mono uppercase tracking-wider">
-                        Returning to system index in 5s...
-                      </p>
-                    </div>
-                  </div>
-                )}
 
-                {!isExpired ? (
-                  <div className="mt-4 flex flex-col items-center gap-1 relative z-10">
-                    <div className="text-base font-mono font-light tracking-[0.2em] text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.25)]">
-                      {minutes}:{seconds}
-                    </div>
-                    <div className="flex items-center gap-2 text-[9px] text-neutral-500 tracking-wider font-mono uppercase">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
-                      Session Expiry Countdown
-                    </div>
+              <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center">
+
+                {order?.qr_url ? (
+                  <div className="w-full aspect-square max-w-[250px] bg-white p-3 rounded-xl">
+
+                    <img
+                      src={order.qr_url}
+                      alt="UPI Payment QR"
+                      className="w-full h-full object-contain rounded-md"
+                    />
+
                   </div>
                 ) : (
-                  <div className="mt-4 text-base font-mono font-light tracking-[0.2em] text-red-500/40 select-none relative z-10">
-                    00:00
+                  <div className="w-full aspect-square max-w-[250px] bg-[#050506] border border-red-500/20 rounded-xl flex items-center justify-center text-red-400 text-xs text-center p-6">
+                    QR code unavailable.
                   </div>
                 )}
+
+                <div className="mt-4 flex flex-col items-center gap-1">
+
+                  <div className="text-base font-mono font-light tracking-[0.2em] text-cyan-400">
+                    {minutes}:{seconds}
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[9px] text-neutral-500 tracking-wider font-mono uppercase">
+
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+
+                    Session Expiry Countdown
+
+                  </div>
+
+                </div>
+
               </div>
 
-              <div className="space-y-3.5 mb-7 border-t border-b border-white/[0.05] py-4.5 px-0.5 relative z-30">
+              <div className="space-y-3.5 mb-7 border-t border-b border-white/[0.05] py-4 px-0.5">
+
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-neutral-400 tracking-wide">Merchant</span>
-                  <span className="font-medium text-neutral-200 tracking-wide">JPrime cheats</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-neutral-400 tracking-wide">Network</span>
-                  <span className="font-mono text-neutral-300 text-[11px]">UPI.INSTANT.SECURE</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-neutral-400 tracking-wide">Status</span>
-                  <span className={`tracking-wider text-[11px] font-medium uppercase ${isExpired ? "text-red-500" : "text-cyan-400 animate-pulse"}`}>
-                    {isExpired ? "Session Terminated" : "Awaiting Payment"}
+
+                  <span className="text-neutral-400 tracking-wide">
+                    Order ID
                   </span>
+
+                  <span className="font-mono text-cyan-400 text-[10px] max-w-[220px] truncate select-all">
+                    {orderId}
+                  </span>
+
                 </div>
+
+                <div className="flex justify-between items-center text-xs">
+
+                  <span className="text-neutral-400 tracking-wide">
+                    Network
+                  </span>
+
+                  <span className="font-mono text-neutral-300 text-[11px]">
+                    UPI.INSTANT.SECURE
+                  </span>
+
+                </div>
+
+                <div className="flex justify-between items-center text-xs">
+
+                  <span className="text-neutral-400 tracking-wide">
+                    Status
+                  </span>
+
+                  <span className="tracking-wider text-[11px] font-medium uppercase text-cyan-400 animate-pulse">
+                    Awaiting Payment
+                  </span>
+
+                </div>
+
               </div>
 
-              {!isExpired && (
-                <a href={upiLink} className="group relative flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-cyan-400 z-30 shadow-[0_4px_20px_rgba(6,182,212,0.15)]">
+              {order?.upi_link && (
+                <a
+                  href={order.upi_link}
+                  className="flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200 shadow-[0_4px_20px_rgba(6,182,212,0.15)]"
+                >
                   PAY NOW
                 </a>
               )}
+
             </>
-          ) : (
-            <div className="border border-emerald-500/30 bg-emerald-950/10 p-6 rounded-xl text-center shadow-[inset_0_1px_20px_rgba(16,185,129,0.05)] relative z-30 animate-fadeIn">
+          )}
+
+          {/* PAYMENT SUCCESS */}
+          {paymentStatus ===
+            "success" && (
+            <div className="border border-emerald-500/30 bg-emerald-950/10 p-6 rounded-xl text-center">
+
               <div className="flex items-center justify-center gap-2 text-emerald-400 font-mono text-[10px] tracking-[0.25em] uppercase mb-2">
+
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <h4 className="inline">Authentication Complete</h4>
+
+                Payment Verified
+
               </div>
+
               <h3 className="text-xl font-light tracking-[0.1em] text-white uppercase mb-4">
                 Payment Received
               </h3>
-              
-              <div 
-                onClick={copyKey}
-                className="bg-[#050506] border border-white/[0.04] px-4 py-4 rounded-xl font-mono text-cyan-400 text-base font-bold tracking-wider break-all shadow-inner select-all cursor-pointer hover:border-cyan-500/20 transition-colors"
-              >
-                {releasedKey || "DECRYPTING KEY..."}
+
+              {releasedKey ? (
+                <>
+                  <div
+                    onClick={copyKey}
+                    className="bg-[#050506] border border-white/[0.04] px-4 py-4 rounded-xl font-mono text-cyan-400 text-base font-bold tracking-wider break-all shadow-inner select-all cursor-pointer hover:border-cyan-500/20 transition-colors"
+                  >
+                    {releasedKey}
+                  </div>
+
+                  <p className="text-[10px] text-neutral-500 font-mono mt-3 uppercase tracking-wider">
+                    Your key has been automatically copied
+                  </p>
+
+                  <button
+                    onClick={copyKey}
+                    className="mt-4 w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-[0.2em] py-3 rounded-xl transition-all"
+                  >
+                    COPY KEY
+                  </button>
+                </>
+              ) : (
+                <div className="bg-[#050506] border border-white/[0.04] px-4 py-4 rounded-xl font-mono text-cyan-400 text-xs tracking-wider">
+                  Payment verified. Loading your product key...
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* EXPIRED */}
+          {paymentStatus ===
+            "expired" && (
+            <div className="border border-red-500/30 bg-red-950/10 p-6 rounded-xl text-center">
+
+              <div className="text-red-400 font-bold text-xs uppercase tracking-widest mb-2">
+                Payment Session Expired
               </div>
-              
-              <p className="text-[10px] text-neutral-500 font-mono mt-3 uppercase tracking-wider">
-                Click inside box to select and copy token
+
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                This payment order has expired. Please return to the store and create a new order.
               </p>
 
               <button
-                onClick={copyKey}
-                className="mt-4 w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-[0.2em] py-3 rounded-xl transition-all shadow-md active:scale-[0.98]"
+                onClick={() =>
+                  router.replace("/")
+                }
+                className="mt-5 w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs uppercase tracking-[0.2em] py-3 rounded-xl transition-all"
               >
-                COPY KEY
+                RETURN TO STORE
               </button>
+
+            </div>
+          )}
+
+          {/* ERROR */}
+          {paymentStatus ===
+            "error" && (
+            <div className="border border-red-500/30 bg-red-950/10 p-6 rounded-xl text-center">
+
+              <div className="text-red-400 font-bold text-xs uppercase tracking-widest mb-2">
+                Payment Error
+              </div>
+
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                {errorMessage ||
+                  "Unable to process this payment order."}
+              </p>
+
+              <button
+                onClick={() =>
+                  router.replace("/")
+                }
+                className="mt-5 w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs uppercase tracking-[0.2em] py-3 rounded-xl transition-all"
+              >
+                RETURN TO STORE
+              </button>
+
             </div>
           )}
 
         </div>
 
-        <div className="mt-6 flex items-center justify-between text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-mono px-3 relative z-20">
-          <span>End-to-End Encrypted</span>
+        {/* FOOTER */}
+        <div className="mt-6 flex items-center justify-between text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-mono px-3">
+
+          <span>
+            Secure Payment Verification
+          </span>
+
           <div className="flex items-center gap-2">
-            <span>SSL</span><span>•</span><span>PCI-DSS</span><span>•</span><span>UPI 2.0</span>
+            <span>SSL</span>
+            <span>•</span>
+            <span>UPI</span>
           </div>
+
         </div>
+
       </div>
 
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes steel-glint {
-          0% { transform: translate(-20%, -20%); opacity: 0; }
-          5% { opacity: 0.15; }
-          15% { opacity: 0.15; }
-          25% { transform: translate(20%, 20%); opacity: 0; }
-          100% { transform: translate(20%, 20%); opacity: 0; }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: scale(0.97); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-      `}} />
     </div>
   );
 }
 
 export default function UpiPaymentPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#050506] text-cyan-400 flex items-center justify-center font-mono text-xs tracking-widest uppercase">
-        Connecting to Gateway...
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#050506] text-cyan-400 flex items-center justify-center font-mono text-xs tracking-widest uppercase">
+          Connecting to Gateway...
+        </div>
+      }
+    >
       <UpiPaymentContent />
     </Suspense>
   );

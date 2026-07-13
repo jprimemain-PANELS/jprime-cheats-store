@@ -243,68 +243,115 @@ export function ProductCard({
             }
             className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 disabled:opacity-50"
             onClick={async () => {
-
-              console.log("BUY CLICKED");
-
-              if (
-                availableStock === 0
-              ) {
-                return;
-              }
-
-const response =
-  await fetch(
-    "/api/create-upi-order",
-    {
-      method: "POST",
-
-      headers: {
-        "Content-Type":
-          "application/json",
-      },
-
-      body: JSON.stringify({
-
-        username:
-          JSON.parse(
-            localStorage.getItem("user") || "{}"
-          ).username,
-
-        product_name:
-          product.name,
-
-        duration:
-          selectedPrice.duration,
-
-        amount:
-          (
-            userRole === "reseller"
-              ? selectedPrice.resellerPrice || selectedPrice.priceINR
-              : selectedPrice.priceINR
-          ).replace("₹", ""),
-      }),
-    }
-  );
-
-              const result =
-                await response.json();
-
+              try {
+                console.log("BUY CLICKED");
+            
+                if (availableStock === 0) {
+                  return;
+                }
+            
                 const savedUserRaw =
-                localStorage.getItem("user");
-              
-              const currentUser =
-                JSON.parse(savedUserRaw || "{}");
-              
-              const currentUsername =
-                currentUser.username;
-
+                  localStorage.getItem("user");
+            
+                const currentUser =
+                  JSON.parse(savedUserRaw || "{}");
+            
+                const currentUsername =
+                  currentUser.username;
+            
+                if (!currentUsername) {
+                  alert("Please login before purchasing.");
+                  window.location.href = "/login";
+                  return;
+                }
+            
+                const finalPrice =
+                  (
+                    userRole === "reseller"
+                      ? selectedPrice.resellerPrice ||
+                        selectedPrice.priceINR
+                      : selectedPrice.priceINR
+                  ).replace("₹", "");
+            
+                const response =
+                  await fetch(
+                    "/api/create-upi-order",
+                    {
+                      method: "POST",
+            
+                      headers: {
+                        "Content-Type":
+                          "application/json",
+                      },
+            
+                      body: JSON.stringify({
+                        username:
+                          currentUsername,
+            
+                        product_name:
+                          product.name,
+            
+                        duration:
+                          selectedPrice.duration,
+            
+                        amount:
+                          finalPrice,
+                      }),
+                    }
+                  );
+            
+                const result =
+                  await response.json();
+            
                 console.log(
-                  JSON.stringify(result, null, 2)
+                  "CREATE ORDER RESULT:",
+                  result
                 );
-
-                console.log(result);
+            
+                if (
+                  !response.ok ||
+                  !result.success
+                ) {
+                  alert(
+                    result.error ||
+                      "Failed to create payment order."
+                  );
+            
+                  return;
+                }
+            
+                if (
+                  !result.payment?.order_id
+                ) {
+                  console.error(
+                    "Missing gateway order ID:",
+                    result
+                  );
+            
+                  alert(
+                    "Payment order was created incorrectly. Please try again."
+                  );
+            
+                  return;
+                }
+            
+                const orderId =
+                  encodeURIComponent(
+                    result.payment.order_id
+                  );
+            
                 window.location.href =
-`/upi-payment?amount=${result.amount}&username=${currentUsername}`;
+                  `/upi-payment?order_id=${orderId}`;
+              } catch (error) {
+                console.error(
+                  "BUY ERROR:",
+                  error
+                );
+            
+                alert(
+                  "Unable to start payment. Please try again."
+                );
+              }
             }}
           >
 
