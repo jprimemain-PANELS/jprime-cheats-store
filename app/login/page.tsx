@@ -6,7 +6,7 @@ import { User, Lock, Phone, Mail, ArrowRight } from "lucide-react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 
 /* ==========================================================================
-   LIGHTFALL SHADER SYSTEM (INTERACTIVE BACKGROUND)
+   LIGHTFALL SHADER SYSTEM (INTERACTIVE & MOBILE COMPATIBLE BACKGROUND)
    ========================================================================== */
 const MAX_COLORS = 8;
 
@@ -207,11 +207,26 @@ const Lightfall = ({
     const container = containerRef.current;
     if (!container) return;
 
-    const renderer = new Renderer({
-      dpr: dpr ?? (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1),
-      alpha: true,
-      antialias: true
-    });
+    const getSafeDPR = () => {
+      if (typeof window === "undefined") return 1;
+      const baseDPR = window.devicePixelRatio || 1;
+      const isMobile = window.innerWidth < 768;
+      return dpr ?? (isMobile ? Math.min(baseDPR, 1.5) : baseDPR);
+    };
+
+    let renderer;
+    try {
+      renderer = new Renderer({
+        dpr: getSafeDPR(),
+        alpha: true,
+        antialias: true,
+        powerPreference: "high-performance"
+      });
+    } catch (err) {
+      console.warn("WebGL compatibility system fallback activated:", err);
+      return;
+    }
+
     rendererRef.current = renderer;
     const gl = renderer.gl;
     const canvas = gl.canvas;
@@ -262,6 +277,7 @@ const Lightfall = ({
     meshRef.current = mesh;
 
     const resize = () => {
+      if (!container || !renderer) return;
       const rect = container.getBoundingClientRect();
       renderer.setSize(rect.width, rect.height);
       uniforms.iResolution.value = [gl.drawingBufferWidth, gl.drawingBufferHeight, 1];
@@ -366,6 +382,199 @@ const Lightfall = ({
 };
 
 /* ==========================================================================
+   ULTRA-REALISTIC HIGH-FIDELITY CARTOON TOY COMPONENT
+   ========================================================================== */
+const InteractiveToy = ({ currentField }) => {
+  return (
+    <div className="w-36 h-36 mx-auto relative -mb-5 z-30 transition-all duration-300 transform origin-bottom hover:scale-105 select-none pointer-events-none">
+      <svg viewBox="0 0 140 140" className="w-full h-full filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.6)]">
+        <defs>
+          {/* Volumetric Plastic Head Gradients */}
+          <radialGradient id="toySkin" cx="40%" cy="35%" r="65%">
+            <stop offset="0%" stopColor="#22d3ee" />
+            <stop offset="55%" stopColor="#0891b2" />
+            <stop offset="85%" stopColor="#0e7490" />
+            <stop offset="100%" stopColor="#155e75" />
+          </radialGradient>
+          
+          <linearGradient id="toySkinShadow" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#000000" stopOpacity="0" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0.45" />
+          </linearGradient>
+
+          {/* Glowing Neon Ear Tips */}
+          <radialGradient id="earGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="40%" stopColor="#38bdf8" />
+            <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
+          </radialGradient>
+
+          {/* Realistic Deep 3D Eye Orbitals */}
+          <radialGradient id="eyeBacking" cx="50%" cy="50%" r="50%">
+            <stop offset="75%" stopColor="#ffffff" />
+            <stop offset="93%" stopColor="#e4e4e7" />
+            <stop offset="100%" stopColor="#a1a1aa" />
+          </radialGradient>
+
+          <radialGradient id="pupilGrad" cx="40%" cy="40%" r="50%">
+            <stop offset="0%" stopColor="#27272a" />
+            <stop offset="70%" stopColor="#09090b" />
+            <stop offset="100%" stopColor="#000000" />
+          </radialGradient>
+
+          {/* Premium Specular Gloss Reflections */}
+          <linearGradient id="glossHighlight" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.65" />
+            <stop offset="40%" stopColor="#ffffff" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+          </linearGradient>
+
+          {/* Mouth Depth Cavity */}
+          <linearGradient id="mouthInterior" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4c0519" />
+            <stop offset="100%" stopColor="#9f1239" />
+          </linearGradient>
+
+          {/* Soft Drop Shadow for Features */}
+          <filter id="softShadow" x="-10%" y="-10%" width="130%" height="130%">
+            <feDropShadow dx="0" dy="3" stdDeviation="2.5" floodColor="#020617" floodOpacity="0.5" />
+          </filter>
+          <filter id="innerGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="#ffffff" floodOpacity="0.3" />
+          </filter>
+        </defs>
+
+        {/* 3D Antennae / Ears Channel */}
+        <g filter="url(#softShadow)" className="transition-transform duration-500 origin-center">
+          {/* Left Ear Base & Gradient Structure */}
+          <path d="M 45,40 Q 25,12 32,8 Q 42,5 52,30" fill="url(#toySkin)" />
+          <path d="M 45,40 Q 25,12 32,8 Q 42,5 52,30" fill="url(#toySkinShadow)" />
+          <circle cx="31" cy="8" r="7" fill="url(#earGlow)" className="animate-pulse" />
+          
+          {/* Right Ear Base & Gradient Structure */}
+          <path d="M 95,40 Q 115,12 108,8 Q 98,5 88,30" fill="url(#toySkin)" />
+          <path d="M 95,40 Q 115,12 108,8 Q 98,5 88,30" fill="url(#toySkinShadow)" />
+          <circle cx="109" cy="8" r="7" fill="url(#earGlow)" className="animate-pulse" />
+        </g>
+
+        {/* Core Volumetric Head Shape */}
+        <g filter="url(#softShadow)">
+          <circle cx="70" cy="70" r="38" fill="url(#toySkin)" />
+          {/* Ambient occlusion underlying profile depth */}
+          <circle cx="70" cy="70" r="38" fill="url(#toySkinShadow)" />
+        </g>
+
+        {/* Highly Specular 3D Gloss Layer Anchor */}
+        <path d="M 36,54 A 36,36 0 0,1 104,54 A 38,38 0 0,0 36,54 Z" fill="url(#glossHighlight)" opacity="0.4" />
+
+        {/* Realistic Plush Rosy Cheeks */}
+        <ellipse cx="44" cy="82" rx="7" ry="4.5" fill="#f43f5e" opacity="0.5" filter="blur(1px)" />
+        <ellipse cx="96" cy="82" rx="7" ry="4.5" fill="#f43f5e" opacity="0.5" filter="blur(1px)" />
+
+        {/* INTERACTIVE EYEBALL DYNAMICS */}
+        {currentField === "password" ? (
+          /* Password State: Super Funny covered / closed squeeze eyes looking up nervously */
+          <g filter="url(#softShadow)" className="transition-all duration-300 transform translate-y-[-5px]">
+            {/* Left Closed Curvature Slit */}
+            <path d="M 46,68 Q 55,56 61,66" stroke="#ffffff" strokeWidth="4.5" strokeLinecap="round" fill="none" />
+            <path d="M 46,68 Q 55,56 61,66" stroke="#0f172a" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+            
+            {/* Right Closed Curvature Slit */}
+            <path d="M 79,66 Q 85,56 94,68" stroke="#ffffff" strokeWidth="4.5" strokeLinecap="round" fill="none" />
+            <path d="M 79,66 Q 85,56 94,68" stroke="#0f172a" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+
+            {/* Hilarious sweat/ping dots escaping upwards */}
+            <circle cx="53" cy="52" r="2.5" fill="#38bdf8" className="animate-ping" />
+            <circle cx="87" cy="52" r="2.5" fill="#38bdf8" className="animate-ping" />
+          </g>
+        ) : currentField === "username" ? (
+          /* Username State: Ultra Ultra Wide Derpy Eyes looking directly down at input */
+          <g filter="url(#softShadow)" className="transition-all duration-300">
+            {/* Left Eye Sclera */}
+            <circle cx="52" cy="65" r="11" fill="url(#eyeBacking)" stroke="#0891b2" strokeWidth="1" />
+            <circle cx="54" cy="69" r="6" fill="url(#pupilGrad)" />
+            {/* Specular Iris Sparkles */}
+            <circle cx="52.5" cy="67.5" r="2" fill="#ffffff" />
+            <circle cx="55.5" cy="70.5" r="0.75" fill="#ffffff" />
+
+            {/* Right Eye Sclera */}
+            <circle cx="88" cy="65" r="11" fill="url(#eyeBacking)" stroke="#0891b2" strokeWidth="1" />
+            <circle cx="86" cy="69" r="6" fill="url(#pupilGrad)" />
+            {/* Specular Iris Sparkles */}
+            <circle cx="84.5" cy="67.5" r="2" fill="#ffffff" />
+            <circle cx="87.5" cy="70.5" r="0.75" fill="#ffffff" />
+          </g>
+        ) : (
+          /* Idle State: High Quality Premium Toy Glass Eyes */
+          <g filter="url(#softShadow)" className="transition-all duration-300">
+            {/* Left Eyeball Base */}
+            <circle cx="52" cy="65" r="10" fill="url(#eyeBacking)" stroke="#0e7490" strokeWidth="0.5" />
+            <circle cx="52" cy="65" r="5.5" fill="url(#pupilGrad)" />
+            <circle cx="50" cy="63" r="2.5" fill="#ffffff" filter="url(#innerGlow)" />
+            <circle cx="53.5" cy="66.5" r="1" fill="#ffffff" />
+
+            {/* Right Eyeball Base */}
+            <circle cx="88" cy="65" r="10" fill="url(#eyeBacking)" stroke="#0e7490" strokeWidth="0.5" />
+            <circle cx="88" cy="65" r="5.5" fill="url(#pupilGrad)" />
+            <circle cx="86" cy="63" r="2.5" fill="#ffffff" filter="url(#innerGlow)" />
+            <circle cx="89.5" cy="66.5" r="1" fill="#ffffff" />
+          </g>
+        )}
+
+        {/* INTERACTIVE MOUTH CAVITY DYNAMICS */}
+        {currentField === "password" ? (
+          /* Password State: Shaking / Wavy Nervous Line Mouth Expression */
+          <path d="M 56,88 Q 63,82 70,88 T 84,88" stroke="#0f172a" strokeWidth="4.5" strokeLinecap="round" fill="none" className="transition-all duration-300" />
+        ) : currentField === "username" ? (
+          /* Username State: Giant Rendered Open Mouth Smile with Soft 3D Tongue */
+          <g filter="url(#softShadow)" className="transition-all duration-300">
+            <path d="M 52,82 Q 70,104 88,82 Z" fill="url(#mouthInterior)" stroke="#0891b2" strokeWidth="1" />
+            {/* Volumetric Tongue Vector */}
+            <path d="M 60,91 Q 70,84 80,91 Q 75,102 65,101 Z" fill="#fb7185" />
+            <path d="M 52,82 Q 70,85 88,82" stroke="#0e7490" strokeWidth="2" strokeLinecap="round" />
+          </g>
+        ) : (
+          /* Idle State: Cute Smug Subtle Plastic Molded Smile Line */
+          <path d="M 55,84 Q 70,94 85,84" stroke="#0f172a" strokeWidth="3.5" strokeLinecap="round" fill="none" />
+        )}
+
+        {/* MULTI-AXIS 3D ARMS / PAWS DYNAMICS */}
+        {currentField === "password" ? (
+          /* Password State: Volumetric arms moving directly up covering its side cheeks */
+          <g filter="url(#softShadow)" className="transition-all duration-500 transform translate-y-[-18px]">
+            {/* Left High Hand Vector */}
+            <path d="M 26,96 Q 34,64 48,60" stroke="url(#toySkin)" strokeWidth="9" strokeLinecap="round" fill="none" />
+            <path d="M 26,96 Q 34,64 48,60" stroke="url(#toySkinShadow)" strokeWidth="9" strokeLinecap="round" fill="none" />
+            
+            {/* Right High Hand Vector */}
+            <path d="M 114,96 Q 106,64 92,60" stroke="url(#toySkin)" strokeWidth="9" strokeLinecap="round" fill="none" />
+            <path d="M 114,96 Q 106,64 92,60" stroke="url(#toySkinShadow)" strokeWidth="9" strokeLinecap="round" fill="none" />
+          </g>
+        ) : currentField === "username" ? (
+          /* Username State: Hilarious celebrating waving arms pointing straight down */
+          <g filter="url(#softShadow)" className="transition-all duration-300">
+            <path d="M 28,96 Q 12,98 20,112" stroke="url(#toySkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
+            <path d="M 28,96 Q 12,98 20,112" stroke="url(#toySkinShadow)" strokeWidth="8" strokeLinecap="round" fill="none" />
+            
+            <path d="M 112,96 Q 128,98 120,112" stroke="url(#toySkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
+            <path d="M 112,96 Q 128,98 120,112" stroke="url(#toySkinShadow)" strokeWidth="8" strokeLinecap="round" fill="none" />
+          </g>
+        ) : (
+          /* Idle State: Soft Rounded Paws Resting Perfectly on Panel Rim */
+          <g filter="url(#softShadow)" className="transition-all duration-300">
+            <path d="M 28,96 Q 40,99 48,91" stroke="url(#toySkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
+            <path d="M 28,96 Q 40,99 48,91" stroke="url(#toySkinShadow)" strokeWidth="8" strokeLinecap="round" fill="none" />
+            
+            <path d="M 112,96 Q 100,99 92,91" stroke="url(#toySkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
+            <path d="M 112,96 Q 100,99 92,91" stroke="url(#toySkinShadow)" strokeWidth="8" strokeLinecap="round" fill="none" />
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+};
+
+/* ==========================================================================
    MAIN AUTHENTICATION PAGE COMPONENT
    ========================================================================== */
 export default function LoginPage() {
@@ -374,6 +583,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
+  
+  // Real-time tracking of focused system input channels
+  const [currentField, setCurrentField] = useState("idle");
 
   async function handleAuth() {
     if (isLogin) {
@@ -435,10 +647,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#020204] text-zinc-100 flex items-center justify-center p-4 relative overflow-hidden font-sans antialiased selection:bg-cyan-500 selection:text-black">
+    <div className="min-h-screen bg-[#020204] text-zinc-100 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans antialiased selection:bg-cyan-500 selection:text-black">
       
       {/* ================= DYNAMIC SHADER BACKGROUND SYSTEM ================= */}
-      <div className="absolute inset-0 pointer-events-none z-0">
+      <div className="absolute inset-0 pointer-events-none z-0 bg-[#020204]">
         <Lightfall
           colors={["#06b6d4", "#2563eb", "#020204"]}
           backgroundColor="#020204"
@@ -459,8 +671,11 @@ export default function LoginPage() {
       </div>
 
       {/* ================= INTERFACE CONTENT SYSTEM ================= */}
-      <div className="relative z-10 w-full max-w-md">
+      <div className="relative z-10 w-full max-w-md flex flex-col mt-4">
         
+        {/* INTERACTIVE ULTRA-REALISTIC TOY COMPONENT */}
+        <InteractiveToy currentField={currentField} />
+
         {/* PREMIUM MATTE INTERFACE PANEL WITH RAZOR EDGES */}
         <div className="bg-[#050608]/90 backdrop-blur-2xl border border-zinc-800/50 rounded-3xl p-8 md:p-12 shadow-[0_40px_100px_rgba(0,0,0,0.85)] relative overflow-hidden group/card transition-all duration-500 hover:border-zinc-700/60">
           
@@ -502,13 +717,15 @@ export default function LoginPage() {
                 placeholder="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                onFocus={() => setCurrentField("username")}
+                onBlur={() => setCurrentField("idle")}
                 className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
               />
             </div>
 
             {/* CONDITIONAL HANDLING FIELDS */}
             {!isLogin && (
-              <div className="space-y-3.5捷 animate-form-reveal">
+              <div className="space-y-3.5 animate-form-reveal">
                 
                 {/* INPUT CHANNELS: EMAIL */}
                 <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
@@ -521,6 +738,8 @@ export default function LoginPage() {
                     placeholder="Email Address (optional)"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    onFocus={() => setCurrentField("username")}
+                    onBlur={() => setCurrentField("idle")}
                     className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
                   />
                 </div>
@@ -536,6 +755,8 @@ export default function LoginPage() {
                     placeholder="Mobile Number"
                     value={mobileNumber}
                     onChange={(e) => setMobileNumber(e.target.value)}
+                    onFocus={() => setCurrentField("username")}
+                    onBlur={() => setCurrentField("idle")}
                     className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
                   />
                 </div>
@@ -554,6 +775,8 @@ export default function LoginPage() {
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                onFocus={() => setCurrentField("password")}
+                onBlur={() => setCurrentField("idle")}
                 className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
               />
             </div>

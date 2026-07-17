@@ -268,6 +268,36 @@ function UpiPaymentContent() {
 
   return (
     <div className="min-h-screen w-full bg-[#050506] text-[#F3F4F6] font-sans flex items-center justify-center p-4 antialiased selection:bg-cyan-500 selection:text-black relative overflow-hidden">
+      {/* LOCAL KEYFRAMES FOR VERIFY LOADING ANIMATION */}
+      <style jsx global>{`
+        @keyframes jprime-spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        @keyframes jprime-dot-pulse {
+          0%,
+          80%,
+          100% {
+            opacity: 0.25;
+            transform: scale(0.85);
+          }
+          40% {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        .jprime-spinner {
+          animation: jprime-spin 0.9s linear infinite;
+        }
+        .jprime-dot {
+          animation: jprime-dot-pulse 1.2s ease-in-out infinite;
+        }
+      `}</style>
+
       {copyMessage && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-emerald-500 text-black px-4 py-2 rounded-lg font-bold shadow-lg text-xs tracking-wider uppercase text-center">
           {copyMessage}
@@ -304,7 +334,7 @@ function UpiPaymentContent() {
           </div>
 
           {/* ERROR STATUS RENDERING */}
-          {errorMessage && (
+          {errorMessage && !verifying && (
             <div className="mb-5 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs font-mono text-center leading-relaxed">
               {errorMessage}
             </div>
@@ -313,87 +343,131 @@ function UpiPaymentContent() {
           {/* PENDING PAYMENT */}
           {paymentStatus === "pending" && (
             <>
-              <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center">
-                {order?.qr_url ? (
-                  <div className="w-full aspect-square max-w-[250px] bg-white p-3 rounded-xl">
-                    <img
-                      src={order.qr_url}
-                      alt="UPI Payment QR"
-                      className="w-full h-full object-contain rounded-md"
-                    />
+              {verifying ? (
+                /* VERIFYING LOADING STATE */
+                <div className="border border-cyan-500/20 bg-cyan-500/[0.03] p-8 rounded-xl mb-6 flex flex-col items-center justify-center min-h-[280px]">
+                  <div className="relative w-16 h-16 mb-6">
+                    <div className="absolute inset-0 rounded-full border-2 border-white/[0.06]" />
+                    <div className="jprime-spinner absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400" />
                   </div>
-                ) : (
-                  <div className="w-full aspect-square max-w-[250px] bg-[#050506] border border-red-500/20 rounded-xl flex items-center justify-center text-red-400 text-xs text-center p-6">
-                    QR code unavailable.
-                  </div>
-                )}
 
-                <div className="mt-4 flex flex-col items-center gap-1">
-                  <div className="text-base font-mono font-light tracking-[0.2em] text-cyan-400">
-                    {minutes}:{seconds}
+                  <h3 className="text-sm font-medium tracking-[0.15em] uppercase text-white mb-2 text-center">
+                    Verifying Transaction
+                  </h3>
+                  <p className="text-[11px] text-neutral-400 text-center leading-relaxed max-w-[260px] mb-5">
+                    Please wait while we confirm your UTR with the payment network. This usually takes a few seconds.
+                  </p>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="jprime-dot w-1.5 h-1.5 rounded-full bg-cyan-400" style={{ animationDelay: "0s" }} />
+                    <span className="jprime-dot w-1.5 h-1.5 rounded-full bg-cyan-400" style={{ animationDelay: "0.2s" }} />
+                    <span className="jprime-dot w-1.5 h-1.5 rounded-full bg-cyan-400" style={{ animationDelay: "0.4s" }} />
                   </div>
-                  <div className="flex items-center gap-2 text-[9px] text-neutral-500 tracking-wider font-mono uppercase">
+
+                  <div className="mt-6 flex items-center gap-2 text-[9px] text-neutral-500 tracking-wider font-mono uppercase">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
-                    Session Expiry Countdown
+                    Do not close this window
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-[#0E1013] border border-white/[0.04] p-5 rounded-xl mb-6 flex flex-col items-center">
+                  {order?.qr_url ? (
+                    <div className="w-full aspect-square max-w-[250px] bg-white p-3 rounded-xl">
+                      <img
+                        src={order.qr_url}
+                        alt="UPI Payment QR"
+                        className="w-full h-full object-contain rounded-md"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full aspect-square max-w-[250px] bg-[#050506] border border-red-500/20 rounded-xl flex items-center justify-center text-red-400 text-xs text-center p-6">
+                      QR code unavailable.
+                    </div>
+                  )}
 
-              <div className="space-y-3.5 mb-7 border-t border-b border-white/[0.05] py-4 px-0.5">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-neutral-400 tracking-wide">Order ID</span>
-                  <span className="font-mono text-cyan-400 text-[10px] max-w-[220px] truncate select-all">
-                    {orderId}
-                  </span>
+                  <div className="mt-4 flex flex-col items-center gap-1">
+                    <div className="text-base font-mono font-light tracking-[0.2em] text-cyan-400">
+                      {minutes}:{seconds}
+                    </div>
+                    <div className="flex items-center gap-2 text-[9px] text-neutral-500 tracking-wider font-mono uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                      Session Expiry Countdown
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-neutral-400 tracking-wide">Network</span>
-                  <span className="font-mono text-neutral-300 text-[11px]">
-                    UPI.INSTANT.SECURE
-                  </span>
+              )}
+
+              {!verifying && (
+                <div className="space-y-3.5 mb-7 border-t border-b border-white/[0.05] py-4 px-0.5">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400 tracking-wide">Order ID</span>
+                    <span className="font-mono text-cyan-400 text-[10px] max-w-[220px] truncate select-all">
+                      {orderId}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400 tracking-wide">Network</span>
+                    <span className="font-mono text-neutral-300 text-[11px]">
+                      UPI.INSTANT.SECURE
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400 tracking-wide">Status</span>
+                    <span className="tracking-wider text-[11px] font-medium uppercase text-cyan-400 animate-pulse">
+                      Awaiting Payment
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-neutral-400 tracking-wide">Status</span>
-                  <span className="tracking-wider text-[11px] font-medium uppercase text-cyan-400 animate-pulse">
-                    Awaiting Payment
-                  </span>
-                </div>
-              </div>
+              )}
 
               {order?.upi_link && (
                 <>
-                  <a
-                    href={order.upi_link}
-                    className="flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200"
-                  >
-                    PAY NOW
-                  </a>
+                  {!verifying && (
+                    <a
+                      href={order.upi_link}
+                      className="flex items-center justify-center w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold text-xs uppercase tracking-[0.2em] py-4 rounded-xl transition-all duration-200"
+                    >
+                      PAY NOW
+                    </a>
+                  )}
 
                   <div className="mt-6">
-                    <p className="text-xs text-neutral-400 mb-2">
-                      Enter 12-digit UTR after payment
-                    </p>
+                    {!verifying && (
+                      <>
+                        <p className="text-xs text-neutral-400 mb-2">
+                          Enter 12-digit UTR after payment
+                        </p>
 
-                    <input
-                      type="text"
-                      placeholder="Enter UTR Number"
-                      maxLength={12}
-                      value={utr}
-                      onChange={(e) => {
-                        console.log("INPUT:", e.target.value);
-                        setErrorMessage(""); 
-                        setUtr(e.target.value.replace(/\D/g, ""));
-                      }}
-                      className="w-full rounded-xl bg-[#0E1013] border border-white/10 px-4 py-3 text-white outline-none focus:border-cyan-500/50 transition-all font-mono tracking-widest text-center"
-                    />
+                        <input
+                          type="text"
+                          placeholder="Enter UTR Number"
+                          maxLength={12}
+                          value={utr}
+                          disabled={verifying}
+                          onChange={(e) => {
+                            console.log("INPUT:", e.target.value);
+                            setErrorMessage("");
+                            setUtr(e.target.value.replace(/\D/g, ""));
+                          }}
+                          className="w-full rounded-xl bg-[#0E1013] border border-white/10 px-4 py-3 text-white outline-none focus:border-cyan-500/50 transition-all font-mono tracking-widest text-center disabled:opacity-40"
+                        />
+                      </>
+                    )}
 
                     <button
                       type="button"
                       disabled={utr.length !== 12 || verifying}
                       onClick={verifyPayment}
-                      className="mt-4 w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-30 disabled:cursor-not-allowed text-black font-bold py-3 rounded-xl transition-all uppercase tracking-wider text-xs"
+                      className="mt-4 w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-30 disabled:cursor-not-allowed text-black font-bold py-3 rounded-xl transition-all uppercase tracking-wider text-xs flex items-center justify-center gap-2"
                     >
-                      {verifying ? "Verifying Transaction..." : "VERIFY PAYMENT"}
+                      {verifying ? (
+                        <>
+                          <span className="jprime-spinner inline-block w-3.5 h-3.5 rounded-full border-2 border-black/20 border-t-black" />
+                          Verifying Transaction...
+                        </>
+                      ) : (
+                        "VERIFY PAYMENT"
+                      )}
                     </button>
                   </div>
                 </>
