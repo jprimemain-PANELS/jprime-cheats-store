@@ -376,7 +376,7 @@ export function ProductCard({
 
             <Bell className="h-4 w-4 mr-2" />
 
-            UPDATES
+            PANEL FILE LINK 
 
           </Button>
 
