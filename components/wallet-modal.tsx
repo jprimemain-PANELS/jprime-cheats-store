@@ -41,11 +41,31 @@ interface Transaction {
   description: string;
 }
 
+interface PaymentData {
+  order_id: string;
+  amount: number;
+  upi_id: string;
+  qr_url: string;
+}
+
 const MIN_DEPOSIT_AMOUNT = 1;
 const PRESET_AMOUNTS = [100, 500, 1000, 2000, 5000];
 const STEPS = ["Wallet", "Deposit", "Confirm"] as const;
 
 type Notice = { type: "error" | "success" | "warning" | "info"; message: string } | null;
+
+/** Helper function to safely parse current user from LocalStorage */
+function getStoredUsername(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("user");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.username || null;
+  } catch {
+    return null;
+  }
+}
 
 export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: WalletModalProps) {
   const [showDeposit, setShowDeposit] = useState(false);
@@ -54,7 +74,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
   const [amount, setAmount] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
   const [loading, setLoading] = useState(false);
-  const [paymentData, setPaymentData] = useState<any>(null);
+  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [showQR, setShowQR] = useState(false);
   const [utr, setUtr] = useState("");
 
@@ -66,7 +86,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
   const [qrLoaded, setQrLoaded] = useState(false);
   const [verified, setVerified] = useState(false);
 
-  const step = showQR ? 2 : (showDeposit || showHistory) ? 1 : 0;
+  const step = showQR ? 2 : showDeposit || showHistory ? 1 : 0;
 
   const handleAmountChange = (e: ChangeEvent<HTMLInputElement>) => {
     setNotice(null);
@@ -83,6 +103,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
     });
   };
 
+  // Balance counter ease animation
   useEffect(() => {
     if (!open) return;
 
@@ -101,6 +122,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
     return () => cancelAnimationFrame(frame);
   }, [open, balance]);
 
+  // Reset states when dialog closes
   useEffect(() => {
     if (!open) {
       setNotice(null);
@@ -133,14 +155,14 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
     try {
       setHistoryLoading(true);
       setNotice(null);
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
       
-      if (!user.username) {
+      const username = getStoredUsername();
+      if (!username) {
         setNotice({ type: "error", message: "You must be logged in to view history." });
         return;
       }
 
-      const response = await fetch(`/api/wallet-history?username=${encodeURIComponent(user.username)}`);
+      const response = await fetch(`/api/wallet-history?username=${encodeURIComponent(username)}`);
       const data = await response.json();
 
       if (data.success) {
@@ -158,18 +180,25 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
 
   async function createWalletOrder() {
     try {
+      if (!amount || parseInt(amount, 10) < MIN_DEPOSIT_AMOUNT) {
+        setNotice({ type: "error", message: `Minimum deposit amount is ₹${MIN_DEPOSIT_AMOUNT}.` });
+        return;
+      }
+
       setLoading(true);
       setNotice(null);
 
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const username = getStoredUsername();
+      if (!username) {
+        setNotice({ type: "error", message: "User session not found. Please re-login." });
+        return;
+      }
 
       const response = await fetch("/api/create-wallet-order", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: user.username,
+          username,
           amount,
           mobile_number: mobileNumber,
         }),
@@ -198,7 +227,8 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
       setLoading(true);
       setNotice(null);
 
-      if (!utr.trim() || utr.trim().length < 10) {
+      const cleanedUtr = utr.trim();
+      if (!cleanedUtr || cleanedUtr.length < 10) {
         setNotice({ type: "error", message: "Please enter a valid 10+ digit UTR number." });
         setLoading(false);
         return;
@@ -206,22 +236,19 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
 
       const response = await fetch("/api/verify-wallet-payment", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gateway_order_id: paymentData?.order_id,
-          utr: utr.trim(),
+          utr: cleanedUtr,
         }),
       });
 
       const data = await response.json();
 
-      // STRICT CHECK: Requires HTTP 200/OK response AND success field to be explicitly true
       if (response.ok && data.success === true && data.status === "success") {
         setVerified(true);
         setNotice({ type: "success", message: data.message || "Wallet balance credited successfully!" });
-        
+
         if (onBalanceUpdate && typeof data.balance !== "undefined") {
           onBalanceUpdate(Number(data.balance));
         }
@@ -230,7 +257,6 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
           resetFormAndCloseFields();
         }, 2500);
       } else {
-        // Fallback to specific status codes or server response messages
         switch (data.status) {
           case "invalid_utr":
             setNotice({ type: "error", message: data.message || "Invalid UTR input verified by bank network." });
@@ -260,7 +286,8 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
   }
 
   function handleCopyUpi() {
-    navigator.clipboard.writeText(paymentData?.upi_id || "");
+    if (!paymentData?.upi_id) return;
+    navigator.clipboard.writeText(paymentData.upi_id);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   }
@@ -489,9 +516,9 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                     value={mobileNumber}
                     onChange={(e) => {
                       setNotice(null);
-                      setMobileNumber(e.target.value.replace(/\D/g, ""));
+                      setMobileNumber(e.target.value.replace(/\D/g, "").slice(0, 10));
                     }}
-                    placeholder="Your mobile number"
+                    placeholder="Your 10-digit mobile number"
                     className="w-full rounded-lg border border-white/10 bg-[#111114] pl-10 pr-3 py-3 text-white outline-none transition-all duration-200 focus:border-cyan-500/40 focus:ring-2 focus:ring-cyan-500/10"
                   />
                 </div>
@@ -555,14 +582,16 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                         {!qrLoaded && (
                           <div className="wallet-skeleton absolute inset-2.5 rounded-lg" />
                         )}
-                        <img
-                          src={paymentData?.qr_url}
-                          alt="QR Code"
-                          onLoad={() => setQrLoaded(true)}
-                          className={`h-48 w-48 object-contain transition-opacity duration-300 ${
-                            qrLoaded ? "opacity-100" : "opacity-0"
-                          }`}
-                        />
+                        {paymentData?.qr_url && (
+                          <img
+                            src={paymentData.qr_url}
+                            alt="QR Code"
+                            onLoad={() => setQrLoaded(true)}
+                            className={`h-48 w-48 object-contain transition-opacity duration-300 ${
+                              qrLoaded ? "opacity-100" : "opacity-0"
+                            }`}
+                          />
+                        )}
                       </div>
                     </div>
 
@@ -597,15 +626,15 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-xs text-neutral-400">Enter UTR Number</label>
+                    <label className="mb-1.5 block text-xs text-neutral-400">Enter UTR / Ref Number</label>
                     <input
                       value={utr}
                       onChange={(e) => {
                         setNotice(null);
-                        setUtr(e.target.value);
+                        setUtr(e.target.value.replace(/\D/g, "").slice(0, 12));
                       }}
                       placeholder="Enter 12-digit UTR"
-                      className="w-full rounded-lg border border-white/10 bg-[#111114] px-4 py-2.5 text-sm text-white outline-none transition-all duration-200 focus:border-cyan-500"
+                      className="w-full rounded-lg border border-white/10 bg-[#111114] px-4 py-2.5 text-sm font-mono text-white outline-none transition-all duration-200 focus:border-cyan-500"
                     />
                   </div>
 
@@ -685,10 +714,6 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-2px); }
           }
-          @keyframes walletShimmerSweep {
-            0% { transform: translateX(-120%); }
-            100% { transform: translateX(220%); }
-          }
           @keyframes walletPanelIn {
             0% { opacity: 0; transform: translateY(10px) scale(0.99); }
             100% { opacity: 1; transform: translateY(0) scale(1); }
@@ -701,10 +726,6 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
             0% { opacity: 0; transform: scale(0.4); }
             60% { opacity: 1; transform: scale(1.08); }
             100% { opacity: 1; transform: scale(1); }
-          }
-          @keyframes walletSkeletonSweep {
-            0% { background-position: -150% 0; }
-            100% { background-position: 150% 0; }
           }
           @keyframes walletLiveDot {
             0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
