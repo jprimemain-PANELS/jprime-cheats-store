@@ -213,7 +213,7 @@ if (!delivery.success) {
 }
 
 // Complete payment order
-const { error: orderUpdateError } = await supabase
+const { error: paymentOrderUpdateError } = await supabase
   .from("payment_orders")
   .update({
     status: "success",
@@ -221,7 +221,7 @@ const { error: orderUpdateError } = await supabase
   })
   .eq("gateway_order_id", gatewayOrderId);
 
-if (orderUpdateError) {
+if (paymentOrderUpdateError) {
   return NextResponse.json(
     {
       success: false,
@@ -243,91 +243,7 @@ return NextResponse.json({
   payment_time: payment.payment_time || null,
 });
 
-    // Mark the selected key as used.
-    const { error: keyUpdateError } = await supabase
-      .from("stock_keys")
-      .update({ is_used: true })
-      .eq("id", stockKey.id)
-      .eq("is_used", false);
 
-    if (keyUpdateError) {
-      console.error("KEY UPDATE ERROR:", keyUpdateError);
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Could not reserve product key",
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
-    // Save purchase history.
-    const { error: historyError } = await supabase
-      .from("purchase_history")
-      .insert([
-        {
-          username: order.username,
-          product_name: order.product_name,
-          duration: order.duration,
-          key_code: stockKey.key_code,
-        },
-      ]);
-
-    if (historyError) {
-      console.error("PURCHASE HISTORY ERROR:", historyError);
-
-      // Roll back key usage if saving purchase history fails.
-      await supabase
-        .from("stock_keys")
-        .update({ is_used: false })
-        .eq("id", stockKey.id);
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Could not save purchase",
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
-    // Complete payment order.
-    const { error: orderUpdateError } = await supabase
-      .from("payment_orders")
-      .update({
-        status: "success",
-        used: true,
-      })
-      .eq("gateway_order_id", gatewayOrderId);
-
-    if (orderUpdateError) {
-      console.error("ORDER UPDATE ERROR:", orderUpdateError);
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Payment was verified, but order completion failed",
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      status: "success",
-      key: stockKey.key_code,
-      order_id: gatewayOrderId,
-      utr: payment.utr || null,
-      sender_name: payment.sender_name || null,
-      payment_time: payment.payment_time || null,
-    });
   } catch (error) {
     console.error("VERIFY PAYMENT ERROR:", error);
 
