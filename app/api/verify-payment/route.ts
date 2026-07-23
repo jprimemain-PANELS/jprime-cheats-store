@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { releaseProduct } from "@/lib/release-product";
 
 const FP_VERIFY_URL = "https://xyzcheats.com/gateway/verify.php";
 
@@ -192,30 +193,55 @@ export async function POST(request: NextRequest) {
     }
 
     // Find one unused key.
-    const { data: stockKey, error: stockError } = await supabase
-      .from("stock_keys")
-      .select("*")
-      .eq("product_name", order.product_name)
-      .eq("duration", order.duration)
-      .eq("is_used", false)
-      .order("id", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+const delivery = await releaseProduct({
+  username: order.username,
+  product_name: order.product_name,
+  duration: order.duration,
+});
 
-    if (stockError || !stockKey) {
-      console.error("NO STOCK KEY:", stockError);
-
-      return NextResponse.json(
-        {
-          success: false,
-          status: "out_of_stock",
-          error: "Payment received, but no stock key is currently available. Contact support.",
-        },
-        {
-          status: 409,
-        }
-      );
+if (!delivery.success) {
+  return NextResponse.json(
+    {
+      success: false,
+      status: "out_of_stock",
+      error: delivery.error,
+    },
+    {
+      status: 409,
     }
+  );
+}
+
+// Complete payment order
+const { error: orderUpdateError } = await supabase
+  .from("payment_orders")
+  .update({
+    status: "success",
+    used: true,
+  })
+  .eq("gateway_order_id", gatewayOrderId);
+
+if (orderUpdateError) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Payment verified but failed to update order.",
+    },
+    {
+      status: 500,
+    }
+  );
+}
+
+return NextResponse.json({
+  success: true,
+  status: "success",
+  key: delivery.key,
+  order_id: gatewayOrderId,
+  utr: payment.utr || null,
+  sender_name: payment.sender_name || null,
+  payment_time: payment.payment_time || null,
+});
 
     // Mark the selected key as used.
     const { error: keyUpdateError } = await supabase
