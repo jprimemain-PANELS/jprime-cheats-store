@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Menu, Smartphone, Monitor, Apple } from "lucide-react";
+import { Menu, Smartphone, Monitor, Apple, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { AuthButtons } from "./auth-buttons";
+import { WalletModal } from "./wallet-modal";
 
 interface NavbarProps {
   activeCategory: string;
@@ -22,6 +23,8 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [indicator, setIndicator] = useState({ left: 0, width: 0, opacity: 0 });
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const navRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const handleCategoryClick = (categoryId: string) => {
@@ -37,6 +40,33 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  useEffect(() => {
+    async function loadWallet() {
+      const user = localStorage.getItem("user");
+  
+      if (!user) return;
+  
+      const parsed = JSON.parse(user);
+  
+      const response = await fetch("/api/get-wallet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: parsed.username,
+        }),
+      });
+  
+      const result = await response.json();
+  
+      if (result.success) {
+        setWalletBalance(result.balance);
+      }
+    }
+  
+    loadWallet();
+  }, []);
   // Track the active tab's position so the indicator can glide to it
   useEffect(() => {
     const measure = () => {
@@ -51,7 +81,8 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
   }, [activeCategory]);
 
   return (
-    <nav
+    <>
+      <nav
       className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${
         scrolled
           ? "border-border/60 bg-background/95 backdrop-blur-xl shadow-[0_8px_30px_-12px_rgba(0,0,0,0.4)]"
@@ -83,7 +114,26 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
           </div>
 
           {/* Desktop Navigation */}
-          <div className="relative hidden md:flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-4">
+
+          <button
+  onClick={() => setWalletModalOpen(true)}
+  className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-2 hover:bg-cyan-500/20 transition-all"
+>
+    <Wallet className="h-4 w-4 text-cyan-400" />
+
+    <div className="text-left">
+      <div className="text-[10px] text-cyan-300 uppercase">
+        Wallet
+      </div>
+
+      <div className="text-sm font-semibold text-white">
+        ₹{walletBalance?.toFixed(2) ?? "0.00"}
+      </div>
+    </div>
+  </button>
+
+  <div className="relative hidden md:flex items-center gap-1">
             <span
               className="absolute inset-y-0 rounded-lg bg-primary/10 border border-primary/20 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
               style={{
@@ -116,6 +166,7 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
                 </button>
               );
             })}
+          </div>
           </div>
 
           {/* Mobile Menu */}
@@ -174,7 +225,14 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
             </SheetContent>
           </Sheet>
         </div>
-      </div>
+        </div>
     </nav>
-  );
+
+    <WalletModal
+      open={walletModalOpen}
+      onOpenChange={setWalletModalOpen}
+      balance={walletBalance ?? 0}
+    />
+  </>
+);
 }
