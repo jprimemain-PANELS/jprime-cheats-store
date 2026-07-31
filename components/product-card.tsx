@@ -31,6 +31,11 @@ interface ProductCardProps {
   index: number;
 }
 
+// NEW: shared event name used to broadcast wallet balance changes to every
+// component on the page (other ProductCards, a header/navbar, etc.) without
+// a page reload. Purely additive — nothing existing depends on this.
+const WALLET_BALANCE_EVENT = "wallet-balance-updated";
+
 export function ProductCard({ product, index }: ProductCardProps) {
   const [selectedPrice, setSelectedPrice] = useState<PriceTier>(product.prices[0]);
   const [isHovered, setIsHovered] = useState(false);
@@ -42,7 +47,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // NEW — UI-only state for the animated key-reveal card (replaces the old
+  // UI-only state for the animated key-reveal card (replaces the old
   // alert()-based success message). Does not touch any payment/business logic.
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [purchasedKey, setPurchasedKey] = useState<string | null>(null);
@@ -60,6 +65,21 @@ export function ProductCard({ product, index }: ProductCardProps) {
     const timer = setTimeout(() => setShowAutoCopyToast(false), 3000);
     return () => clearTimeout(timer);
   }, [showAutoCopyToast]);
+
+  // NEW: listen for wallet balance updates broadcast by ANY ProductCard (or
+  // any other component) on the page, so every instance stays in sync
+  // instantly — no page reload, no extra network calls.
+  useEffect(() => {
+    function handleExternalBalanceUpdate(e: Event) {
+      const detail = (e as CustomEvent<{ balance: number }>).detail;
+      if (detail && typeof detail.balance === "number") {
+        setWalletBalance(detail.balance);
+      }
+    }
+
+    window.addEventListener(WALLET_BALANCE_EVENT, handleExternalBalanceUpdate);
+    return () => window.removeEventListener(WALLET_BALANCE_EVENT, handleExternalBalanceUpdate);
+  }, []);
 
   async function loadStock() {
     const { data } = await supabase
@@ -186,13 +206,19 @@ export function ProductCard({ product, index }: ProductCardProps) {
         currentUser.wallet_balance = result.newBalance;
         localStorage.setItem("user", JSON.stringify(currentUser));
         setWalletBalance(result.newBalance);
+
+        // NEW: broadcast the new balance so every other ProductCard (and any
+        // header/navbar listening for this event) updates instantly too —
+        // still no page reload, just a same-tab custom event.
+        window.dispatchEvent(
+          new CustomEvent(WALLET_BALANCE_EVENT, { detail: { balance: result.newBalance } })
+        );
       }
 
       // Close payment modal
       setIsPaymentModalOpen(false);
 
-      // CHANGED: instead of alert()-ing the key, reveal it in an animated
-      // on-page card with a Copy button. Auto-copy behavior is unchanged.
+      // Reveal the key in an animated on-page card instead of alert()
       setPurchasedKey(result.key);
       setShowKeyModal(true);
 
@@ -261,8 +287,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
   return (
     <>
       {/* ───────────────────────────────────────────────────────────────
-          Product card — UNCHANGED from your original. No styling/animation
-          was added here per your request.
+          Product card — unchanged from your original. No styling/animation
+          added here.
       ─────────────────────────────────────────────────────────────── */}
       <Card
         className="group relative overflow-hidden border border-border/50 bg-card/50 backdrop-blur-sm transition-all duration-500 hover:border-primary/30 hover:shadow-[0_0_40px_rgba(0,200,255,0.08)]"
@@ -364,8 +390,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
       </Card>
 
       {/* ───────────────────────────────────────────────────────────────
-          Payment Selection Modal — redesigned with professional animation.
-          Same two options, same handlers, same isProcessing gating.
+          Payment Selection Modal — professional animation. Same two
+          options, same handlers, same isProcessing gating.
       ─────────────────────────────────────────────────────────────── */}
       <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
         <DialogContent className="sm:max-w-[440px] overflow-hidden rounded-2xl border border-border/80 bg-card/95 backdrop-blur-xl p-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)]">
@@ -520,9 +546,9 @@ export function ProductCard({ product, index }: ProductCardProps) {
       </Dialog>
 
       {/* ───────────────────────────────────────────────────────────────
-          NEW: Key Reveal Modal — replaces the old alert() popup after a
-          successful wallet payment. Same data (result.key), just presented
-          as an animated on-page card with a Copy button.
+          Key Reveal Modal — replaces the old alert() popup after a
+          successful wallet payment. Same data (result.key), presented as
+          an animated on-page card with a Copy button.
       ─────────────────────────────────────────────────────────────── */}
       <Dialog open={showKeyModal} onOpenChange={setShowKeyModal}>
         <DialogContent className="sm:max-w-[420px] overflow-hidden rounded-2xl border border-emerald-500/30 bg-card/95 backdrop-blur-xl p-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)]">
@@ -679,9 +705,9 @@ export function ProductCard({ product, index }: ProductCardProps) {
       </Dialog>
 
       {/* ───────────────────────────────────────────────────────────────
-          NEW: "Copied to clipboard" toast — fires alongside the auto-copy
-          that already happened in handleWalletPayment. Purely informational,
-          auto-hides after 3s, no effect on any payment/business logic.
+          "Copied to clipboard" toast — fires alongside the auto-copy that
+          already happens in handleWalletPayment. Purely informational,
+          auto-hides after 3s.
       ─────────────────────────────────────────────────────────────── */}
       {showAutoCopyToast && (
         <div
