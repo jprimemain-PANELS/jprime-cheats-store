@@ -179,6 +179,20 @@ export const pcProducts: Product[] = [
     updateChannel: "https://t.me/jprimeallcustompcpanel",
     features: ["⛨ ᴀɪᴍ ᴅᴏᴡɴᴋɪʟʟ","⛨ ᴀɪᴍꜰᴏᴠ 1200°","⛨ ᴜᴘ ᴘʟᴀʏᴇʀ","⛨ ᴛᴇʟᴇ ᴋɪʟʟ 10ᴍ","⛨ᴛᴇʟᴇᴘᴏʀᴛ ʜᴀᴄᴋ ᴄꜱ","⛨ᴛᴇʟᴇᴘᴏʀᴛ ʜᴀᴄᴋ ʙʀ","⛨ ᴍᴇᴅᴋɪᴛ ʀᴜɴ","⛨ ꜱᴘᴇᴇᴅ ʜᴀᴄᴋ ᴊᴏʏꜱᴛɪᴄᴋ","⛨ ᴄʟɪᴍʙ ᴜᴘ","⛨ ɴᴏ ʀᴇᴄᴏɪʟ","⛨ ᴀᴜᴛᴏ ꜱᴡɪᴛᴄʜ","⛨ ꜰᴀꜱᴛ ꜱᴡɪᴛᴄʜ","⛨ ᴇꜱᴘ ʟɪɴᴇ ʟᴏᴄᴀᴛɪᴏɴ","⛨ ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ"],
   },
+    {
+    id: "brutal-customized-aim-kill-pc",
+    name: "AIM KILL PANEL ( Rank push )",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/akill.mp4",
+    category: "pc",
+    prices: [
+      { duration: "1 day", resellerPrice: "₹80", priceINR: "₹130" },
+      { duration: "10 day", resellerPrice: "₹295", priceINR: "₹549" },
+      { duration: "31 day", resellerPrice: "₹489", priceINR: "₹1099" },
+      { duration: "Lifetime", resellerPrice: "₹1900", priceINR: "₹2899" },
+    ],
+    updateChannel: "https://t.me/jprimeallcustompcpanel",
+    features: ["⛨ ᴀɪᴍ ᴅᴏᴡɴᴋɪʟʟ","⛨ ᴀɪᴍꜰᴏᴠ 1200°","⛨ ᴜᴘ ᴘʟᴀʏᴇʀ","⛨ ᴛᴇʟᴇ ᴋɪʟʟ 10ᴍ","⛨ᴛᴇʟᴇᴘᴏʀᴛ ʜᴀᴄᴋ ᴄꜱ","⛨ᴛᴇʟᴇᴘᴏʀᴛ ʜᴀᴄᴋ ʙʀ","⛨ ᴍᴇᴅᴋɪᴛ ʀᴜɴ","⛨ ꜱᴘᴇᴇᴅ ʜᴀᴄᴋ ᴊᴏʏꜱᴛɪᴄᴋ","⛨ ᴄʟɪᴍʙ ᴜᴘ","⛨ ɴᴏ ʀᴇᴄᴏɪʟ","⛨ ᴀᴜᴛᴏ ꜱᴡɪᴛᴄʜ","⛨ ꜰᴀꜱᴛ ꜱᴡɪᴛᴄʜ","⛨ ᴇꜱᴘ ʟɪɴᴇ ʟᴏᴄᴀᴛɪᴏɴ","⛨ ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ"],
+  },
 ];
 
 export const allProducts = [...mobileProducts, ...pcProducts];
