@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { releaseProduct } from "@/lib/release-product";
+import { sendTelegramPurchase } from "@/lib/telegram";
 
 export async function POST(request: NextRequest) {
   try {
@@ -87,38 +88,47 @@ export async function POST(request: NextRequest) {
       description: `${product_name} (${duration})`,
     });
 
-    // Deliver product
-    const delivery = await releaseProduct({
-      username,
-      product_name,
-      duration,
-    });
+// Deliver product
+const delivery = await releaseProduct({
+  username,
+  product_name,
+  duration,
+});
 
-    if (!delivery.success) {
-      // Refund automatically
-      await supabase
-        .from("wallets")
-        .update({
-          balance: wallet.balance,
-        })
-        .eq("id", wallet.id);
+if (!delivery.success) {
+  // Refund automatically
+  await supabase
+    .from("wallets")
+    .update({
+      balance: wallet.balance,
+    })
+    .eq("id", wallet.id);
 
-      return NextResponse.json(
-        {
-          success: false,
-          error: delivery.error,
-        },
-        {
-          status: 500,
-        }
-      );
+  return NextResponse.json(
+    {
+      success: false,
+      error: delivery.error,
+    },
+    {
+      status: 500,
     }
+  );
+}
 
-    return NextResponse.json({
-      success: true,
-      key: delivery.key,
-      newBalance,
-    });
+// ✅ Send Telegram notification
+await sendTelegramPurchase({
+  username,
+  product: product_name,
+  duration,
+  amount: price,
+});
+
+return NextResponse.json({
+  success: true,
+  key: delivery.key,
+  newBalance,
+});
+
   } catch (err) {
     console.error(err);
 

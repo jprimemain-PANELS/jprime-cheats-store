@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { releaseProduct } from "@/lib/release-product";
+import { sendTelegramPurchase } from "@/lib/telegram";
 
 const FP_VERIFY_URL = "https://xyzcheats.com/gateway/verify.php";
 
@@ -212,7 +213,6 @@ if (!delivery.success) {
   );
 }
 
-// Complete payment order
 const { error: paymentOrderUpdateError } = await supabase
   .from("payment_orders")
   .update({
@@ -233,6 +233,14 @@ if (paymentOrderUpdateError) {
   );
 }
 
+await sendTelegramPurchase({
+  username: order.username,
+  product: order.product_name,
+  duration: order.duration,
+  amount: Number(order.amount),
+});
+
+// 5. Return success
 return NextResponse.json({
   success: true,
   status: "success",
