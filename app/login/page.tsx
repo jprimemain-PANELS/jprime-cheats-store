@@ -6,7 +6,7 @@ import { User, Lock, Phone, Mail, ArrowRight } from "lucide-react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 
 /* ==========================================================================
-   LIGHTFALL SHADER SYSTEM (INTERACTIVE & MOBILE COMPATIBLE BACKGROUND)
+   FERROFLUID SHADER SYSTEM (INTERACTIVE & MOBILE COMPATIBLE BACKGROUND)
    ========================================================================== */
 const MAX_COLORS = 8;
 
@@ -19,7 +19,7 @@ const hexToRGB = (hex) => {
 };
 
 const prepColors = (input) => {
-  const base = (input && input.length ? input : ["#A6C8FF", "#5227FF", "#FF9FFC"]).slice(0, MAX_COLORS);
+  const base = (input && input.length ? input : ["#4F46E5", "#06B6D4", "#E0F2FE"]).slice(0, MAX_COLORS);
   const count = base.length;
   const arr = [];
   for (let i = 0; i < MAX_COLORS; i++) arr.push(hexToRGB(base[Math.min(i, base.length - 1)]));
@@ -33,6 +33,21 @@ const prepColors = (input) => {
   avg[1] /= count;
   avg[2] /= count;
   return { arr, count, avg };
+};
+
+const flowVec = (d) => {
+  switch (d) {
+    case "up":
+      return [0, 1];
+    case "down":
+      return [0, -1];
+    case "left":
+      return [-1, 0];
+    case "right":
+      return [1, 0];
+    default:
+      return [0, -1];
+  }
 };
 
 const vertex = `
@@ -62,23 +77,24 @@ uniform vec3  uColor6;
 uniform vec3  uColor7;
 uniform int   uColorCount;
 
-uniform vec3  uBgColor;
 uniform vec3  uMouseColor;
+uniform vec2  uFlow;
 uniform float uSpeed;
-uniform int   uStreakCount;
-uniform float uStreakWidth;
-uniform float uStreakLength;
+uniform float uScale;
+uniform float uTurbulence;
+uniform float uFluidity;
+uniform float uRimWidth;
+uniform float uSharpness;
+uniform float uShimmer;
 uniform float uGlow;
-uniform float uDensity;
-uniform float uTwinkle;
-uniform float uZoom;
-uniform float uBgGlow;
 uniform float uOpacity;
 uniform float uMouseEnabled;
 uniform float uMouseStrength;
 uniform float uMouseRadius;
 
 varying vec2 vUv;
+
+#define PI 3.14159265
 
 vec3 palette(float h) {
   int count = uColorCount;
@@ -94,75 +110,80 @@ vec3 palette(float h) {
   return uColor7;
 }
 
-vec3 tanhv(vec3 x) {
-  vec3 e = exp(-2.0 * x);
-  return (1.0 - e) / (1.0 + e);
+float hash(vec3 p3) {
+  p3 = fract(p3 * 0.1031);
+  p3 += dot(p3, p3.zyx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
-vec2 sceneC(vec2 frag, vec2 r) {
-  vec2 P = (frag + frag - r) / r.x;
-  float z = 0.0;
-  float d = 1e3;
-  vec4 O = vec4(0.0);
-  for (int k = 0; k < 39; k++) {
-    if (d <= 1e-4) break;
-    O = z * normalize(vec4(P, uZoom, 0.0)) - vec4(0.0, 4.0, 1.0, 0.0) / 4.5;
-    d = 1.0 - sqrt(length(O * O));
-    z += d;
-  }
-  return vec2(O.x, atan(O.z, O.y));
+float smin(float a, float b, float k) {
+  float r = exp2(-a / k) + exp2(-b / k);
+  return -k * log2(r);
 }
 
-void mainImage(out vec4 o, vec2 C) {
-  vec2 r = iResolution.xy;
-  vec2 uv0 = (C + C - r) / r.x;
-  float T = 0.1 * iTime * uSpeed + 9.0;
-  float angRings = max(1.0, floor(6.28318530718 * max(uDensity, 0.05) + 0.5));
-  vec2 Y = vec2(5e-3, 6.28318530718 / angRings);
+float sinlerp(float a, float b, float w) {
+  return mix(a, b, (sin(w * PI - PI / 2.0) + 1.0) / 2.0);
+}
 
-  vec2 c0 = sceneC(C, r);
-  vec2 cdx = sceneC(C + vec2(1.0, 0.0), r);
-  vec2 cdy = sceneC(C + vec2(0.0, 1.0), r);
-  vec2 dCx = cdx - c0;
-  vec2 dCy = cdy - c0;
-  dCx.y -= 6.28318530718 * floor(dCx.y / 6.28318530718 + 0.5);
-  dCy.y -= 6.28318530718 * floor(dCy.y / 6.28318530718 + 0.5);
-  vec2 fw = abs(dCx) + abs(dCy);
-  C = c0;
+float vn(vec2 p, float s, float seed) {
+  vec2 cellp = floor(p / s);
+  vec2 relp = mod(p, s);
+  float g1 = hash(vec3(cellp, seed));
+  float g2 = hash(vec3(cellp.x + 1.0, cellp.y, seed));
+  float g3 = hash(vec3(cellp.x + 1.0, cellp.y + 1.0, seed));
+  float g4 = hash(vec3(cellp.x, cellp.y + 1.0, seed));
+  float bx = sinlerp(g1, g2, relp.x / s);
+  float tx = sinlerp(g4, g3, relp.x / s);
+  return sinlerp(bx, tx, relp.y / s);
+}
 
-  vec2 P = vec2(2.0, 1.0) * uv0 - (r / r.x) * vec2(0.0, 1.0);
-  vec4 O = vec4(uBgColor * 90.0 * uBgGlow / (1e3 * dot(P, P) + 6.0), 0.0);
+float dbn(vec2 p, float s, float seed) {
+  float o = s / 2.0;
+  float n0 = vn(p, s, seed);
+  float n1 = vn(p + vec2(o, o), s, seed + 0.1);
+  float n2 = vn(p + vec2(-o, o), s, seed + 0.2);
+  float n3 = vn(p + vec2(o, -o), s, seed + 0.3);
+  float n4 = vn(p + vec2(-o, -o), s, seed + 0.4);
+  return (2.0 * n0 + 1.5 * n1 + 1.25 * n2 + 1.125 * n3 + n4) / 7.0;
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  float ref = 700.0 / max(uScale, 0.05);
+  vec2 p = fragCoord / iResolution.y * ref;
+
+  float spd = 200.0 * uSpeed;
+  float t = iTime;
+
+  vec2 dir = uFlow;
+  vec2 perp = vec2(-dir.y, dir.x);
+
+  float distort1 = vn(p + perp * (t * spd), 60.0, 10.0) * 50.0 * uTurbulence;
+  float distort2 = vn(p - perp * (t * spd), 120.0, 15.0) * 100.0 * uTurbulence;
+
+  float peaks = dbn(p + distort1 + dir * (t * spd * 0.5), 40.0, 1.0);
+  float peaks2 = dbn(p + distort2 - dir * (t * spd * 0.5), 40.0, 0.0);
+
+  float mapeaks = smin(peaks, peaks2, max(uFluidity, 0.001));
 
   float mGlow = 0.0;
   if (uMouseEnabled > 0.5) {
-    vec2 mN = (iMouse + iMouse - r) / r.x;
-    float md = length(uv0 - mN);
-    mGlow = exp(-md * md / max(uMouseRadius * uMouseRadius, 1e-4)) * uMouseStrength;
-    O.rgb += uMouseColor * mGlow * 0.25;
+    vec2 mp = iMouse / iResolution.y * ref;
+    float md = length(p - mp) / ref;
+    float rr = max(uMouseRadius, 0.02);
+    mGlow = exp(-md * md / (rr * rr)) * uMouseStrength;
   }
 
-  float zr = 5e-4 * uStreakWidth;
-  vec2 rr = vec2(max(length(fw), 1e-5));
-  float tail = 19.0 / max(uStreakLength, 0.05);
+  float band = (uRimWidth - abs((mapeaks - 0.4) * 2.0)) * 5.0;
+  float ltn = clamp(band - vn(p + dir * (t * spd * 0.5), 60.0, 12.0) * uShimmer, 0.0, 1.0);
+  ltn = pow(ltn, uSharpness) * uGlow;
+  ltn *= clamp(1.0 - mGlow, 0.0, 1.0);
 
-  for (int m = 0; m < 16; m++) {
-    if (m >= uStreakCount) break;
-    float jf = float(m) + 1.0;
-    float ic = fract(sin(dot(vec2(jf, floor(C.x / Y.x + 0.5)), vec2(7.0, 11.0)) * 73.0));
-    vec2 Pp = C - (T + T * ic) * vec2(0.0, 1.0);
-    Pp -= floor(Pp / Y + 0.5) * Y;
-    float h = fract(8663.0 * ic);
-    vec3 col = palette(h);
-    float weight = mix(1.5, 1.0 + sin(T + 7.0 * h + 4.0), uTwinkle);
-    weight *= (1.0 + mGlow * 2.0);
-    vec2 inner = vec2(length(max(Pp, vec2(-1.0, 0.0))), length(Pp) - zr) - zr;
-    vec2 sm = vec2(1.0) - smoothstep(-rr, rr, inner);
-    O.rgb += dot(sm, vec2(exp(tail * Pp.y), 3.0)) * col * weight;
-    C.x += Y.x / 8.0;
-  }
+  float h = clamp(0.5 + (peaks - peaks2) * 0.8, 0.0, 1.0);
+  vec3 col = palette(h);
 
-  vec3 colr = sqrt(tanhv(max(O.rgb * uGlow - vec3(0.04, 0.08, 0.02), 0.0)));
-  o = vec4(colr, uOpacity);
+  vec3 outc = col * ltn;
+  float a = clamp(max(outc.r, max(outc.g, outc.b)), 0.0, 1.0);
+  fragColor = vec4(outc, a * uOpacity);
 }
 
 void main() {
@@ -172,25 +193,24 @@ void main() {
 }
 `;
 
-const Lightfall = ({
+const Ferrofluid = ({
   className,
   dpr,
   paused = false,
-  colors = ["#06b6d4", "#3b82f6", "#000000"],
-  backgroundColor = "#020204",
+  colors = ["#ffffff", "#ffffff", "#ffffff"],
   speed = 0.5,
-  streakCount = 2,
-  streakWidth = 1,
-  streakLength = 1,
-  glow = 1,
-  density = 0.6,
-  twinkle = 1,
-  zoom = 3,
-  backgroundGlow = 0.5,
+  scale = 1.6,
+  turbulence = 1,
+  fluidity = 0.1,
+  rimWidth = 0.2,
+  sharpness = 2.5,
+  shimmer = 1.5,
+  glow = 2,
+  flowDirection = "down",
   opacity = 1,
   mouseInteraction = true,
-  mouseStrength = 0.5,
-  mouseRadius = 1,
+  mouseStrength = 1,
+  mouseRadius = 0.35,
   mouseDampening = 0.15,
   mixBlendMode
 }) => {
@@ -230,6 +250,7 @@ const Lightfall = ({
     rendererRef.current = renderer;
     const gl = renderer.gl;
     const canvas = gl.canvas;
+    gl.clearColor(0, 0, 0, 0);
 
     canvas.style.width = "100%";
     canvas.style.height = "100%";
@@ -251,17 +272,16 @@ const Lightfall = ({
       uColor6: { value: arr[6] },
       uColor7: { value: arr[7] },
       uColorCount: { value: count },
-      uBgColor: { value: hexToRGB(backgroundColor) },
       uMouseColor: { value: avg },
+      uFlow: { value: flowVec(flowDirection) },
       uSpeed: { value: speed },
-      uStreakCount: { value: Math.max(1, Math.min(16, Math.round(streakCount))) },
-      uStreakWidth: { value: streakWidth },
-      uStreakLength: { value: streakLength },
+      uScale: { value: scale },
+      uTurbulence: { value: turbulence },
+      uFluidity: { value: fluidity },
+      uRimWidth: { value: rimWidth },
+      uSharpness: { value: sharpness },
+      uShimmer: { value: shimmer },
       uGlow: { value: glow },
-      uDensity: { value: density },
-      uTwinkle: { value: twinkle },
-      uZoom: { value: zoom },
-      uBgGlow: { value: backgroundGlow },
       uOpacity: { value: opacity },
       uMouseEnabled: { value: mouseInteraction ? 1 : 0 },
       uMouseStrength: { value: mouseStrength },
@@ -289,9 +309,9 @@ const Lightfall = ({
 
     const onPointerMove = (e) => {
       const rect = canvas.getBoundingClientRect();
-      const scale = renderer.dpr || 1;
-      const x = (e.clientX - rect.left) * scale;
-      const y = (rect.height - (e.clientY - rect.top)) * scale;
+      const scaleF = renderer.dpr || 1;
+      const x = (e.clientX - rect.left) * scaleF;
+      const y = (rect.height - (e.clientY - rect.top)) * scaleF;
       mouseTargetRef.current = [x, y];
       if (mouseDampening <= 0) {
         uniforms.iMouse.value = [x, y];
@@ -336,8 +356,9 @@ const Lightfall = ({
         container.removeChild(canvas);
       }
       const callIfFn = (obj, key) => {
-        if (obj && typeof obj[key] === "function") {
-          obj[key].call(obj);
+        const fn = obj && obj[key];
+        if (typeof fn === "function") {
+          fn.call(obj);
         }
       };
       callIfFn(programRef.current, "remove");
@@ -353,16 +374,15 @@ const Lightfall = ({
     dpr,
     paused,
     colors,
-    backgroundColor,
     speed,
-    streakCount,
-    streakWidth,
-    streakLength,
+    scale,
+    turbulence,
+    fluidity,
+    rimWidth,
+    sharpness,
+    shimmer,
     glow,
-    density,
-    twinkle,
-    zoom,
-    backgroundGlow,
+    flowDirection,
     opacity,
     mouseInteraction,
     mouseStrength,
@@ -651,22 +671,21 @@ export default function LoginPage() {
       
       {/* ================= DYNAMIC SHADER BACKGROUND SYSTEM ================= */}
       <div className="absolute inset-0 pointer-events-none z-0 bg-[#020204]">
-        <Lightfall
-          colors={["#06b6d4", "#2563eb", "#020204"]}
-          backgroundColor="#020204"
-          speed={0.4}
-          streakCount={3}
-          streakWidth={1.2}
-          streakLength={1.5}
-          glow={1.2}
-          density={0.5}
-          twinkle={1}
-          zoom={2.5}
-          backgroundGlow={0.3}
+        <Ferrofluid
+          colors={["#06b6d4", "#2563eb", "#0891b2"]}
+          speed={0.5}
+          scale={1.8}
+          turbulence={1.1}
+          fluidity={0.15}
+          rimWidth={0.25}
+          sharpness={2.5}
+          shimmer={1.5}
+          glow={2.2}
+          flowDirection="down"
           opacity={1}
           mouseInteraction={true}
-          mouseStrength={0.6}
-          mouseRadius={1.2}
+          mouseStrength={0.9}
+          mouseRadius={0.4}
         />
       </div>
 

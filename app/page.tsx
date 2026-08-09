@@ -11,6 +11,7 @@ import { FloatingSupport } from "@/components/floating-support";
 import { Footer } from "@/components/footer";
 import { supabase } from "@/lib/supabase";
 import { mobileProducts, pcProducts } from "@/lib/products";
+import ElectricBorder from "@/components/ElectricBorder";
 
 export default function Home() {
   const router = useRouter();
@@ -189,7 +190,15 @@ export default function Home() {
                       className="jprime-fade-up"
                       style={{ animationDelay: `${Math.min(index, 8) * 0.06}s` }}
                     >
-                      <ProductCard product={product} index={index} />
+<ElectricBorder
+  color="#00879d"
+  speed={1.2}
+  chaos={0.12}
+  borderRadius={16}
+  className="w-full h-full"
+>
+  <ProductCard product={product} index={index} />
+</ElectricBorder>
                     </div>
                   ))}
                 </div>
@@ -203,7 +212,9 @@ export default function Home() {
                       className="jprime-fade-up"
                       style={{ animationDelay: `${Math.min(index, 8) * 0.06}s` }}
                     >
-                      <ProductCard product={product} index={index} />
+                      <ElectricBorder color="#00e5ff" speed={1.2} chaos={0.15} borderRadius={20}>
+                        <ProductCard product={product} index={index} />
+                      </ElectricBorder>
                     </div>
                   ))}
                 </div>
