@@ -14,9 +14,37 @@ export interface Product {
   features: string[];
   videoPlaceholder?: string;
   videoUrl?: string;
+
+  // External reseller API configuration
+  apiProductId?: string;
+  requiresAndroidId?: boolean;
 }
 
 export const mobileProducts: Product[] = [
+  {
+  id: "haxxcker-client",
+  name: "HAXXCKER CLIENT ( main id )",
+   videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/haxx%20v.mp4",
+  category: "mobile",
+    // BALA MOD XYZ V1
+  apiProductId: "133",
+  requiresAndroidId: true,
+
+  prices: [
+    { duration: "1 Hours", resellerPrice: "₹15", priceINR: "₹25" },
+    { duration: "3 Hours", resellerPrice: "₹56", priceINR: "₹70" },
+    { duration: "6 Hours", resellerPrice: "₹96", priceINR: "₹120" },
+    { duration: "12 Hours", resellerPrice: "₹160", priceINR: "₹200" },
+    { duration: "1 Days", resellerPrice: "₹240", priceINR: "₹300" },
+    { duration: "2 Days", resellerPrice: "₹480", priceINR: "₹600" },
+    { duration: "3 Days", resellerPrice: "₹680", priceINR: "₹850" },
+    { duration: "5 Days", resellerPrice: "₹1112", priceINR: "₹1390" },
+    { duration: "7 Days", resellerPrice: "₹1432", priceINR: "₹1790" },
+  ],
+
+  updateChannel: "https://t.me/+jxcj7KJjcfI3MmQ1",
+  features: ["ɴᴏɴ ʀᴏᴏᴛ", "ᴅʀᴀɢ ʜᴇᴀᴅsʜᴏᴛ 100%", "ᴅʀᴀɢ ʜᴇᴀᴅsʜᴏᴛ 50%", "ʜᴇᴀᴅ ʟᴏᴄᴋ", "ʙᴏᴅʏ ʜᴇᴀᴅsʜᴏᴛ", "ᴄʜᴇsᴛ ʜᴇᴀᴅsʜᴏᴛ"]
+},
   {
     id: "drip-client-non-root",
     name: "DRIP CLIENT NON ROOT MOBILE",
@@ -100,10 +128,10 @@ export const mobileProducts: Product[] = [
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/rapid.mp4",
     category: "mobile",
     prices: [
-      { duration: "1 day", priceINR: "₹85", resellerPrice: "₹50", priceUSD: "$1.38" },
-      { duration: "7 day", priceINR: "₹320", resellerPrice: "₹155",priceUSD: "$3.75" },
-      { duration: "15 day", priceINR: "₹590", resellerPrice: "₹320",priceUSD: "$6.90" },
-      { duration: "31 day", priceINR: "₹1019", resellerPrice: "₹520",priceUSD: "$9.80" },
+      { duration: "1 day", priceINR: "₹85", resellerPrice: "₹39", priceUSD: "$1.38" },
+      { duration: "7 day", priceINR: "₹320", resellerPrice: "₹145",priceUSD: "$3.75" },
+      { duration: "15 day", priceINR: "₹590", resellerPrice: "₹290",priceUSD: "$6.90" },
+      { duration: "31 day", priceINR: "₹1019", resellerPrice: "₹480",priceUSD: "$9.80" },
     ],
     updateChannel: "https://t.me/+fy2vh_LXjJs4ODk9",
     features: ["ᴀɪᴍ ᴍᴀɢɴᴇᴛ","ꜱɪʟᴇɴᴛ ᴀɪᴍ","ᴀɪᴍʙᴏᴛ ʟᴇɢɪᴛ","ꜱᴘᴇᴇᴅ ᴛɪᴍᴇʀ","ɢʜᴏꜱᴛ ʜᴀᴄᴋ","ᴇꜱᴘ ʟɪɴᴇ ʟᴏᴄᴀᴛɪᴏɴ","🄲🅂 / 🄱🅁 ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ","ɴᴏɴ ʀᴏᴏᴛ ᴍᴏʙɪʟᴇ","ʀᴀɴᴋ ᴘᴜꜱʜ ᴘᴜʀᴘᴏꜱᴇ"],
@@ -114,8 +142,8 @@ export const mobileProducts: Product[] = [
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/HG%20NON%20ROOT%20PANEL.mp4",
     category: "mobile",
     prices: [
-      { duration: "1 day", resellerPrice: "₹45", priceINR: "₹75" },
-      { duration: "10 day", resellerPrice: "₹149", priceINR: "₹335" },
+      { duration: "1 day", resellerPrice: "₹45", priceINR: "₹60" },
+      { duration: "10 day", resellerPrice: "₹149", priceINR: "₹320" },
       { duration: "31 day", resellerPrice: "₹299", priceINR: "₹550" },
     ],
     updateChannel: "https://t.me/+lzOZzChCQmE3ZmQ1",
