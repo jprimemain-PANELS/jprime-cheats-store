@@ -16,12 +16,13 @@ export async function POST(
   try {
     const body = await request.json();
 
-    const {
-      username,
-      product_name,
-      duration,
-      amount,
-    } = body;
+const {
+  username,
+  product_name,
+  duration,
+  amount,
+  android_id,
+} = body;
 
     // Validate required information
     if (
@@ -41,6 +42,21 @@ export async function POST(
         }
       );
     }
+
+    if (
+  product_name === "HAXXCKER CLIENT" &&
+  (!android_id || !String(android_id).trim())
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Android ID is required for HAXXCKER CLIENT",
+    },
+    {
+      status: 400,
+    }
+  );
+}
 
     const numericAmount =
       Number(amount);
@@ -177,6 +193,11 @@ export async function POST(
 
           amount:
             String(gatewayOrder.amount),
+
+            android_id:
+             android_id
+             ? String(android_id).trim()
+             : null,  
 
           status: "pending",
 

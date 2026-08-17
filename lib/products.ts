@@ -23,7 +23,7 @@ export interface Product {
 export const mobileProducts: Product[] = [
   {
   id: "haxxcker-client",
-  name: "HAXXCKER CLIENT ( main id )",
+  name: "HAXXCKER CLIENT NON ROOT ( main id )",
    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/haxx%20v.mp4",
   category: "mobile",
     // BALA MOD XYZ V1
@@ -32,9 +32,9 @@ export const mobileProducts: Product[] = [
 
   prices: [
     { duration: "1 Hours", resellerPrice: "₹15", priceINR: "₹25" },
-    { duration: "3 Hours", resellerPrice: "₹56", priceINR: "₹70" },
-    { duration: "6 Hours", resellerPrice: "₹96", priceINR: "₹120" },
-    { duration: "12 Hours", resellerPrice: "₹160", priceINR: "₹200" },
+    { duration: "3 Hours", resellerPrice: "₹35", priceINR: "₹56" },
+    { duration: "6 Hours", resellerPrice: "₹65", priceINR: "₹90" },
+    { duration: "12 Hours", resellerPrice: "₹160", priceINR: "₹190" },
     { duration: "1 Days", resellerPrice: "₹240", priceINR: "₹300" },
     { duration: "2 Days", resellerPrice: "₹480", priceINR: "₹600" },
     { duration: "3 Days", resellerPrice: "₹680", priceINR: "₹850" },
@@ -51,11 +51,11 @@ export const mobileProducts: Product[] = [
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20CLIENT%20NON%20ROOT%20MOBILE.mp4",
     category: "mobile",
     prices: [
-      { duration: "1 day", priceINR: "₹60", resellerPrice: "₹28", priceUSD: "$1.38" },
-      { duration: "3 day", priceINR: "₹145", resellerPrice: "₹53",priceUSD: "$2.20" },
-      { duration: "7 day", priceINR: "₹260", resellerPrice: "₹110",priceUSD: "$3.75" },
-      { duration: "15 day", priceINR: "₹399", resellerPrice: "₹156",priceUSD: "$6.90" },
-      { duration: "31 day", priceINR: "₹599", resellerPrice: "₹236",priceUSD: "$9.80" },
+      { duration: "1 day", priceINR: "₹40", resellerPrice: "₹20", priceUSD: "$1.38" },
+      { duration: "3 day", priceINR: "₹99", resellerPrice: "₹50",priceUSD: "$2.20" },
+      { duration: "7 day", priceINR: "₹200", resellerPrice: "₹100",priceUSD: "$3.75" },
+      { duration: "15 day", priceINR: "₹290", resellerPrice: "₹145",priceUSD: "$6.90" },
+      { duration: "31 day", priceINR: "₹489", resellerPrice: "₹235",priceUSD: "$9.80" },
     ],
     updateChannel: "https://t.me/+JNLfa2pGuYxlNWNl",
     features: ["ᴀɪᴍ ᴍᴀɢɴᴇᴛ","ꜱɪʟᴇɴᴛ ᴀɪᴍ","ᴀɪᴍʙᴏᴛ ʟᴇɢɪᴛ","ꜱᴘᴇᴇᴅ ᴛɪᴍᴇʀ","ɢʜᴏꜱᴛ ʜᴀᴄᴋ","ᴇꜱᴘ ʟɪɴᴇ ʟᴏᴄᴀᴛɪᴏɴ","🄲🅂 / 🄱🅁 ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ","ɴᴏɴ ʀᴏᴏᴛ ᴍᴏʙɪʟᴇ","ʀᴀɴᴋ ᴘᴜꜱʜ ᴘᴜʀᴘᴏꜱᴇ"],
