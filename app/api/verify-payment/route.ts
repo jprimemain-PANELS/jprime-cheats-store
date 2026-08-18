@@ -4,6 +4,21 @@ import { releaseProduct } from "@/lib/release-product";
 import { sendTelegramPurchase } from "@/lib/telegram";
 
 const FP_VERIFY_URL = "https://xyzcheats.com/gateway/verify.php";
+const XYZ_API_URL = "https://xyzcheats.com/api/reseller_v1.php";
+
+const HAXXCKER_PRODUCT_ID = "133";
+
+const HAXXCKER_DURATION_MAP: Record<string, string> = {
+  "1 hour": "1 Hours",
+  "3 hour": "3 Hours",
+  "6 hour": "6 Hours",
+  "12 hour": "12 Hours",
+  "1 day": "1 Days",
+  "2 day": "2 Days",
+  "3 day": "3 Days",
+  "5 day": "5 Days",
+  "7 day": "7 Days",
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -193,24 +208,169 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find one unused key.
-const delivery = await releaseProduct({
-  username: order.username,
-  product_name: order.product_name,
-  duration: order.duration,
-});
+// --------------------------------------------------
+// HAXXCKER CLIENT
+// Payment verified → generate access from XYZCheats
+// --------------------------------------------------
 
-if (!delivery.success) {
-  return NextResponse.json(
-    {
-      success: false,
-      status: "out_of_stock",
-      error: delivery.error,
+let generatedKey: string | null = null;
+
+if (order.product_name === "HAXXCKER CLIENT") {
+  const xyzApiKey = process.env.XYZCHEATS_API_KEY;
+  const xyzMasterKey = process.env.XYZCHEATS_MASTER_KEY;
+
+  if (!xyzApiKey || !xyzMasterKey) {
+    console.error("XYZCheats API credentials are missing.");
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "HAXXCKER provider is not configured.",
+      },
+      { status: 500 }
+    );
+  }
+
+  const androidId = order.android_id
+    ? String(order.android_id).trim()
+    : "";
+
+  if (!androidId) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Android ID is missing from payment order.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const xyzDuration =
+    HAXXCKER_DURATION_MAP[String(order.duration).toLowerCase()];
+
+  if (!xyzDuration) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Invalid HAXXCKER duration.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const xyzData = new URLSearchParams();
+
+  xyzData.append("api_key", xyzApiKey);
+  xyzData.append("action", "buy");
+  xyzData.append("product_id", HAXXCKER_PRODUCT_ID);
+  xyzData.append("duration", xyzDuration);
+  xyzData.append("android_id", androidId);
+
+  const xyzResponse = await fetch(XYZ_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-master-key": xyzMasterKey,
     },
-    {
-      status: 409,
-    }
-  );
+    body: xyzData.toString(),
+    cache: "no-store",
+  });
+
+  const xyzResponseText = await xyzResponse.text();
+
+  console.log("=================================");
+  console.log("HAXXCKER XYZ RESPONSE:");
+  console.log(xyzResponseText);
+  console.log("=================================");
+
+  let xyzDataResponse: any;
+
+  try {
+    xyzDataResponse = JSON.parse(xyzResponseText);
+  } catch {
+    console.error(
+      "Invalid HAXXCKER provider response:",
+      xyzResponseText
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "HAXXCKER provider returned invalid data.",
+      },
+      { status: 502 }
+    );
+  }
+
+  if (!xyzResponse.ok) {
+    console.error(
+      "HAXXCKER provider HTTP error:",
+      xyzDataResponse
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          xyzDataResponse?.message ||
+          "HAXXCKER provider rejected the request.",
+      },
+      { status: 502 }
+    );
+  }
+
+  // We need the generated access from the provider.
+  generatedKey =
+    xyzDataResponse?.data?.key ||
+    xyzDataResponse?.data?.access_key ||
+    xyzDataResponse?.key ||
+    xyzDataResponse?.access_key ||
+    null;
+
+  if (!generatedKey) {
+    console.error(
+      "HAXXCKER provider did not return an access key:",
+      xyzDataResponse
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          xyzDataResponse?.message ||
+          "HAXXCKER access was not generated.",
+      },
+      { status: 502 }
+    );
+  }
+}
+
+// --------------------------------------------------
+// EXISTING PRODUCTS
+// Keep the existing stock-key system unchanged.
+// --------------------------------------------------
+
+if (order.product_name !== "HAXXCKER CLIENT") {
+  const delivery = await releaseProduct({
+    username: order.username,
+    product_name: order.product_name,
+    duration: order.duration,
+  });
+
+  if (!delivery.success) {
+    return NextResponse.json(
+      {
+        success: false,
+        status: "out_of_stock",
+        error: delivery.error,
+      },
+      {
+        status: 409,
+      }
+    );
+  }
+
+  generatedKey = delivery.key;
 }
 
 const { error: paymentOrderUpdateError } = await supabase
@@ -244,7 +404,7 @@ await sendTelegramPurchase({
 return NextResponse.json({
   success: true,
   status: "success",
-  key: delivery.key,
+  key: generatedKey,
   order_id: gatewayOrderId,
   utr: payment.utr || null,
   sender_name: payment.sender_name || null,
