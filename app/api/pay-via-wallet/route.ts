@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
       product_name,
       duration,
       amount,
+      android_id,
     } = await request.json();
 
     if (!username || !product_name || !duration || amount === undefined) {
@@ -23,6 +24,20 @@ export async function POST(request: NextRequest) {
         }
       );
     }
+
+    const isHaxxcker = product_name === "HAXXCKER CLIENT";
+
+if (isHaxxcker && (!android_id || !String(android_id).trim())) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Android ID is required for HAXXCKER CLIENT.",
+    },
+    {
+      status: 400,
+    }
+  );
+}
 
     const price = Number(amount);
 

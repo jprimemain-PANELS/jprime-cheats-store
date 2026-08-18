@@ -31,7 +31,7 @@ export const mobileProducts: Product[] = [
   requiresAndroidId: true,
 
   prices: [
-    { duration: "1 Hours", resellerPrice: "₹15", priceINR: "₹25" },
+    { duration: "1 Hours", resellerPrice: "₹10", priceINR: "₹25" },
     { duration: "3 Hours", resellerPrice: "₹35", priceINR: "₹56" },
     { duration: "6 Hours", resellerPrice: "₹65", priceINR: "₹90" },
     { duration: "12 Hours", resellerPrice: "₹160", priceINR: "₹190" },
