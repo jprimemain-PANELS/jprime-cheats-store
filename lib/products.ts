@@ -21,6 +21,20 @@ export interface Product {
 }
 
 export const mobileProducts: Product[] = [
+ {
+    id: "nine-non-root",
+    name: "PRIVATE - AIM SILENT NON ROOT (MAIN ID)",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/9x.mp4",
+    category: "mobile",
+    prices: [
+      { duration: "10 day", priceINR: "₹440", resellerPrice: "₹255", priceUSD: "$1.38" },
+      { duration: "20 day", priceINR: "₹880", resellerPrice: "₹510",priceUSD: "$2.20" },
+      { duration: "30 day", priceINR: "₹1280", resellerPrice: "₹765",priceUSD: "$9.80" },
+    ],
+    updateChannel: "t.me/JPRIMEADMIN",
+    features: ["ᴍᴀɪɴ ɪᴅ ꜱᴀꜰᴇ","ɴᴏɴ ʀᴏᴏᴛ","ᴅʀᴀɢ ʜᴇᴀᴅsʜᴏᴛ","ʜᴇᴀᴅ ʟᴏᴄᴋ","ɴɪᴄᴋ ʟᴏᴄᴋ","🄲🅂 / 🄱🅁 ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ","ɴᴏɴ ʀᴏᴏᴛ ᴍᴏʙɪʟᴇ","ʀᴀɴᴋ ᴘᴜꜱʜ ᴘᴜʀᴘᴏꜱᴇ"],
+  },
+  
   {
   id: "haxxcker-client",
   name: "HAXXCKER CLIENT NON ROOT ( main id )",
