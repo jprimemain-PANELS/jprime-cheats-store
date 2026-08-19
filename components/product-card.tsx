@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Check,
   Play,
@@ -37,7 +37,17 @@ interface ProductCardProps {
 const WALLET_BALANCE_EVENT = "wallet-balance-updated";
 
 export function ProductCard({ product, index }: ProductCardProps) {
-  const [selectedPrice, setSelectedPrice] = useState<PriceTier>(product.prices[0]);
+  // Duration is now tracked by name, and the actual price tier is derived
+  // (see `effectivePrices`/`selectedPrice` below) so that a price saved from
+  // the admin Pricing tab shows up here without a page reload.
+  const [selectedDuration, setSelectedDuration] = useState<string>(
+    product.prices[0]?.duration ?? ""
+  );
+  // Live price overrides saved in Supabase's product_prices table, keyed by
+  // duration. Empty object = nothing saved yet, so products.ts prices are used.
+  const [liveOverrides, setLiveOverrides] = useState<
+    Record<string, { priceINR: number; resellerPrice?: number }>
+  >({});
   const [isHovered, setIsHovered] = useState(false);
   const [availableStock, setAvailableStock] = useState<number | null>(null);
   const [userRole, setUserRole] = useState("user");
@@ -59,10 +69,64 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
   const [keyCopied, setKeyCopied] = useState(false);
   const [showAutoCopyToast, setShowAutoCopyToast] = useState(false);
 
+  // Merge any saved database prices onto this product's static prices from
+  // products.ts. A duration with no saved override keeps its original price.
+  const effectivePrices = useMemo<PriceTier[]>(() => {
+    return product.prices.map((tier) => {
+      const override = liveOverrides[tier.duration];
+      if (!override) return tier;
+      return {
+        ...tier,
+        priceINR: `₹${Math.round(override.priceINR)}`,
+        resellerPrice:
+          override.resellerPrice != null
+            ? `₹${Math.round(override.resellerPrice)}`
+            : tier.resellerPrice,
+      };
+    });
+  }, [product.prices, liveOverrides]);
+
+  const selectedPrice: PriceTier =
+    effectivePrices.find((p) => p.duration === selectedDuration) ?? effectivePrices[0];
+
   useEffect(() => {
     loadStock();
     loadUserData();
-  }, [selectedPrice]);
+  }, [selectedDuration]);
+
+  // Fetch this product's saved prices from Supabase once on mount. If the
+  // table/columns aren't set up yet, this just logs and the card keeps
+  // showing the products.ts price — it never breaks the storefront.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLivePrices() {
+      const { data, error } = await supabase
+        .from("product_prices")
+        .select("duration, price_inr, reseller_price")
+        .eq("product_name", product.name);
+
+      if (error) {
+        console.error(`Live price lookup failed for "${product.name}":`, error.message);
+        return;
+      }
+      if (cancelled) return;
+
+      const map: Record<string, { priceINR: number; resellerPrice?: number }> = {};
+      (data || []).forEach((row: any) => {
+        map[row.duration] = {
+          priceINR: Number(row.price_inr),
+          resellerPrice: row.reseller_price != null ? Number(row.reseller_price) : undefined,
+        };
+      });
+      setLiveOverrides(map);
+    }
+
+    loadLivePrices();
+    return () => {
+      cancelled = true;
+    };
+  }, [product.name]);
 
   // Auto-hide the "copied to clipboard" toast after 3s.
   useEffect(() => {
@@ -98,7 +162,7 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
       .from("stock_keys")
       .select("*")
       .eq("product_name", product.name)
-      .eq("duration", selectedPrice.duration)
+      .eq("duration", selectedDuration)
       .eq("is_used", false);
   
     if (data) {
@@ -411,10 +475,10 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
               Select Duration
             </p>
             <div className="grid grid-cols-2 gap-2">
-              {product.prices.map((price, i) => (
+              {effectivePrices.map((price, i) => (
                 <button
                   key={i}
-                  onClick={() => setSelectedPrice(price)}
+                  onClick={() => setSelectedDuration(price.duration)}
                   className={`flex flex-col items-start p-3 rounded-lg border transition-all duration-200 ${
                     selectedPrice.duration === price.duration
                       ? "border-primary/50 bg-primary/10"

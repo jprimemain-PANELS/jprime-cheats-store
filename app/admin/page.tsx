@@ -28,6 +28,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   AlertTriangle,
+  Info,
 } from "lucide-react";
 
 import { allProducts } from "@/lib/products";
@@ -66,6 +67,27 @@ function resolvePrice(
     priceINR: override?.priceINR ?? parsePriceNumber(baseTier?.priceINR),
     resellerPrice: override?.resellerPrice ?? parsePriceNumber(baseTier?.resellerPrice),
   };
+}
+
+// Turns a raw Supabase/Postgres error into something an admin can actually act on.
+function friendlyDbError(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("column") && lower.includes("schema cache")) {
+    return `${raw}
+
+Your Supabase "product_prices" table doesn't have the columns this page expects (price_inr, reseller_price). Run this in the Supabase SQL editor, then try saving again:
+
+alter table public.product_prices add column if not exists price_inr numeric not null default 0;
+alter table public.product_prices add column if not exists reseller_price numeric;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'product_prices_product_duration_key') then
+    alter table public.product_prices add constraint product_prices_product_duration_key unique (product_name, duration);
+  end if;
+end $$;`;
+  }
+  return raw;
 }
 
 // ---------- small reusable UI pieces ----------
@@ -126,6 +148,23 @@ function SectionCard({
   );
 }
 
+// Small stock "box" used in the redesigned Stock Matrix — one glanceable tile per duration.
+function StockBox({ duration, count }: { duration: string; count: number }) {
+  const tone =
+    count === 0
+      ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+      : count <= 3
+      ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400";
+
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 flex flex-col items-center justify-center gap-1 text-center ${tone}`}>
+      <span className="text-sm font-bold tabular-nums">{count}</span>
+      <span className="text-[10px] font-medium text-slate-400 leading-tight">{duration}</span>
+    </div>
+  );
+}
+
 // ---------- main page ----------
 
 export default function AdminPage() {
@@ -146,6 +185,8 @@ export default function AdminPage() {
   const [priceProduct, setPriceProduct] = useState<Product | null>(null);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, { priceINR: string; resellerPrice: string }>>({});
   const [isSavingPrices, setIsSavingPrices] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [priceSavedAt, setPriceSavedAt] = useState<number | null>(null);
 
   // Purchases tab filter
   const [purchaseFilter, setPurchaseFilter] = useState<"all" | "today">("all");
@@ -223,7 +264,10 @@ export default function AdminPage() {
       .order("id", { ascending: false });
 
     // Price overrides — table is new, empty is fine, everything falls back to products.ts
-    const { data: priceRows } = await supabase.from("product_prices").select("*");
+    const { data: priceRows, error: priceRowsError } = await supabase.from("product_prices").select("*");
+    if (priceRowsError) {
+      console.error("Failed to load price overrides:", priceRowsError.message);
+    }
     const overrideMap: Record<string, PriceOverride> = {};
     (priceRows || []).forEach((row: any) => {
       overrideMap[`${row.product_name}::${row.duration}`] = {
@@ -236,6 +280,7 @@ export default function AdminPage() {
     setUsers(enrichedUsers);
     setPurchases(purchaseData || []);
     setPriceOverrides(overrideMap);
+    return overrideMap;
   }
 
   async function loadStock() {
@@ -303,27 +348,37 @@ export default function AdminPage() {
 
   // ---- pricing ----
 
+  function buildDraftsFromOverrides(product: Product, overrides: Record<string, PriceOverride>) {
+    const drafts: Record<string, { priceINR: string; resellerPrice: string }> = {};
+    product.prices.forEach((tier) => {
+      const resolved = resolvePrice(overrides, product.name, tier.duration, tier);
+      drafts[tier.duration] = {
+        priceINR: String(resolved.priceINR),
+        resellerPrice: String(resolved.resellerPrice),
+      };
+    });
+    return drafts;
+  }
+
   function handleSelectPriceProduct(name: string) {
+    setPriceError(null);
+    setPriceSavedAt(null);
     const found = allProducts.find((p) => p.name === name) || null;
     setPriceProduct(found);
     if (!found) {
       setPriceDrafts({});
       return;
     }
-    const drafts: Record<string, { priceINR: string; resellerPrice: string }> = {};
-    found.prices.forEach((tier) => {
-      const resolved = resolvePrice(priceOverrides, found.name, tier.duration, tier);
-      drafts[tier.duration] = {
-        priceINR: String(resolved.priceINR),
-        resellerPrice: String(resolved.resellerPrice),
-      };
-    });
-    setPriceDrafts(drafts);
+    // Always build the drafts from the latest known overrides, so the currently
+    // saved price (not just the hard-coded base price) shows up immediately.
+    setPriceDrafts(buildDraftsFromOverrides(found, priceOverrides));
   }
 
   async function handleSavePrices() {
     if (!priceProduct) return;
     setIsSavingPrices(true);
+    setPriceError(null);
+    setPriceSavedAt(null);
 
     try {
       const rows = Object.entries(priceDrafts)
@@ -341,20 +396,13 @@ export default function AdminPage() {
 
       if (error) throw error;
 
-      setPriceOverrides((prev) => {
-        const next = { ...prev };
-        rows.forEach((r) => {
-          next[`${r.product_name}::${r.duration}`] = {
-            priceINR: r.price_inr,
-            resellerPrice: r.reseller_price ?? undefined,
-          };
-        });
-        return next;
-      });
-
-      alert("Prices updated successfully.");
+      // Re-pull from the DB so what's on screen always matches what's actually saved,
+      // instead of trusting local state alone.
+      const freshOverrides = await loadDashboard();
+      setPriceDrafts(buildDraftsFromOverrides(priceProduct, freshOverrides));
+      setPriceSavedAt(Date.now());
     } catch (err: any) {
-      alert(err?.message || "Failed to update prices.");
+      setPriceError(friendlyDbError(err?.message || "Failed to update prices."));
     } finally {
       setIsSavingPrices(false);
     }
@@ -680,33 +728,17 @@ export default function AdminPage() {
 
               <div className="lg:col-span-7">
                 <SectionCard icon={LayoutGrid} title="Stock Matrix — All Products & Durations">
-                  <div className="overflow-x-auto custom-scrollbar max-h-[460px]">
-                    <table className="w-full text-left text-xs">
-                      <thead className="sticky top-0 bg-slate-900">
-                        <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
-                          <th className="py-2.5 px-3">Product</th>
-                          <th className="py-2.5 px-3">Duration</th>
-                          <th className="py-2.5 px-3 text-right">In Stock</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60">
-                        {stockMatrix.map((product) =>
-                          product.rows.map((row, i) => (
-                            <tr key={`${product.id}-${row.duration}`} className="hover:bg-slate-800/30">
-                              {i === 0 && (
-                                <td rowSpan={product.rows.length} className="py-2.5 px-3 font-semibold text-white align-top">
-                                  {product.name}
-                                </td>
-                              )}
-                              <td className="py-2.5 px-3 text-slate-400">{row.duration}</td>
-                              <td className={`py-2.5 px-3 text-right font-bold tabular-nums ${row.count === 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                                {row.count}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto custom-scrollbar pr-1">
+                    {stockMatrix.map((product) => (
+                      <div key={product.id} className="bg-slate-950/50 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                        <p className="text-xs font-bold text-white truncate">{product.name}</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {product.rows.map((row) => (
+                            <StockBox key={row.duration} duration={row.duration} count={row.count} />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </SectionCard>
               </div>
@@ -757,8 +789,14 @@ export default function AdminPage() {
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 </div>
                 <p className="text-[11px] text-slate-500 mt-3">
-                  These prices are saved to the database. Your storefront checkout needs to read from the same table for customers to see the new price — see the note below the page.
+                  These prices are saved to the database. Your storefront checkout needs to read from the same table for customers to see the new price.
                 </p>
+                <div className="mt-3 flex items-start gap-2 bg-slate-950/50 border border-slate-800 rounded-lg px-3 py-2.5">
+                  <Info className="h-3.5 w-3.5 text-slate-500 mt-0.5 shrink-0" />
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Fields below always load the currently saved price for each duration, not just the code default. If you don't see your last edit, saving likely failed — check the error banner on the right.
+                  </p>
+                </div>
               </SectionCard>
             </div>
 
@@ -782,15 +820,42 @@ export default function AdminPage() {
                 {!priceProduct ? (
                   <p className="text-xs text-slate-500 py-8 text-center">Select a product on the left to edit its prices.</p>
                 ) : (
-                  <div className="space-y-2.5">
+                  <div className="space-y-3">
+                    {priceError && (
+                      <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3.5 py-3">
+                        <AlertTriangle className="h-3.5 w-3.5 text-rose-400 mt-0.5 shrink-0" />
+                        <pre className="text-[11px] text-rose-300 whitespace-pre-wrap font-sans leading-relaxed">{priceError}</pre>
+                      </div>
+                    )}
+                    {priceSavedAt && !priceError && (
+                      <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3.5 py-2.5">
+                        <span className="text-[11px] text-emerald-400 font-medium">Prices saved and reloaded from the database.</span>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-[1fr_100px_100px] gap-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                       <span>Duration</span>
                       <span className="text-right">Retail ₹</span>
                       <span className="text-right">Reseller ₹</span>
                     </div>
-                    {priceProduct.prices.map((tier: PriceTier) => (
+                    {priceProduct.prices.map((tier: PriceTier) => {
+                      // What's actually live right now (saved override, or the
+                      // products.ts default if nothing's been saved yet). This
+                      // does NOT change as you type below — it only updates
+                      // after a successful save, so you always know what
+                      // customers are currently seeing.
+                      const live = resolvePrice(priceOverrides, priceProduct.name, tier.duration, tier);
+                      return (
                       <div key={tier.duration} className="grid grid-cols-[1fr_100px_100px] gap-3 items-center bg-slate-950/50 border border-slate-800 rounded-lg px-3 py-2.5">
-                        <span className="text-xs font-medium text-slate-300">{tier.duration}</span>
+                        <div className="min-w-0">
+                          <span className="text-xs font-medium text-slate-300 block">{tier.duration}</span>
+                          <span className="text-[10px] text-slate-500">
+                            Live now: <span className="text-emerald-400 font-semibold">₹{live.priceINR}</span>
+                            {live.resellerPrice ? (
+                              <> · reseller <span className="text-emerald-400 font-semibold">₹{live.resellerPrice}</span></>
+                            ) : null}
+                          </span>
+                        </div>
                         <input
                           type="number"
                           value={priceDrafts[tier.duration]?.priceINR ?? ""}
@@ -814,7 +879,8 @@ export default function AdminPage() {
                           className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-2 text-xs text-slate-100 text-right outline-none focus:border-emerald-500"
                         />
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </SectionCard>
