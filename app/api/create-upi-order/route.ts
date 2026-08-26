@@ -21,7 +21,6 @@ const {
   product_name,
   duration,
   amount,
-  android_id,
 } = body;
 
     // Validate required information

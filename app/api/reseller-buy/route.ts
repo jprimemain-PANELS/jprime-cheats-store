@@ -26,7 +26,6 @@ export async function POST(request: Request) {
     const {
       productId,
       duration,
-      androidId,
     } = body;
 
     // --------------------------------------------------

@@ -31,33 +31,26 @@ export const mobileProducts: Product[] = [
       { duration: "20 day", priceINR: "₹880", resellerPrice: "₹510",priceUSD: "$2.20" },
       { duration: "30 day", priceINR: "₹1280", resellerPrice: "₹765",priceUSD: "$9.80" },
     ],
-    updateChannel: "t.me/JPRIMEADMIN",
+    updateChannel: "https://t.me/+vmEtPFDt7wJmYTY1",
     features: ["ᴍᴀɪɴ ɪᴅ ꜱᴀꜰᴇ","ɴᴏɴ ʀᴏᴏᴛ","ᴅʀᴀɢ ʜᴇᴀᴅsʜᴏᴛ","ʜᴇᴀᴅ ʟᴏᴄᴋ","ɴɪᴄᴋ ʟᴏᴄᴋ","🄲🅂 / 🄱🅁 ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ","ɴᴏɴ ʀᴏᴏᴛ ᴍᴏʙɪʟᴇ","ʀᴀɴᴋ ᴘᴜꜱʜ ᴘᴜʀᴘᴏꜱᴇ"],
   },
   
   {
-  id: "haxxcker-client",
-  name: "HAXXCKER CLIENT NON ROOT ( main id )",
-   videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/haxx%20v.mp4",
+  id: "haxxcker-bala",
+  name: "HAXXCKER CLIENT NON ROOT - RED",
+   videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/video_2026-08-26_21-54-29.mp4",
   category: "mobile",
-    // BALA MOD XYZ V1
-  apiProductId: "133",
-  requiresAndroidId: true,
-
   prices: [
     { duration: "1 Hours", resellerPrice: "₹10", priceINR: "₹25" },
     { duration: "3 Hours", resellerPrice: "₹35", priceINR: "₹56" },
     { duration: "6 Hours", resellerPrice: "₹65", priceINR: "₹90" },
     { duration: "12 Hours", resellerPrice: "₹160", priceINR: "₹190" },
     { duration: "1 Days", resellerPrice: "₹240", priceINR: "₹300" },
-    { duration: "2 Days", resellerPrice: "₹480", priceINR: "₹600" },
-    { duration: "3 Days", resellerPrice: "₹680", priceINR: "₹850" },
-    { duration: "5 Days", resellerPrice: "₹1112", priceINR: "₹1390" },
     { duration: "7 Days", resellerPrice: "₹1432", priceINR: "₹1790" },
   ],
 
   updateChannel: "https://t.me/+jxcj7KJjcfI3MmQ1",
-  features: ["ɴᴏɴ ʀᴏᴏᴛ", "ᴅʀᴀɢ ʜᴇᴀᴅsʜᴏᴛ 100%", "ᴅʀᴀɢ ʜᴇᴀᴅsʜᴏᴛ 50%", "ʜᴇᴀᴅ ʟᴏᴄᴋ", "ʙᴏᴅʏ ʜᴇᴀᴅsʜᴏᴛ", "ᴄʜᴇsᴛ ʜᴇᴀᴅsʜᴏᴛ"]
+  features: ["ʟᴏᴄᴀᴛɪᴏɴ","ᴇɴᴇᴍʏ ꜰʀᴇᴇᴢᴇ","ꜱᴄᴏᴘᴇ ꜰʀᴇᴇᴢᴇ ꜰɪʀᴇ"],
 },
   {
     id: "drip-client-non-root",
