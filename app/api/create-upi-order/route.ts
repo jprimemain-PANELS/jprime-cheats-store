@@ -193,11 +193,6 @@ const {
           amount:
             String(gatewayOrder.amount),
 
-            android_id:
-             android_id
-             ? String(android_id).trim()
-             : null,  
-
           status: "pending",
 
           used: false,

@@ -14,10 +14,6 @@ export interface Product {
   features: string[];
   videoPlaceholder?: string;
   videoUrl?: string;
-
-  // External reseller API configuration
-  apiProductId?: string;
-  requiresAndroidId?: boolean;
 }
 
 export const mobileProducts: Product[] = [
