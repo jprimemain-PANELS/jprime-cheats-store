@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { allProducts, Product, PriceTier } from "@/lib/products";
 
 interface ReleaseProductParams {
   username: string;
@@ -6,75 +7,94 @@ interface ReleaseProductParams {
   duration: string;
 }
 
-export async function releaseProduct({
-  username,
-  product_name,
-  duration,
-}: ReleaseProductParams) {
-  // Find one unused stock key
-  const { data: stockKey, error: stockError } = await supabase
+function findProduct(productName: string): Product | undefined {
+  return allProducts.find((product) => product.name === productName);
+}
+
+function findPriceTier(product: Product, duration: string): PriceTier | undefined {
+  const priceList = product.pricing || product.prices;
+  return priceList?.find((price) => price.duration === duration);
+}
+
+export async function releaseProduct({ username, product_name, duration }: ReleaseProductParams) {
+  const product = findProduct(product_name);
+
+  if (!product) {
+    throw new Error(`Product "${product_name}" not found in catalog.`);
+  }
+
+  const priceTier = findPriceTier(product, duration);
+
+  // ----------------------------------------------------
+  // 1. RESELLER API FULFILLMENT (For supplier products)
+  // ----------------------------------------------------
+  if (product.fulfillmentType === "API" && product.sellerPid) {
+    const targetDuration = priceTier?.sellerDuration || duration;
+    const apiKey = process.env.RESELLER_API_KEY || process.env.ADMINPANELS_API_KEY || "";
+
+    const targetUrl = new URL("https://adminpanels.shop/api/reseller_v1.php");
+    targetUrl.searchParams.append("api_key", apiKey);
+    targetUrl.searchParams.append("action", "buy");
+    targetUrl.searchParams.append("product_id", String(product.sellerPid));
+    targetUrl.searchParams.append("duration", targetDuration);
+
+    console.log("Sending Supplier API Request:", targetUrl.toString());
+
+    const response = await fetch(targetUrl.toString(), {
+      method: "GET",
+    });
+
+    const rawResponseText = await response.text();
+    console.log("Raw Supplier Response:", rawResponseText);
+
+    let apiResult: any = {};
+    try {
+      apiResult = JSON.parse(rawResponseText);
+    } catch {
+      throw new Error(`Invalid response format from supplier: ${rawResponseText}`);
+    }
+
+    const key = apiResult.key || apiResult.license_key || apiResult.data?.key || apiResult.code;
+
+    if ((apiResult.status === "success" || apiResult.status === true || apiResult.success) && key) {
+      return {
+        key,
+        type: "API",
+        message: apiResult.message || apiResult.msg || "Key generated successfully",
+      };
+    } else {
+      const errorMsg = apiResult.msg || apiResult.message || apiResult.error || rawResponseText;
+      throw new Error(`Supplier API error: ${errorMsg}`);
+    }
+  }
+
+  // ----------------------------------------------------
+  // 2. LOCAL SUPABASE STOCK FULFILLMENT (For your own products)
+  // ----------------------------------------------------
+  const { data: keyData, error: fetchError } = await supabase
     .from("stock_keys")
     .select("*")
     .eq("product_name", product_name)
     .eq("duration", duration)
     .eq("is_used", false)
-    .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();
 
-  if (stockError || !stockKey) {
-    return {
-      success: false,
-      error:
-        "Payment received, but no stock key is currently available.",
-    };
+  if (fetchError || !keyData) {
+    throw new Error(`Product "${product_name}" (${duration}) is currently out of stock.`);
   }
 
-  // Reserve key
-  const { error: keyUpdateError } = await supabase
+  const licenseKey = keyData.license_key || keyData.key_code || keyData.key;
+
+  // Remove used key from local stock table
+  await supabase
     .from("stock_keys")
-    .update({
-      is_used: true,
-    })
-    .eq("id", stockKey.id)
-    .eq("is_used", false);
-
-  if (keyUpdateError) {
-    return {
-      success: false,
-      error: "Unable to reserve stock key.",
-    };
-  }
-
-  // Save purchase history
-  const { error: historyError } = await supabase
-    .from("purchase_history")
-    .insert([
-      {
-        username,
-        product_name,
-        duration,
-        key_code: stockKey.key_code,
-      },
-    ]);
-
-  if (historyError) {
-    // Rollback
-    await supabase
-      .from("stock_keys")
-      .update({
-        is_used: false,
-      })
-      .eq("id", stockKey.id);
-
-    return {
-      success: false,
-      error: "Unable to save purchase history.",
-    };
-  }
+    .delete()
+    .eq("id", keyData.id);
 
   return {
-    success: true,
-    key: stockKey.key_code,
+    key: licenseKey,
+    type: "LOCAL",
+    message: "Key issued from local database",
   };
 }

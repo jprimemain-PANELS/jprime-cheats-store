@@ -1,160 +1,142 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { releaseProduct } from "@/lib/release-product";
-import { sendTelegramPurchase } from "@/lib/telegram";
+
+async function sendTelegramNotification(details: {
+  username: string;
+  productName: string;
+  duration: string;
+  price: number;
+  key: string;
+}) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+
+  if (!botToken || !chatId) return;
+
+  const message = `🛒 *New Purchase via Wallet!*\n\n` +
+    `👤 *User:* ${details.username}\n` +
+    `📦 *Product:* ${details.productName}\n` +
+    `⏱️ *Duration:* ${details.duration}\n` +
+    `💰 *Price:* ₹${details.price}\n` +
+    `🔑 *Key:* \`${details.key}\``;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: "Markdown",
+      }),
+    });
+  } catch (err) {
+    console.error("Telegram notification error:", err);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const {
-      username,
-      product_name,
-      duration,
-      amount,
-      android_id,
-    } = await request.json();
+    const body = await request.json();
 
-    if (!username || !product_name || !duration || amount === undefined) {
+    const username = body.username || body.user || body.userName;
+    const productName = body.productName || body.product_name || body.name;
+    const duration = body.duration;
+    const price = body.price !== undefined ? body.price : body.amount;
+
+    if (!username || !productName || !duration || price === undefined) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Missing required fields.",
-        },
-        {
-          status: 400,
-        }
+        { success: false, error: "Missing required fields." },
+        { status: 400 }
       );
     }
 
-    const isHaxxcker = product_name === "HAXXCKER CLIENT";
-
-if (isHaxxcker && (!android_id || !String(android_id).trim())) {
-  return NextResponse.json(
-    {
-      success: false,
-      error: "Android ID is required for HAXXCKER CLIENT.",
-    },
-    {
-      status: 400,
-    }
-  );
-}
-
-    const price = Number(amount);
-
-    // Load wallet
+    // 1. Fetch user wallet balance
     const { data: wallet, error: walletError } = await supabase
       .from("wallets")
-      .select("*")
+      .select("balance")
       .eq("username", username)
       .maybeSingle();
 
     if (walletError || !wallet) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Wallet not found.",
-        },
-        {
-          status: 404,
-        }
+        { success: false, error: `Wallet not found for user "${username}".` },
+        { status: 400 }
       );
     }
 
-    if (Number(wallet.balance) < price) {
+    const currentBalance = Number(wallet.balance);
+    const itemPrice = Number(price);
+
+    if (currentBalance < itemPrice) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Insufficient wallet balance.",
-        },
-        {
-          status: 400,
-        }
+        { success: false, error: "Insufficient wallet balance." },
+        { status: 400 }
       );
     }
 
-    const newBalance = Number(wallet.balance) - price;
-
-    // Deduct wallet
-    const { error: updateError } = await supabase
-      .from("wallets")
-      .update({
-        balance: newBalance,
-      })
-      .eq("id", wallet.id);
-
-    if (updateError) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Unable to deduct wallet balance.",
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
-    // Save wallet transaction
-    await supabase.from("wallet_transactions").insert({
+    // 2. Fulfill key release
+    const releaseResult = await releaseProduct({
       username,
-      type: "purchase",
-      amount: price,
-      balance_after: newBalance,
-      description: `${product_name} (${duration})`,
+      product_name: productName,
+      duration,
     });
 
-// Deliver product
-const delivery = await releaseProduct({
-  username,
-  product_name,
-  duration,
-});
-
-if (!delivery.success) {
-  // Refund automatically
-  await supabase
-    .from("wallets")
-    .update({
-      balance: wallet.balance,
-    })
-    .eq("id", wallet.id);
-
-  return NextResponse.json(
-    {
-      success: false,
-      error: delivery.error,
-    },
-    {
-      status: 500,
+    if (!releaseResult || !releaseResult.key) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: releaseResult?.message || "Failed to generate product key.",
+        },
+        { status: 500 }
+      );
     }
-  );
-}
 
-// ✅ Send Telegram notification
-await sendTelegramPurchase({
-  username,
-  product: product_name,
-  duration,
-  amount: price,
-});
+    // 3. Deduct wallet balance
+    const newBalance = currentBalance - itemPrice;
+    await supabase
+      .from("wallets")
+      .update({ balance: newBalance })
+      .eq("username", username);
 
-return NextResponse.json({
-  success: true,
-  key: delivery.key,
-  newBalance,
-});
+    // 4. Record purchase directly into purchase_history using exact table columns
+    const { error: historyErr } = await supabase
+      .from("purchase_history")
+      .insert([
+        {
+          username: username,
+          product_name: productName,
+          duration: duration,
+          key_code: releaseResult.key,
+          created_at: new Date().toISOString(),
+        },
+      ]);
 
-  } catch (err) {
-    console.error(err);
+    if (historyErr) {
+      console.error("Failed to insert into purchase_history:", historyErr);
+    }
 
+    // 5. Send Telegram Notification
+    await sendTelegramNotification({
+      username,
+      productName,
+      duration,
+      price: itemPrice,
+      key: releaseResult.key,
+    });
+
+    return NextResponse.json({
+      success: true,
+      key: releaseResult.key,
+      newBalance,
+      type: releaseResult.type,
+    });
+  } catch (error: any) {
+    console.error("Wallet payment route error:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Internal server error.",
-      },
-      {
-        status: 500,
-      }
+      { success: false, error: error.message || "Wallet payment failed." },
+      { status: 500 }
     );
   }
 }

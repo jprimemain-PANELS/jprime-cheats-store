@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Copy,
 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+
 import { supabase } from "@/lib/supabase";
 import type { Product, PriceTier } from "@/lib/products";
 
@@ -31,50 +33,41 @@ interface ProductCardProps {
   index: number;
 }
 
-// NEW: shared event name used to broadcast wallet balance changes to every
-// component on the page (other ProductCards, a header/navbar, etc.) without
-// a page reload. Purely additive — nothing existing depends on this.
 const WALLET_BALANCE_EVENT = "wallet-balance-updated";
 
 export function ProductCard({ product, index }: ProductCardProps) {
-  // Duration is now tracked by name, and the actual price tier is derived
-  // (see `effectivePrices`/`selectedPrice` below) so that a price saved from
-  // the admin Pricing tab shows up here without a page reload.
   const [selectedDuration, setSelectedDuration] = useState<string>(
     product.prices[0]?.duration ?? ""
   );
-  // Live price overrides saved in Supabase's product_prices table, keyed by
-  // duration. Empty object = nothing saved yet, so products.ts prices are used.
+
   const [liveOverrides, setLiveOverrides] = useState<
     Record<string, { priceINR: number; resellerPrice?: number }>
   >({});
+
   const [isHovered, setIsHovered] = useState(false);
   const [availableStock, setAvailableStock] = useState<number | null>(null);
   const [userRole, setUserRole] = useState("user");
   const [walletBalance, setWalletBalance] = useState<number>(0);
 
-  const isHaxxcker = product.id === "haxxcker-client";
-
-const [androidId, setAndroidId] = useState("");
-const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
-
-  // Modal & Payment states
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // UI-only state for the animated key-reveal card (replaces the old
-  // alert()-based success message). Does not touch any payment/business logic.
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [purchasedKey, setPurchasedKey] = useState<string | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
   const [showAutoCopyToast, setShowAutoCopyToast] = useState(false);
 
-  // Merge any saved database prices onto this product's static prices from
-  // products.ts. A duration with no saved override keeps its original price.
+  /*
+   * Merge live prices from Supabase with products.ts prices.
+   */
   const effectivePrices = useMemo<PriceTier[]>(() => {
     return product.prices.map((tier) => {
       const override = liveOverrides[tier.duration];
-      if (!override) return tier;
+
+      if (!override) {
+        return tier;
+      }
+
       return {
         ...tier,
         priceINR: `₹${Math.round(override.priceINR)}`,
@@ -87,16 +80,21 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
   }, [product.prices, liveOverrides]);
 
   const selectedPrice: PriceTier =
-    effectivePrices.find((p) => p.duration === selectedDuration) ?? effectivePrices[0];
+    effectivePrices.find(
+      (price) => price.duration === selectedDuration
+    ) ?? effectivePrices[0];
 
+  /*
+   * Load stock and user information.
+   */
   useEffect(() => {
     loadStock();
     loadUserData();
   }, [selectedDuration]);
 
-  // Fetch this product's saved prices from Supabase once on mount. If the
-  // table/columns aren't set up yet, this just logs and the card keeps
-  // showing the products.ts price — it never breaks the storefront.
+  /*
+   * Load live prices.
+   */
   useEffect(() => {
     let cancelled = false;
 
@@ -107,185 +105,259 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
         .eq("product_name", product.name);
 
       if (error) {
-        console.error(`Live price lookup failed for "${product.name}":`, error.message);
+        console.error(
+          `Live price lookup failed for "${product.name}":`,
+          error.message
+        );
         return;
       }
+
       if (cancelled) return;
 
-      const map: Record<string, { priceINR: number; resellerPrice?: number }> = {};
+      const map: Record<
+        string,
+        { priceINR: number; resellerPrice?: number }
+      > = {};
+
       (data || []).forEach((row: any) => {
         map[row.duration] = {
           priceINR: Number(row.price_inr),
-          resellerPrice: row.reseller_price != null ? Number(row.reseller_price) : undefined,
+          resellerPrice:
+            row.reseller_price != null
+              ? Number(row.reseller_price)
+              : undefined,
         };
       });
+
       setLiveOverrides(map);
     }
 
     loadLivePrices();
+
     return () => {
       cancelled = true;
     };
   }, [product.name]);
 
-  // Auto-hide the "copied to clipboard" toast after 3s.
+  /*
+   * Auto-hide copied toast.
+   */
   useEffect(() => {
     if (!showAutoCopyToast) return;
-    const timer = setTimeout(() => setShowAutoCopyToast(false), 3000);
+
+    const timer = setTimeout(() => {
+      setShowAutoCopyToast(false);
+    }, 3000);
+
     return () => clearTimeout(timer);
   }, [showAutoCopyToast]);
 
-  // NEW: listen for wallet balance updates broadcast by ANY ProductCard (or
-  // any other component) on the page, so every instance stays in sync
-  // instantly — no page reload, no extra network calls.
+  /*
+   * Listen for wallet balance changes from other components.
+   */
   useEffect(() => {
     function handleExternalBalanceUpdate(e: Event) {
       const detail = (e as CustomEvent<{ balance: number }>).detail;
+
       if (detail && typeof detail.balance === "number") {
         setWalletBalance(detail.balance);
       }
     }
 
-    window.addEventListener(WALLET_BALANCE_EVENT, handleExternalBalanceUpdate);
-    return () => window.removeEventListener(WALLET_BALANCE_EVENT, handleExternalBalanceUpdate);
+    window.addEventListener(
+      WALLET_BALANCE_EVENT,
+      handleExternalBalanceUpdate
+    );
+
+    return () => {
+      window.removeEventListener(
+        WALLET_BALANCE_EVENT,
+        handleExternalBalanceUpdate
+      );
+    };
   }, []);
 
+/*
+   * Load product stock.
+   */
   async function loadStock() {
-    // HAXXCKER CLIENT does not use stock_keys.
-    // Access is generated by XYZCheats after successful payment.
-    if (product.id === "haxxcker-client") {
-      setAvailableStock(1);
+    // API products are delivered via supplier API, so skip local database stock check
+    if (product.fulfillmentType === "API") {
+      setAvailableStock(999);
       return;
     }
-  
-    const { data } = await supabase
+
+    const { data, error } = await supabase
       .from("stock_keys")
       .select("*")
       .eq("product_name", product.name)
       .eq("duration", selectedDuration)
       .eq("is_used", false);
-  
-    if (data) {
-      setAvailableStock(data.length);
-    }
-  }
 
+    if (error) {
+      console.error("Stock loading error:", error.message);
+      setAvailableStock(null);
+      return;
+    }
+
+    setAvailableStock(data?.length ?? 0);
+  }
+  /*
+   * Load user role and wallet balance.
+   */
   async function loadUserData() {
     if (typeof window === "undefined") return;
 
     const savedUser = localStorage.getItem("user");
-    if (!savedUser) return;
+
+    if (!savedUser) {
+      return;
+    }
 
     try {
       const user = JSON.parse(savedUser);
+
       setUserRole(user.role || "user");
 
-      // 1. Immediately sync balance from localStorage if available
-      if (user.wallet_balance !== undefined && user.wallet_balance !== null) {
+      /*
+       * Immediately use cached balance.
+       */
+      if (
+        user.wallet_balance !== undefined &&
+        user.wallet_balance !== null
+      ) {
         setWalletBalance(Number(user.wallet_balance));
       } else if (user.balance !== undefined && user.balance !== null) {
         setWalletBalance(Number(user.balance));
       }
 
-      // 2. Fetch fresh wallet balance directly from Supabase
+      /*
+       * Fetch fresh wallet balance.
+       */
       const identifier = user.username || user.email;
-      if (identifier) {
-        const response = await fetch("/api/get-wallet", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            username: user.username,
-          }),
-        });
 
-        const result = await response.json();
+      if (!identifier) {
+        return;
+      }
 
-        if (result.success) {
-          setWalletBalance(result.balance);
-        }
+      const response = await fetch("/api/get-wallet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: user.username || user.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setWalletBalance(Number(result.balance));
       }
     } catch (error) {
       console.error("Error reading user data:", error);
     }
   }
 
+  /*
+   * Get numeric price.
+   */
   const getNumericPrice = (): number => {
+    if (!selectedPrice) {
+      return 0;
+    }
+
     const rawPrice =
       userRole === "reseller"
         ? selectedPrice.resellerPrice || selectedPrice.priceINR
         : selectedPrice.priceINR;
 
-    return parseFloat(rawPrice.replace(/[^\d.]/g, "")) || 0;
+    return parseFloat(
+      String(rawPrice).replace(/[^\d.]/g, "")
+    ) || 0;
   };
 
-  const formattedPrice =
-    userRole === "reseller"
+  const formattedPrice = selectedPrice
+    ? userRole === "reseller"
       ? selectedPrice.resellerPrice || selectedPrice.priceINR
-      : selectedPrice.priceINR;
+      : selectedPrice.priceINR
+    : "₹0";
 
-      const handleInitialBuyClick = async () => {
-        if (!isHaxxcker && availableStock === 0) return;
-      
-        const savedUserRaw = localStorage.getItem("user");
-        const currentUser = JSON.parse(savedUserRaw || "{}");
-      
-        if (!currentUser?.username && !currentUser?.email) {
-          alert("Please login before purchasing.");
-          window.location.href = "/login";
-          return;
-        }
-      
-        // HAXXCKER CLIENT requires Android ID before payment.
-        if (isHaxxcker) {
-          setIsAndroidIdModalOpen(true);
-          return;
-        }
-      
-        // Existing products keep the original flow.
-        await loadUserData();
-        setIsPaymentModalOpen(true);
-      };
+  /*
+   * Buy button.
+   */
+const handleInitialBuyClick = async () => {
+    if (product.fulfillmentType !== "API" && availableStock === 0) {
+      alert("This product is currently out of stock.");
+      return;
+    }
 
-      const handleAndroidIdSubmit = async () => {
-        const cleanAndroidId = androidId.trim();
-      
-        if (!cleanAndroidId) {
-          alert("Please enter your Android ID / Device ID.");
-          return;
-        }
-      
-        setAndroidId(cleanAndroidId);
-        setIsAndroidIdModalOpen(false);
-      
-        await loadUserData();
-        setIsPaymentModalOpen(true);
-      };
+    const savedUserRaw = localStorage.getItem("user");
 
-  // Option 1: Pay using Wallet
+    let currentUser: any = {};
+
+    try {
+      currentUser = JSON.parse(savedUserRaw || "{}");
+    } catch {
+      currentUser = {};
+    }
+
+    if (!currentUser?.username && !currentUser?.email) {
+      alert("Please login before purchasing.");
+      window.location.href = "/login";
+      return;
+    }
+
+    await loadUserData();
+
+    setIsPaymentModalOpen(true);
+  };
+
+  /*
+   * Wallet payment.
+   */
   const handleWalletPayment = async () => {
     try {
       setIsProcessing(true);
+
       const savedUserRaw = localStorage.getItem("user");
-      const currentUser = JSON.parse(savedUserRaw || "{}");
+
+      let currentUser: any = {};
+
+      try {
+        currentUser = JSON.parse(savedUserRaw || "{}");
+      } catch {
+        currentUser = {};
+      }
+
       const numericPrice = getNumericPrice();
 
       if (walletBalance < numericPrice) {
-        alert(`Insufficient wallet balance (₹${walletBalance}). Please add funds or use UPI.`);
+        alert(
+          `Insufficient wallet balance (₹${walletBalance.toFixed(
+            2
+          )}). Please add funds or use UPI.`
+        );
+
         setIsProcessing(false);
         return;
       }
 
       const response = await fetch("/api/pay-via-wallet", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          username: currentUser.username || currentUser.email,
+          username:
+            currentUser.username || currentUser.email,
+
           product_name: product.name,
+
           duration: selectedPrice.duration,
+
           amount: numericPrice,
-          android_id: isHaxxcker ? androidId.trim() : null,
         }),
       });
 
@@ -297,31 +369,58 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
         return;
       }
 
-      // Update balance in local storage
-      // Update balance
+      /*
+       * Update wallet balance locally.
+       */
       if (result.newBalance !== undefined) {
         currentUser.wallet_balance = result.newBalance;
-        localStorage.setItem("user", JSON.stringify(currentUser));
+
+        localStorage.setItem(
+          "user",
+          JSON.stringify(currentUser)
+        );
+
         setWalletBalance(result.newBalance);
 
-        // NEW: broadcast the new balance so every other ProductCard (and any
-        // header/navbar listening for this event) updates instantly too —
-        // still no page reload, just a same-tab custom event.
+        /*
+         * Broadcast wallet update.
+         */
         window.dispatchEvent(
-          new CustomEvent(WALLET_BALANCE_EVENT, { detail: { balance: result.newBalance } })
+          new CustomEvent(WALLET_BALANCE_EVENT, {
+            detail: {
+              balance: result.newBalance,
+            },
+          })
         );
       }
 
-      // Close payment modal
+      /*
+       * Close payment modal.
+       */
       setIsPaymentModalOpen(false);
 
-      // Reveal the key in an animated on-page card instead of alert()
+      /*
+       * Show purchased key.
+       */
       setPurchasedKey(result.key);
       setShowKeyModal(true);
 
-      // Auto copy — same as before, just paired with a toast instead of alert()
-      navigator.clipboard.writeText(result.key);
-      setShowAutoCopyToast(true);
+      /*
+       * Auto copy key.
+       */
+      if (result.key) {
+        try {
+          await navigator.clipboard.writeText(result.key);
+          setShowAutoCopyToast(true);
+        } catch (error) {
+          console.error("Clipboard error:", error);
+        }
+      }
+
+      /*
+       * Refresh stock after purchase.
+       */
+      await loadStock();
     } catch (error) {
       console.error("Wallet Payment Error:", error);
       alert("Something went wrong with the wallet payment.");
@@ -330,166 +429,207 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
     }
   };
 
-  // Option 2: Instant UPI Payment
+  /*
+   * UPI payment.
+   */
   const handleUpiPayment = async () => {
     try {
       setIsProcessing(true);
+
       const savedUserRaw = localStorage.getItem("user");
-      const currentUser = JSON.parse(savedUserRaw || "{}");
-      const finalPriceStr = String(getNumericPrice());
+
+      let currentUser: any = {};
+
+      try {
+        currentUser = JSON.parse(savedUserRaw || "{}");
+      } catch {
+        currentUser = {};
+      }
+
+      const finalPrice = getNumericPrice();
 
       const response = await fetch("/api/create-upi-order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          username: currentUser.username || currentUser.email,
+          username:
+            currentUser.username || currentUser.email,
+
           product_name: product.name,
+
           duration: selectedPrice.duration,
-          amount: finalPriceStr,
-          android_id: isHaxxcker ? androidId : null,
+
+          amount: String(finalPrice),
         }),
       });
 
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        alert(result.error || "Failed to create payment order.");
+        alert(
+          result.error || "Failed to create payment order."
+        );
+
         setIsProcessing(false);
         return;
       }
 
       if (!result.payment?.order_id) {
-        alert("Payment order was created incorrectly. Please try again.");
+        alert(
+          "Payment order was created incorrectly. Please try again."
+        );
+
         setIsProcessing(false);
         return;
       }
 
-      const orderId = encodeURIComponent(result.payment.order_id);
-      window.location.href = `/upi-payment?order_id=${orderId}`;
+      const orderId = encodeURIComponent(
+        result.payment.order_id
+      );
+
+      window.location.href =
+        `/upi-payment?order_id=${orderId}`;
     } catch (error) {
       console.error("UPI Payment Error:", error);
-      alert("Unable to start payment. Please try again.");
+
+      alert(
+        "Unable to start payment. Please try again."
+      );
+
       setIsProcessing(false);
     }
   };
 
-  // Re-copy the key from inside the reveal card (button-level feedback only —
-  // does not affect the auto-copy toast, which is tied to the initial copy).
-  function handleCopyKeyAgain() {
+  /*
+   * Copy key again.
+   */
+  async function handleCopyKeyAgain() {
     if (!purchasedKey) return;
-    navigator.clipboard.writeText(purchasedKey);
-    setKeyCopied(true);
-    setTimeout(() => setKeyCopied(false), 1800);
+
+    try {
+      await navigator.clipboard.writeText(purchasedKey);
+
+      setKeyCopied(true);
+
+      setTimeout(() => {
+        setKeyCopied(false);
+      }, 1800);
+    } catch (error) {
+      console.error("Clipboard error:", error);
+    }
   }
 
   return (
     <>
-      {/* ───────────────────────────────────────────────────────────────
-          Product card — unchanged from your original. No styling/animation
-          added here.
-      ─────────────────────────────────────────────────────────────── */}
-      <Dialog
-  open={isAndroidIdModalOpen}
-  onOpenChange={setIsAndroidIdModalOpen}
->
-  <DialogContent className="sm:max-w-[420px]">
-    <DialogHeader>
-      <DialogTitle>Enter Android ID</DialogTitle>
-
-      <DialogDescription>
-        HAXXCKER CLIENT requires your Android ID / Device ID
-        to generate your access after payment.
-      </DialogDescription>
-    </DialogHeader>
-
-    <div className="space-y-4 mt-4">
-      <input
-        type="text"
-        value={androidId}
-        onChange={(e) => setAndroidId(e.target.value)}
-        placeholder="Enter Android ID / Device ID"
-        className="w-full rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm outline-none focus:border-primary"
-      />
-
-      <Button
-        className="w-full"
-        onClick={handleAndroidIdSubmit}
-      >
-        Continue to Payment
-      </Button>
-    </div>
-  </DialogContent>
-</Dialog>
+      {/* PRODUCT CARD */}
 
       <Card
         className="group relative overflow-hidden border border-border/50 bg-card/50 backdrop-blur-sm transition-all duration-500 hover:border-primary/30 hover:shadow-[0_0_40px_rgba(0,200,255,0.08)]"
-        style={{ animationDelay: `${index * 100}ms` }}
+        style={{
+          animationDelay: `${index * 100}ms`,
+        }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
+        {/* VIDEO */}
+
         <div className="relative aspect-video overflow-hidden bg-secondary/50">
           {product.videoUrl ? (
-            <video controls className="w-full h-full object-cover">
-              <source src={product.videoUrl} type="video/mp4" />
+            <video
+              controls
+              className="h-full w-full object-cover"
+            >
+              <source
+                src={product.videoUrl}
+                type="video/mp4"
+              />
             </video>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
               <div
-                className={`flex h-16 w-16 items-center justify-center rounded-full bg-primary/20 border border-primary/30 transition-all duration-300 ${
-                  isHovered ? "scale-110 bg-primary/30" : ""
+                className={`flex h-16 w-16 items-center justify-center rounded-full border border-primary/30 bg-primary/20 transition-all duration-300 ${
+                  isHovered
+                    ? "scale-110 bg-primary/30"
+                    : ""
                 }`}
               >
-                <Play className="h-6 w-6 text-primary ml-1" />
+                <Play className="ml-1 h-6 w-6 text-primary" />
               </div>
-              <span className="text-xs text-muted-foreground">Demo Video</span>
+
+              <span className="text-xs text-muted-foreground">
+                Demo Video
+              </span>
             </div>
           )}
         </div>
 
-        <div className="p-5 space-y-5">
+        {/* CONTENT */}
+
+        <div className="space-y-5 p-5">
           <div>
-            <h3 className="text-lg font-semibold text-foreground tracking-tight leading-tight">
+            <h3 className="text-lg font-semibold leading-tight tracking-tight text-foreground">
               {product.name}
             </h3>
+
             <Badge
               variant="secondary"
-              className="mt-2 text-xs bg-secondary/80 text-muted-foreground border-0"
+              className="mt-2 border-0 bg-secondary/80 text-xs text-muted-foreground"
             >
               {product.category.toUpperCase()}
             </Badge>
           </div>
 
+          {/* FEATURES */}
+
           <div className="space-y-2">
             {product.features.map((feature, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div
+                key={i}
+                className="flex items-center gap-2"
+              >
                 <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
                   <Check className="h-2.5 w-2.5 text-primary" />
                 </div>
-                <span className="text-sm text-muted-foreground">{feature}</span>
+
+                <span className="text-sm text-muted-foreground">
+                  {feature}
+                </span>
               </div>
             ))}
           </div>
 
+          {/* DURATIONS */}
+
           <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Select Duration
             </p>
+
             <div className="grid grid-cols-2 gap-2">
               {effectivePrices.map((price, i) => (
                 <button
                   key={i}
-                  onClick={() => setSelectedDuration(price.duration)}
-                  className={`flex flex-col items-start p-3 rounded-lg border transition-all duration-200 ${
-                    selectedPrice.duration === price.duration
+                  onClick={() =>
+                    setSelectedDuration(price.duration)
+                  }
+                  className={`flex flex-col items-start rounded-lg border p-3 transition-all duration-200 ${
+                    selectedPrice?.duration ===
+                    price.duration
                       ? "border-primary/50 bg-primary/10"
                       : "border-border/50 bg-secondary/30 hover:border-border hover:bg-secondary/50"
                   }`}
                 >
-                  <span className="text-xs text-muted-foreground">{price.duration}</span>
-                  <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <span className="text-xs text-muted-foreground">
+                    {price.duration}
+                  </span>
+
+                  <div className="mt-0.5 flex items-baseline gap-1.5">
                     <span className="text-sm font-semibold text-foreground">
                       {userRole === "reseller"
-                        ? price.resellerPrice || price.priceINR
+                        ? price.resellerPrice ||
+                          price.priceINR
                         : price.priceINR}
                     </span>
                   </div>
@@ -498,115 +638,150 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
             </div>
           </div>
 
+          {/* BUTTONS */}
+
           <div className="flex gap-2 pt-2">
-            <Button
-              disabled={!isHaxxcker && availableStock === 0}
-              className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 disabled:opacity-50"
+           <Button
+              disabled={product.fulfillmentType !== "API" && availableStock === 0}
+              className="flex-1 bg-primary text-primary-foreground transition-all duration-300 hover:bg-primary/90 disabled:opacity-50"
               onClick={handleInitialBuyClick}
             >
-              <ShoppingCart className="h-4 w-4 mr-2" />
-              {!isHaxxcker && availableStock === 0 ? "OUT OF STOCK" : "BUY"}
+              <ShoppingCart className="mr-2 h-4 w-4" />
+
+              {product.fulfillmentType !== "API" && availableStock === 0
+                ? "OUT OF STOCK"
+                : "BUY"}
             </Button>
 
             <Button
               variant="outline"
-              className="flex-1 border-border/50 text-foreground hover:bg-secondary hover:border-border transition-all duration-300"
-              onClick={() => window.open(product.updateChannel, "_blank")}
+              className="flex-1 border-border/50 text-foreground transition-all duration-300 hover:border-border hover:bg-secondary"
+              onClick={() =>
+                window.open(
+                  product.updateChannel,
+                  "_blank"
+                )
+              }
             >
-              <Bell className="h-4 w-4 mr-2" />
+              <Bell className="mr-2 h-4 w-4" />
+
               PANEL FILE LINK
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* ───────────────────────────────────────────────────────────────
-          Payment Selection Modal — professional animation. Same two
-          options, same handlers, same isProcessing gating.
-      ─────────────────────────────────────────────────────────────── */}
-      <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
-        <DialogContent className="sm:max-w-[440px] overflow-hidden rounded-2xl border border-border/80 bg-card/95 backdrop-blur-xl p-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)]">
+      {/* PAYMENT MODAL */}
+
+      <Dialog
+        open={isPaymentModalOpen}
+        onOpenChange={setIsPaymentModalOpen}
+      >
+        <DialogContent className="overflow-hidden rounded-2xl border border-border/80 bg-card/95 p-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:max-w-[440px]"
+        >
           <div className="relative">
-            {/* Ambient drifting glow — theme-token based, decorative only */}
-            <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-              <div className="paymodal-glow-a absolute -top-20 -right-16 h-56 w-56 rounded-full bg-primary/10 blur-[70px]" />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 overflow-hidden"
+            >
+              <div className="paymodal-glow-a absolute -right-16 -top-20 h-56 w-56 rounded-full bg-primary/10 blur-[70px]" />
+
               <div className="paymodal-glow-b absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-primary/[0.06] blur-[70px]" />
             </div>
 
             <div className="paymodal-panel-in relative z-10 p-6">
               <DialogHeader className="space-y-2">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 border border-primary/20">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/15">
                     <ShoppingCart className="h-4 w-4 text-primary" />
                   </span>
-                  <DialogTitle className="text-lg font-bold text-foreground tracking-tight">
+
+                  <DialogTitle className="text-lg font-bold tracking-tight">
                     Choose Payment Method
                   </DialogTitle>
                 </div>
-                <DialogDescription className="pl-[46px] -mt-1 text-sm text-muted-foreground">
-                  {product.name} — <span className="font-semibold text-primary">{selectedPrice.duration}</span>{" "}
-                  <span className="font-mono">({formattedPrice})</span>
+
+                <DialogDescription className="pl-[46px] text-sm">
+                  {product.name} —{" "}
+                  <span className="font-semibold text-primary">
+                    {selectedPrice?.duration}
+                  </span>{" "}
+                  <span className="font-mono">
+                    ({formattedPrice})
+                  </span>
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="grid gap-3 my-5">
-                {/* Option 1: Pay using Wallet */}
+              <div className="my-5 grid gap-3">
+                {/* WALLET */}
+
                 <button
                   disabled={isProcessing}
                   onClick={handleWalletPayment}
-                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-xl border border-border/60 bg-secondary/30 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.08] hover:shadow-[0_12px_30px_-14px_rgba(0,0,0,0.5)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-xl border border-border/60 bg-secondary/30 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/[0.06] to-transparent transition-transform duration-700 ease-out group-hover/opt:translate-x-full"
-                  />
                   <span className="relative z-10 flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all duration-300 group-hover/opt:scale-110 group-hover/opt:bg-primary group-hover/opt:text-primary-foreground">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all group-hover/opt:bg-primary group-hover/opt:text-primary-foreground">
                       <Wallet className="h-5 w-5" />
                     </span>
+
                     <span>
-                      <span className="block text-sm font-semibold text-foreground">Pay Using Wallet</span>
+                      <span className="block text-sm font-semibold">
+                        Pay Using Wallet
+                      </span>
+
                       <span className="mt-0.5 block font-mono text-xs text-muted-foreground">
-                        Balance: ₹{walletBalance.toFixed(2)}
+                        Balance: ₹
+                        {walletBalance.toFixed(2)}
                       </span>
                     </span>
                   </span>
+
                   <span className="relative z-10 flex items-center gap-2">
-                    <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-500">
                       Instant
                     </span>
-                    <ChevronRight className="h-4 w-4 -translate-x-1 text-muted-foreground opacity-0 transition-all duration-300 group-hover/opt:translate-x-0 group-hover/opt:opacity-100" />
+
+                    <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover/opt:translate-x-0 group-hover/opt:opacity-100" />
                   </span>
                 </button>
 
-                {/* Option 2: Instant UPI Payment */}
+                {/* UPI */}
+
                 <button
                   disabled={isProcessing}
                   onClick={handleUpiPayment}
-                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-xl border border-border/60 bg-secondary/30 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.08] hover:shadow-[0_12px_30px_-14px_rgba(0,0,0,0.5)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-xl border border-border/60 bg-secondary/30 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/[0.06] to-transparent transition-transform duration-700 ease-out group-hover/opt:translate-x-full"
-                  />
                   <span className="relative z-10 flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all duration-300 group-hover/opt:scale-110 group-hover/opt:bg-primary group-hover/opt:text-primary-foreground">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all group-hover/opt:bg-primary group-hover/opt:text-primary-foreground">
                       <QrCode className="h-5 w-5" />
                     </span>
+
                     <span>
-                      <span className="block text-sm font-semibold text-foreground">Instant UPI Payment</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">Scan QR Code &amp; Enter UTR</span>
+                      <span className="block text-sm font-semibold">
+                        Instant UPI Payment
+                      </span>
+
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        Scan QR Code &amp; Enter UTR
+                      </span>
                     </span>
                   </span>
-                  <ChevronRight className="relative z-10 h-4 w-4 -translate-x-1 text-muted-foreground opacity-0 transition-all duration-300 group-hover/opt:translate-x-0 group-hover/opt:opacity-100" />
+
+                  <ChevronRight className="relative z-10 h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover/opt:translate-x-0 group-hover/opt:opacity-100" />
                 </button>
               </div>
 
               {isProcessing && (
-                <div className="paymodal-panel-in flex items-center gap-3 rounded-xl border border-border/60 bg-secondary/20 px-4 py-3">
+                <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-secondary/20 px-4 py-3">
                   <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+
                   <div className="flex-1">
-                    <p className="text-xs font-medium text-foreground">Processing your request…</p>
+                    <p className="text-xs font-medium">
+                      Processing your request…
+                    </p>
+
                     <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-border/50">
                       <div className="paymodal-progress h-full w-1/3 rounded-full bg-primary" />
                     </div>
@@ -620,15 +795,18 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
             .paymodal-glow-a {
               animation: paymodalDrift 6s ease-in-out infinite;
             }
+
             .paymodal-glow-b {
               animation: paymodalDrift 8s ease-in-out infinite reverse;
             }
+
             @keyframes paymodalDrift {
               0%,
               100% {
                 transform: translate(0, 0) scale(1);
                 opacity: 0.6;
               }
+
               50% {
                 transform: translate(-10px, 10px) scale(1.15);
                 opacity: 1;
@@ -636,13 +814,16 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
             }
 
             .paymodal-panel-in {
-              animation: paymodalPanelIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+              animation: paymodalPanelIn 0.45s
+                cubic-bezier(0.16, 1, 0.3, 1) both;
             }
+
             @keyframes paymodalPanelIn {
               0% {
                 opacity: 0;
                 transform: translateY(10px) scale(0.99);
               }
+
               100% {
                 opacity: 1;
                 transform: translateY(0) scale(1);
@@ -650,15 +831,19 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
             }
 
             .paymodal-progress {
-              animation: paymodalProgress 1.4s ease-in-out infinite;
+              animation: paymodalProgress 1.4s
+                ease-in-out infinite;
             }
+
             @keyframes paymodalProgress {
               0% {
                 transform: translateX(-100%);
               }
+
               50% {
                 transform: translateX(60%);
               }
+
               100% {
                 transform: translateX(220%);
               }
@@ -676,29 +861,41 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
         </DialogContent>
       </Dialog>
 
-      {/* ───────────────────────────────────────────────────────────────
-          Key Reveal Modal — replaces the old alert() popup after a
-          successful wallet payment. Same data (result.key), presented as
-          an animated on-page card with a Copy button.
-      ─────────────────────────────────────────────────────────────── */}
-      <Dialog open={showKeyModal} onOpenChange={setShowKeyModal}>
-        <DialogContent className="sm:max-w-[420px] overflow-hidden rounded-2xl border border-emerald-500/30 bg-card/95 backdrop-blur-xl p-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)]">
+      {/* SUCCESS / KEY MODAL */}
+
+      <Dialog
+        open={showKeyModal}
+        onOpenChange={setShowKeyModal}
+      >
+        <DialogContent className="overflow-hidden rounded-2xl border border-emerald-500/30 bg-card/95 p-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:max-w-[420px]"
+        >
           <div className="relative">
-            <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-              <div className="keycard-glow-a absolute -top-20 -right-16 h-56 w-56 rounded-full bg-emerald-500/10 blur-[70px]" />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 overflow-hidden"
+            >
+              <div className="keycard-glow-a absolute -right-16 -top-20 h-56 w-56 rounded-full bg-emerald-500/10 blur-[70px]" />
+
               <div className="keycard-glow-b absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-primary/[0.06] blur-[70px]" />
             </div>
 
             <div className="keycard-panel-in relative z-10 flex flex-col items-center p-6 text-center">
               <span className="relative mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
                 <span className="keycard-ring pointer-events-none absolute inset-0 rounded-full border border-emerald-400/40" />
+
                 <CheckCircle2 className="keycard-check-pop h-7 w-7 text-emerald-400" />
               </span>
 
               <DialogHeader className="items-center space-y-1.5">
-                <DialogTitle className="text-lg font-bold text-foreground">Purchase Successful!</DialogTitle>
-                <DialogDescription className="text-sm text-muted-foreground">
-                  {product.name} — <span className="font-semibold text-primary">{selectedPrice.duration}</span>
+                <DialogTitle className="text-lg font-bold">
+                  Purchase Successful!
+                </DialogTitle>
+
+                <DialogDescription className="text-sm">
+                  {product.name} —{" "}
+                  <span className="font-semibold text-primary">
+                    {selectedPrice?.duration}
+                  </span>
                 </DialogDescription>
               </DialogHeader>
 
@@ -706,23 +903,32 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
                 <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Your Login Key
                 </p>
+
                 <div className="relative overflow-hidden rounded-xl border border-border/60 bg-secondary/30 p-4">
-                  <div aria-hidden className="keycard-shimmer pointer-events-none absolute inset-0" />
-                  <p className="relative z-10 break-all font-mono text-sm text-foreground">{purchasedKey}</p>
+                  <div
+                    aria-hidden
+                    className="keycard-shimmer pointer-events-none absolute inset-0"
+                  />
+
+                  <p className="relative z-10 break-all font-mono text-sm">
+                    {purchasedKey}
+                  </p>
                 </div>
               </div>
 
               <button
                 onClick={handleCopyKeyAgain}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 py-2.5 text-sm font-semibold text-primary transition-all duration-200 hover:bg-primary/20 active:scale-[0.98]"
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 py-2.5 text-sm font-semibold text-primary transition-all hover:bg-primary/20 active:scale-[0.98]"
               >
                 {keyCopied ? (
                   <>
-                    <Check className="h-4 w-4" /> Copied
+                    <Check className="h-4 w-4" />
+                    Copied
                   </>
                 ) : (
                   <>
-                    <Copy className="h-4 w-4" /> Copy Key
+                    <Copy className="h-4 w-4" />
+                    Copy Key
                   </>
                 )}
               </button>
@@ -738,13 +944,16 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
 
           <style jsx>{`
             .keycard-panel-in {
-              animation: keycardPanelIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+              animation: keycardPanelIn 0.5s
+                cubic-bezier(0.16, 1, 0.3, 1) both;
             }
+
             @keyframes keycardPanelIn {
               0% {
                 opacity: 0;
                 transform: translateY(14px) scale(0.97);
               }
+
               100% {
                 opacity: 1;
                 transform: translateY(0) scale(1);
@@ -752,17 +961,21 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
             }
 
             .keycard-check-pop {
-              animation: keycardCheckPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+              animation: keycardCheckPop 0.5s
+                cubic-bezier(0.34, 1.56, 0.64, 1) both;
             }
+
             @keyframes keycardCheckPop {
               0% {
                 opacity: 0;
                 transform: scale(0.4);
               }
+
               60% {
                 opacity: 1;
                 transform: scale(1.1);
               }
+
               100% {
                 opacity: 1;
                 transform: scale(1);
@@ -770,13 +983,16 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
             }
 
             .keycard-ring {
-              animation: keycardRingPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+              animation: keycardRingPulse 2s
+                cubic-bezier(0, 0, 0.2, 1) infinite;
             }
+
             @keyframes keycardRingPulse {
               0% {
                 transform: scale(1);
                 opacity: 0.6;
               }
+
               70%,
               100% {
                 transform: scale(1.6);
@@ -785,17 +1001,22 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
             }
 
             .keycard-glow-a {
-              animation: keycardDrift 6s ease-in-out infinite;
+              animation: keycardDrift 6s
+                ease-in-out infinite;
             }
+
             .keycard-glow-b {
-              animation: keycardDrift 8s ease-in-out infinite reverse;
+              animation: keycardDrift 8s
+                ease-in-out infinite reverse;
             }
+
             @keyframes keycardDrift {
               0%,
               100% {
                 transform: translate(0, 0) scale(1);
                 opacity: 0.6;
               }
+
               50% {
                 transform: translate(-10px, 10px) scale(1.15);
                 opacity: 1;
@@ -809,13 +1030,18 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
                 rgba(16, 185, 129, 0.14) 50%,
                 transparent 70%
               );
+
               background-size: 200% 100%;
-              animation: keycardShimmerSweep 2.6s ease-in-out infinite;
+
+              animation: keycardShimmerSweep
+                2.6s ease-in-out infinite;
             }
+
             @keyframes keycardShimmerSweep {
               0% {
                 background-position: 200% 0;
               }
+
               100% {
                 background-position: -50% 0;
               }
@@ -835,46 +1061,54 @@ const [isAndroidIdModalOpen, setIsAndroidIdModalOpen] = useState(false);
         </DialogContent>
       </Dialog>
 
-      {/* ───────────────────────────────────────────────────────────────
-          "Copied to clipboard" toast — fires alongside the auto-copy that
-          already happens in handleWalletPayment. Purely informational,
-          auto-hides after 3s.
-      ─────────────────────────────────────────────────────────────── */}
+      {/* AUTO COPY TOAST */}
+
       {showAutoCopyToast && (
         <div
           role="status"
           aria-live="polite"
-          className="pointer-events-none fixed top-4 right-4 z-[999] flex justify-end"
+          className="pointer-events-none fixed right-4 top-4 z-[999] flex justify-end"
         >
           <div className="toast-in pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-emerald-500/25 bg-card/95 px-4 py-3 text-sm font-medium text-foreground shadow-[0_10px_40px_-10px_rgba(0,0,0,0.6)] backdrop-blur-xl">
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-            <span>Your key has been automatically copied to clipboard.</span>
+
+            <span>
+              Your key has been automatically copied to clipboard.
+            </span>
           </div>
+
           <style jsx>{`
             .toast-in {
-              animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both,
+              animation:
+                toastSlideIn 0.35s
+                  cubic-bezier(0.16, 1, 0.3, 1) both,
                 toastSlideOut 0.3s ease-in 2.7s forwards;
             }
+
             @keyframes toastSlideIn {
               0% {
                 opacity: 0;
                 transform: translateX(24px) scale(0.96);
               }
+
               100% {
                 opacity: 1;
                 transform: translateX(0) scale(1);
               }
             }
+
             @keyframes toastSlideOut {
               0% {
                 opacity: 1;
                 transform: translateX(0) scale(1);
               }
+
               100% {
                 opacity: 0;
                 transform: translateX(24px) scale(0.96);
               }
             }
+
             @media (prefers-reduced-motion: reduce) {
               .toast-in {
                 animation: none !important;

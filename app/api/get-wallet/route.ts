@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Query existing wallet record
     const { data, error } = await supabase
       .from("wallets")
       .select("balance")
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      balance: Number(data.balance),
+      balance: Number(data.balance ?? 0),
     });
   } catch (error) {
     return NextResponse.json(

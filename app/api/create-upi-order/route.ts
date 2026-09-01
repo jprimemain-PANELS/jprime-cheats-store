@@ -42,20 +42,6 @@ const {
       );
     }
 
-    if (
-  product_name === "HAXXCKER CLIENT" &&
-  (!android_id || !String(android_id).trim())
-) {
-  return NextResponse.json(
-    {
-      success: false,
-      error: "Android ID is required for HAXXCKER CLIENT",
-    },
-    {
-      status: 400,
-    }
-  );
-}
 
     const numericAmount =
       Number(amount);
