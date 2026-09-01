@@ -68,25 +68,33 @@ export async function releaseProduct({ username, product_name, duration }: Relea
     }
   }
 
-  // ----------------------------------------------------
+ // ----------------------------------------------------
   // 2. LOCAL SUPABASE STOCK FULFILLMENT (For your own products)
   // ----------------------------------------------------
-  const { data: keyData, error: fetchError } = await supabase
+  
+  // Clean values for matching (strip extra spaces and lowercase comparison)
+  const cleanProductName = product_name.trim();
+  const cleanDuration = duration.trim();
+
+  // Query stock_keys flexibly
+  const { data: keys, error: fetchError } = await supabase
     .from("stock_keys")
     .select("*")
-    .eq("product_name", product_name)
-    .eq("duration", duration)
-    .eq("is_used", false)
-    .limit(1)
-    .maybeSingle();
+    .ilike("product_name", cleanProductName)
+    .ilike("duration", cleanDuration)
+    .or("is_used.eq.false,is_used.is.null")
+    .limit(1);
+
+  const keyData = keys && keys.length > 0 ? keys[0] : null;
 
   if (fetchError || !keyData) {
+    console.error("Stock fetch debug info:", { cleanProductName, cleanDuration, fetchError });
     throw new Error(`Product "${product_name}" (${duration}) is currently out of stock.`);
   }
 
   const licenseKey = keyData.license_key || keyData.key_code || keyData.key;
 
-  // Remove used key from local stock table
+  // Delete key from stock_keys table so stock decreases immediately
   await supabase
     .from("stock_keys")
     .delete()
