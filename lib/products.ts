@@ -53,7 +53,7 @@ export const mobileProducts: Product[] = [
       { duration: "1 Days", resellerPrice: "₹240", priceINR: "₹300", sellerDuration: "1 Days" },
       { duration: "7 Days", resellerPrice: "₹1432", priceINR: "₹1790", sellerDuration: "7 Days" },
     ],
-    updateChannel: "https://t.me/+jxcj7KJjcfI3MmQ1",
+    updateChannel: "https://t.me/+yzkB9kD8zzUzMDQ1",
     features: ["ʟᴏᴄᴀᴛɪᴏɴ","ᴅʀᴀɢ ʜᴇᴀᴅꜱʜᴏᴛ 100%", "ᴅʀᴀɢ ʜᴇᴀᴅꜱʜᴏᴛ 50%", "ʜᴇᴀᴅ ʟᴏᴄᴋ", "ʙᴏᴅʏ ʜᴇᴀᴅꜱʜᴏᴛ", "ᴄʜᴇꜱᴛ ʜᴇᴀᴅꜱʜᴏᴛ", "ᴛᴇʟᴇᴘᴏʀᴛ"],
   },
 
