@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       duration: duration,
     });
 
-    const response = await fetch("https://adminpanels.shop/api/reseller_v1.php", {
+    const response = await fetch("https://bantibhaiya.com/api/reseller_v1.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",

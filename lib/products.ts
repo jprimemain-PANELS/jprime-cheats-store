@@ -20,6 +20,8 @@ export interface Product {
   features: string[];
   videoPlaceholder?: string;
   videoUrl?: string;
+  // Add status property ('ONLINE' | 'MAINTENANCE')
+  status: "ONLINE" | "MAINTENANCE";
 }
 
 export const mobileProducts: Product[] = [
@@ -29,6 +31,7 @@ export const mobileProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/9x.mp4",
     category: "mobile",
+    status: "MAINTENANCE",
     prices: [
       { duration: "10 day", priceINR: "₹440", resellerPrice: "₹255", priceUSD: "$1.38" },
       { duration: "20 day", priceINR: "₹880", resellerPrice: "₹510", priceUSD: "$2.20" },
@@ -45,6 +48,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "136",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/bala.mp4",
     category: "mobile",
+    status: "ONLINE",
     prices: [
       { duration: "1 Hours", resellerPrice: "₹10", priceINR: "₹25", sellerDuration: "1 Hours" },
       { duration: "3 Hours", resellerPrice: "₹35", priceINR: "₹56", sellerDuration: "3 Hours" },
@@ -64,6 +68,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "148",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/silent%20proxy.mp4",
     category: "mobile",
+    status: "ONLINE",
     prices: [
       { duration: "1 Hours Apk Silent", priceINR: "₹78", resellerPrice: "₹28", priceUSD: "$1.38", sellerDuration: "1 Hours Apk Silent" },
       { duration: "3 Hours Apk Silent", priceINR: "₹150", resellerPrice: "₹68", priceUSD: "$2.20", sellerDuration: "3 Hours Apk Silent" },
@@ -91,6 +96,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "62",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20CLIENT%20NON%20ROOT%20MOBILE.mp4",
     category: "mobile",
+    status: "MAINTENANCE",
     prices: [
       { duration: "1 day", priceINR: "₹40", resellerPrice: "₹28", priceUSD: "$1.38", sellerDuration: "1 Days NONROOT" },
       { duration: "3 day", priceINR: "₹135", resellerPrice: "₹58", priceUSD: "$2.20", sellerDuration: "3 Days NONROOT" },
@@ -103,12 +109,31 @@ export const mobileProducts: Product[] = [
   },
 
   {
+    id: "drip-client-wire",
+    name: "DRIPCLIENT WIRE FF NONROOT ANDROID",
+    fulfillmentType: "API",
+    sellerPid: "150",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20WIRE%20HEAD.mp4",
+    category: "mobile",
+    status: "ONLINE",
+    prices: [
+      { duration: "6 Hours", priceINR: "₹35", resellerPrice: "₹25", priceUSD: "$1.38", sellerDuration: "6 Hours NONROOT" },
+      { duration: "12 Hours", priceINR: "₹65", resellerPrice: "₹38", priceUSD: "$2.20", sellerDuration: "12 Hours NONROOT" },
+      { duration: "1 DaYs", priceINR: "₹95", resellerPrice: "₹65", priceUSD: "$3.75", sellerDuration: "1 DaYs NONROOT" },
+      { duration: "7 DaYs", priceINR: "₹395", resellerPrice: "₹215", priceUSD: "$6.90", sellerDuration: "7 DaYs NONROOT" },
+    ],
+    updateChannel: "https://t.me/+JNLfa2pGuYxlNWNl",
+    features: ["ɴᴏɴ ʀᴏᴏᴛ", "ᴅʀᴀɢ ʜᴇᴀᴅsʜᴏᴛ 100%", "ᴅʀᴀɢ ʜᴇᴀᴅsʜᴏᴛ 50%", "ʟᴏᴄᴀᴛɪᴏɴ", "ғʀᴇᴇᴢᴇ"],
+  },
+
+  {
     id: "drip-client-root",
     name: "DRIPCLIENT PROXY FF NONROOT ANDROID",
     fulfillmentType: "API",
     sellerPid: "91",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20PROXY%20MOBILE.mp4",
     category: "mobile",
+    status: "ONLINE",
     prices: [
       { duration: "1 DaYs", priceINR: "₹60", resellerPrice: "₹45", priceUSD: "$1.38", sellerDuration: "1 DaYs"},
       { duration: "3 DaYs", priceINR: "₹60", resellerPrice: "₹45", priceUSD: "$1.38", sellerDuration: "3 DaYs"},
@@ -126,6 +151,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "67",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/BR%20MOD%20ROOT%20MOBILE.mp4",
     category: "mobile",
+    status: "MAINTENANCE",
     prices: [
       { duration: "1 day", priceINR: "₹75", resellerPrice: "₹45", priceUSD: "$1.30", sellerDuration: "1 Days" },
       { duration: "7 day", priceINR: "₹295", resellerPrice: "₹105", priceUSD: "$3.75", sellerDuration: "7 Days" },
@@ -143,6 +169,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "48",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/PRIME%20HOOK%20NON%20ROOT.mp4",
     category: "mobile",
+    status: "ONLINE",
     prices: [
       { duration: "1 day", resellerPrice: "₹29", priceINR: "₹70", sellerDuration: "1 Days Nonroot" },
       { duration: "3 day", resellerPrice: "₹59", priceINR: "₹145", sellerDuration: "3 Days Nonroot" },
@@ -160,6 +187,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "128",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/silent.mp4",
     category: "mobile",
+    status: "MAINTENANCE",
     prices: [
       { duration: "1 day safe", priceINR: "₹78", resellerPrice: "₹28", priceUSD: "$1.38", sellerDuration: "1 Days SAFE" },
       { duration: "3 day safe", priceINR: "₹150", resellerPrice: "₹68", priceUSD: "$2.20", sellerDuration: "3 Days SAFE" },
@@ -182,6 +210,7 @@ export const mobileProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/rapid.mp4",
     category: "mobile",
+    status: "MAINTENANCE",
     prices: [
       { duration: "1 day", priceINR: "₹85", resellerPrice: "₹39", priceUSD: "$1.38" },
       { duration: "7 day", priceINR: "₹320", resellerPrice: "₹145", priceUSD: "$3.75" },
@@ -198,6 +227,7 @@ export const mobileProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/HG%20NON%20ROOT%20PANEL.mp4",
     category: "mobile",
+    status: "MAINTENANCE",
     prices: [
       { duration: "1 day", resellerPrice: "₹45", priceINR: "₹60" },
       { duration: "10 day", resellerPrice: "₹149", priceINR: "₹320" },
@@ -214,6 +244,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "64",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/haxx%20pro.MOV",
     category: "mobile",
+    status: "ONLINE",
     prices: [
       { duration: "3 day", resellerPrice: "₹np", priceINR: "₹249", sellerDuration: "3 Days" },
       { duration: "5 day", resellerPrice: "₹np", priceINR: "₹399", sellerDuration: "5 Days" },
@@ -235,6 +266,7 @@ export const pcProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/BR%20MOD%20PC%20PANEL.mp4",
     category: "pc",
+    status: "ONLINE",
     prices: [
       { duration: "1 day", priceINR: "₹85", resellerPrice: "₹48", priceUSD: "$1.40" },
       { duration: "10 day", priceINR: "₹435", resellerPrice: "₹245", priceUSD: "$5.30" },
@@ -250,6 +282,7 @@ export const pcProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://res.cloudinary.com/dda4gh2wm/video/upload/q_auto/f_auto/v1780157629/BASIC_PC_PANEL_wuorib.mp4",
     category: "pc",
+    status: "ONLINE",
     prices: [
       { duration: "1 day", resellerPrice: "₹30", priceINR: "₹65" },
       { duration: "15 day", resellerPrice: "₹255", priceINR: "₹559" },
@@ -266,6 +299,7 @@ export const pcProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/haxx%20silent.mp4",
     category: "pc",
+    status: "ONLINE",
     prices: [
       { duration: "1 day", resellerPrice: "₹30", priceINR: "₹65" },
       { duration: "15 day", resellerPrice: "₹255", priceINR: "₹559" },
@@ -282,6 +316,7 @@ export const pcProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/AIM%20COVER%20PC.mp4",
     category: "pc",
+    status: "ONLINE",
     prices: [
       { duration: "1 day", resellerPrice: "₹30", priceINR: "₹65" },
       { duration: "15 day", resellerPrice: "₹255", priceINR: "₹559" },
@@ -298,6 +333,7 @@ export const pcProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/akill.mp4",
     category: "pc",
+    status: "ONLINE",
     prices: [
       { duration: "1 day", resellerPrice: "₹30", priceINR: "₹85" },
       { duration: "15 day", resellerPrice: "₹255", priceINR: "₹569" },

@@ -536,6 +536,29 @@ const handleInitialBuyClick = async () => {
         {/* VIDEO */}
 
         <div className="relative aspect-video overflow-hidden bg-secondary/50">
+          {/* NEW: product status badge — purely visual, pointer-events-none
+              so it can never intercept clicks on the video controls or the
+              play button underneath. Uses product.status, which already
+              exists on every product in lib/products.ts. */}
+          <div className="pointer-events-none absolute left-2 top-2 z-20">
+            <span
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide backdrop-blur-md ${
+                product.status === "ONLINE"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  product.status === "ONLINE"
+                    ? "bg-emerald-400 animate-pulse"
+                    : "bg-amber-400"
+                }`}
+              />
+              {product.status === "ONLINE" ? "Online" : "Maintenance"}
+            </span>
+          </div>
+
           {product.videoUrl ? (
             <video
               controls
