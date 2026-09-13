@@ -31,7 +31,7 @@ export const mobileProducts: Product[] = [
     fulfillmentType: "LOCAL",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/9x.mp4",
     category: "mobile",
-    status: "MAINTENANCE",
+    status: "ONLINE",
     prices: [
       { duration: "10 day", priceINR: "₹440", resellerPrice: "₹255", priceUSD: "$1.38" },
       { duration: "20 day", priceINR: "₹880", resellerPrice: "₹510", priceUSD: "$2.20" },
@@ -48,7 +48,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "136",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/bala.mp4",
     category: "mobile",
-    status: "ONLINE",
+    status: "MAINTENANCE",
     prices: [
       { duration: "1 Hours", resellerPrice: "₹10", priceINR: "₹25", sellerDuration: "1 Hours" },
       { duration: "3 Hours", resellerPrice: "₹35", priceINR: "₹56", sellerDuration: "3 Hours" },
@@ -96,7 +96,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "62",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20CLIENT%20NON%20ROOT%20MOBILE.mp4",
     category: "mobile",
-    status: "MAINTENANCE",
+    status: "ONLINE",
     prices: [
       { duration: "1 day", priceINR: "₹40", resellerPrice: "₹28", priceUSD: "$1.38", sellerDuration: "1 Days NONROOT" },
       { duration: "3 day", priceINR: "₹135", resellerPrice: "₹58", priceUSD: "$2.20", sellerDuration: "3 Days NONROOT" },
@@ -169,7 +169,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "48",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/PRIME%20HOOK%20NON%20ROOT.mp4",
     category: "mobile",
-    status: "ONLINE",
+    status: "MAINTENANCE",
     prices: [
       { duration: "1 day", resellerPrice: "₹29", priceINR: "₹70", sellerDuration: "1 Days Nonroot" },
       { duration: "3 day", resellerPrice: "₹59", priceINR: "₹145", sellerDuration: "3 Days Nonroot" },
@@ -187,7 +187,7 @@ export const mobileProducts: Product[] = [
     sellerPid: "128",
     videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/silent.mp4",
     category: "mobile",
-    status: "MAINTENANCE",
+    status: "ONLINE",
     prices: [
       { duration: "1 day safe", priceINR: "₹78", resellerPrice: "₹28", priceUSD: "$1.38", sellerDuration: "1 Days SAFE" },
       { duration: "3 day safe", priceINR: "₹150", resellerPrice: "₹68", priceUSD: "$2.20", sellerDuration: "3 Days SAFE" },
