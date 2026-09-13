@@ -32,7 +32,7 @@ export async function releaseProduct({ username, product_name, duration }: Relea
     const targetDuration = priceTier?.sellerDuration || duration;
     const apiKey = process.env.RESELLER_API_KEY || process.env.ADMINPANELS_API_KEY || "";
 
-    const targetUrl = new URL("https://bantibhaiya.com/api/reseller_v1.php");
+    const targetUrl = new URL("https://bantibhaiya.to/api/reseller_v1.php");
     targetUrl.searchParams.append("api_key", apiKey);
     targetUrl.searchParams.append("action", "buy");
     targetUrl.searchParams.append("product_id", String(product.sellerPid));
