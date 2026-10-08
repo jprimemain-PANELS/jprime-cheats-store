@@ -7,6 +7,7 @@ export interface PriceTier {
   // Duration exactly as required by the seller API.
   // Only used for products that have a sellerPid.
   sellerDuration?: string;
+  seller2VariantId?: number;
 }
 
 export interface Product {
@@ -98,11 +99,49 @@ export const mobileProducts: Product[] = [
     category: "mobile",
     status: "ONLINE",
     prices: [
-      { duration: "1 day", priceINR: "₹40", resellerPrice: "₹28", priceUSD: "$1.38", sellerDuration: "1 Days NONROOT" },
-      { duration: "3 day", priceINR: "₹135", resellerPrice: "₹58", priceUSD: "$2.20", sellerDuration: "3 Days NONROOT" },
-      { duration: "7 day", priceINR: "₹290", resellerPrice: "₹125", priceUSD: "$3.75", sellerDuration: "7 Days NONROOT" },
-      { duration: "15 day", priceINR: "₹399", resellerPrice: "₹195", priceUSD: "$6.90", sellerDuration: "15 Days NONROOT" },
-      { duration: "31 day", priceINR: "₹599", resellerPrice: "₹285", priceUSD: "$9.80", sellerDuration: "30 Days NONROOT" },
+      {
+        duration: "1 day",
+        priceINR: "₹40",
+        resellerPrice: "₹28",
+        priceUSD: "$1.38",
+        sellerDuration: "1 Days NONROOT",
+        seller2VariantId: 167,
+      },
+    
+      {
+        duration: "3 day",
+        priceINR: "₹135",
+        resellerPrice: "₹58",
+        priceUSD: "$2.20",
+        sellerDuration: "3 Days NONROOT",
+        seller2VariantId: 168,
+      },
+    
+      {
+        duration: "7 day",
+        priceINR: "₹290",
+        resellerPrice: "₹125",
+        priceUSD: "$3.75",
+        sellerDuration: "7 Days NONROOT",
+        seller2VariantId: 169,
+      },
+    
+      {
+        duration: "15 day",
+        priceINR: "₹399",
+        resellerPrice: "₹195",
+        priceUSD: "$6.90",
+        sellerDuration: "15 Days NONROOT",
+        seller2VariantId: 170,
+      },
+    
+      {
+        duration: "31 day",
+        priceINR: "₹599",
+        resellerPrice: "₹285",
+        priceUSD: "$9.80",
+        sellerDuration: "30 Days NONROOT",
+      },
     ],
     updateChannel: "https://t.me/+JNLfa2pGuYxlNWNl",
     features: ["ᴀɪᴍ ᴍᴀɢɴᴇᴛ", "ꜱɪʟᴇɴᴛ ᴀɪᴍ", "ᴀɪᴍʙᴏᴛ ʟᴇɢɪᴛ", "ꜱᴘᴇᴇᴅ ᴛɪᴍᴇʀ", "ɢʜᴏꜱᴛ ʜᴀᴄᴋ", "ᴇꜱᴘ ʟɪɴᴇ ʟᴏᴄᴀᴛɪᴏɴ", "🄲🅂 / 🄱🅁 ʀᴀɴᴋ ᴡᴏʀᴋɪɴɢ", "ɴᴏɴ ʀᴏᴏᴛ ᴍᴏʙɪʟᴇ", "ʀᴀɴᴋ ᴘᴜꜱʜ ᴘᴜꜱᴘᴏꜱᴇ"],

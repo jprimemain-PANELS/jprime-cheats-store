@@ -25,48 +25,149 @@ export async function releaseProduct({ username, product_name, duration }: Relea
 
   const priceTier = findPriceTier(product, duration);
 
+ // ----------------------------------------------------
+// 1. RESELLER API FULFILLMENT
+// ----------------------------------------------------
+if (product.fulfillmentType === "API" && product.sellerPid) {
+
   // ----------------------------------------------------
-  // 1. RESELLER API FULFILLMENT (For supplier products)
+  // SELLER 2
+  // Used only when a Seller 2 variant is configured
   // ----------------------------------------------------
-  if (product.fulfillmentType === "API" && product.sellerPid) {
-    const targetDuration = priceTier?.sellerDuration || duration;
-    const apiKey = process.env.RESELLER_API_KEY || process.env.ADMINPANELS_API_KEY || "";
+  if (priceTier?.seller2VariantId) {
+    const apiToken = process.env.SELLER2_API_TOKEN;
 
-    const targetUrl = new URL("https://bantibhaiya.to/api/reseller_v1.php");
-    targetUrl.searchParams.append("api_key", apiKey);
-    targetUrl.searchParams.append("action", "buy");
-    targetUrl.searchParams.append("product_id", String(product.sellerPid));
-    targetUrl.searchParams.append("duration", targetDuration);
+    if (!apiToken) {
+      throw new Error("Seller 2 API token is not configured.");
+    }
 
-    console.log("Sending Supplier API Request:", targetUrl.toString());
-
-    const response = await fetch(targetUrl.toString(), {
-      method: "GET",
-    });
+    const response = await fetch(
+      "https://whitexmodz.store/api/v1/generate_key.php",
+      {
+        method: "POST",
+        headers: {
+          "X-API-Token": apiToken,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          variant_id: String(priceTier.seller2VariantId),
+          quantity: "1",
+        }).toString(),
+      }
+    );
 
     const rawResponseText = await response.text();
-    console.log("Raw Supplier Response:", rawResponseText);
+
+    console.log("Seller 2 Response:", rawResponseText);
 
     let apiResult: any = {};
+
     try {
       apiResult = JSON.parse(rawResponseText);
     } catch {
-      throw new Error(`Invalid response format from supplier: ${rawResponseText}`);
+      throw new Error(
+        `Invalid response format from Seller 2: ${rawResponseText}`
+      );
     }
 
-    const key = apiResult.key || apiResult.license_key || apiResult.data?.key || apiResult.code;
+    const key =
+      apiResult.key ||
+      apiResult.license_key ||
+      apiResult.data?.key ||
+      apiResult.keys?.Key ||
+      apiResult.keys?.key;
 
-    if ((apiResult.status === "success" || apiResult.status === true || apiResult.success) && key) {
+    if (apiResult.success === true && key) {
       return {
         key,
         type: "API",
-        message: apiResult.message || apiResult.msg || "Key generated successfully",
+        message: "Key generated successfully",
       };
-    } else {
-      const errorMsg = apiResult.msg || apiResult.message || apiResult.error || rawResponseText;
-      throw new Error(`Supplier API error: ${errorMsg}`);
     }
+
+    const errorMsg =
+      apiResult.error ||
+      apiResult.message ||
+      apiResult.msg ||
+      rawResponseText;
+
+    throw new Error(`Seller 2 API error: ${errorMsg}`);
   }
+
+  // ----------------------------------------------------
+  // SELLER 1
+  // Used when no Seller 2 variant is configured
+  // ----------------------------------------------------
+
+  const targetDuration = priceTier?.sellerDuration || duration;
+
+  const apiKey =
+    process.env.RESELLER_API_KEY ||
+    process.env.ADMINPANELS_API_KEY ||
+    "";
+
+  const targetUrl = new URL(
+    "https://bantibhaiya.to/api/reseller_v1.php"
+  );
+
+  targetUrl.searchParams.append("api_key", apiKey);
+  targetUrl.searchParams.append("action", "buy");
+  targetUrl.searchParams.append(
+    "product_id",
+    String(product.sellerPid)
+  );
+  targetUrl.searchParams.append("duration", targetDuration);
+
+  console.log("Sending Supplier API Request:", targetUrl.toString());
+
+  const response = await fetch(targetUrl.toString(), {
+    method: "GET",
+  });
+
+  const rawResponseText = await response.text();
+
+  console.log("Raw Supplier Response:", rawResponseText);
+
+  let apiResult: any = {};
+
+  try {
+    apiResult = JSON.parse(rawResponseText);
+  } catch {
+    throw new Error(
+      `Invalid response format from supplier: ${rawResponseText}`
+    );
+  }
+
+  const key =
+    apiResult.key ||
+    apiResult.license_key ||
+    apiResult.data?.key ||
+    apiResult.code;
+
+  if (
+    (apiResult.status === "success" ||
+      apiResult.status === true ||
+      apiResult.success) &&
+    key
+  ) {
+    return {
+      key,
+      type: "API",
+      message:
+        apiResult.message ||
+        apiResult.msg ||
+        "Key generated successfully",
+    };
+  }
+
+  const errorMsg =
+    apiResult.msg ||
+    apiResult.message ||
+    apiResult.error ||
+    rawResponseText;
+
+  throw new Error(`Supplier API error: ${errorMsg}`);
+}
 
  // ----------------------------------------------------
   // 2. LOCAL SUPABASE STOCK FULFILLMENT (For your own products)
