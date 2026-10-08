@@ -29,6 +29,7 @@ import {
   LayoutGrid,
   AlertTriangle,
   Info,
+  Power,
 } from "lucide-react";
 
 import { allProducts } from "@/lib/products";
@@ -45,7 +46,12 @@ interface ManagedUser {
 }
 
 type PriceOverride = { priceINR: number; resellerPrice?: number };
-type Tab = "overview" | "inventory" | "pricing" | "purchases" | "users";
+type ProductStatus = "ONLINE" | "MAINTENANCE";
+type Tab = "overview" | "inventory" | "pricing" | "status" | "purchases" | "users";
+
+// Special row inside the existing product_prices table that stores a product's status.
+// price_inr = 0 -> ONLINE, price_inr = 1 -> MAINTENANCE. No new table needed.
+const STATUS_ROW = "__status__";
 
 // ---------- helpers ----------
 
@@ -180,6 +186,9 @@ export default function AdminPage() {
   const [availableStock, setAvailableStock] = useState(0);
   const [newKeys, setNewKeys] = useState("");
 
+  // Search box for the Stock Keys list (Inventory tab)
+  const [stockSearchQuery, setStockSearchQuery] = useState("");
+
   // Pricing state
   const [priceOverrides, setPriceOverrides] = useState<Record<string, PriceOverride>>({});
   const [priceProduct, setPriceProduct] = useState<Product | null>(null);
@@ -187,6 +196,12 @@ export default function AdminPage() {
   const [isSavingPrices, setIsSavingPrices] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [priceSavedAt, setPriceSavedAt] = useState<number | null>(null);
+
+  // Status state — stored in the same product_prices table as a special row,
+  // and each row saves immediately.
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, ProductStatus>>({});
+  const [savingStatusFor, setSavingStatusFor] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // Purchases tab filter
   const [purchaseFilter, setPurchaseFilter] = useState<"all" | "today">("all");
@@ -263,13 +278,19 @@ export default function AdminPage() {
       .select("*")
       .order("id", { ascending: false });
 
-    // Price overrides — table is new, empty is fine, everything falls back to products.ts
+    // Price + status both live in product_prices (status = special "__status__" row).
+    // Empty is fine, everything falls back to products.ts.
     const { data: priceRows, error: priceRowsError } = await supabase.from("product_prices").select("*");
     if (priceRowsError) {
       console.error("Failed to load price overrides:", priceRowsError.message);
     }
     const overrideMap: Record<string, PriceOverride> = {};
+    const statusMap: Record<string, ProductStatus> = {};
     (priceRows || []).forEach((row: any) => {
+      if (row.duration === STATUS_ROW) {
+        statusMap[row.product_name] = Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE";
+        return;
+      }
       overrideMap[`${row.product_name}::${row.duration}`] = {
         priceINR: Number(row.price_inr),
         resellerPrice: row.reseller_price != null ? Number(row.reseller_price) : undefined,
@@ -280,6 +301,7 @@ export default function AdminPage() {
     setUsers(enrichedUsers);
     setPurchases(purchaseData || []);
     setPriceOverrides(overrideMap);
+    setStatusOverrides(statusMap);
     return overrideMap;
   }
 
@@ -408,6 +430,41 @@ export default function AdminPage() {
     }
   }
 
+  // ---- status ----
+
+  async function handleSetProductStatus(productName: string, status: ProductStatus) {
+    const current = statusOverrides[productName] ?? allProducts.find((p) => p.name === productName)?.status;
+    if (current === status) return; // already set, nothing to save
+
+    setSavingStatusFor(productName);
+    setStatusError(null);
+
+    try {
+      // Same table + same save method as prices. Status is a special row:
+      // duration "__status__", price_inr 0 = ONLINE, 1 = MAINTENANCE.
+      const { error } = await supabase
+        .from("product_prices")
+        .upsert(
+          {
+            product_name: productName,
+            duration: STATUS_ROW,
+            price_inr: status === "MAINTENANCE" ? 1 : 0,
+            reseller_price: null,
+          },
+          { onConflict: "product_name,duration" }
+        );
+
+      if (error) throw error;
+
+      // Re-pull from the DB so this always reflects what's actually saved.
+      await loadDashboard();
+    } catch (err: any) {
+      setStatusError(friendlyDbError(err?.message || "Failed to update status."));
+    } finally {
+      setSavingStatusFor(null);
+    }
+  }
+
   // ---- derived data ----
 
   const stockMatrix = useMemo(() => {
@@ -449,6 +506,19 @@ export default function AdminPage() {
       return sum + resolved.priceINR;
     }, 0);
   }, [todayPurchases, priceOverrides]);
+
+  // Filters the Stock Keys list by product name, duration, or key code.
+  const filteredKeys = useMemo(() => {
+    if (!stockSearchQuery.trim()) return keys;
+    const query = stockSearchQuery.trim().toLowerCase();
+
+    return keys.filter((k) => {
+      const productMatch = String(k.product_name || "").toLowerCase().includes(query);
+      const durationMatch = String(k.duration || "").toLowerCase().includes(query);
+      const keyMatch = String(k.key_code || "").toLowerCase().includes(query);
+      return productMatch || durationMatch || keyMatch;
+    });
+  }, [keys, stockSearchQuery]);
 
   const filteredUsers = useMemo(() => {
     if (!userSearchQuery.trim()) return users;
@@ -533,6 +603,7 @@ export default function AdminPage() {
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "inventory", label: "Inventory", icon: Boxes, count: keys.length },
     { id: "pricing", label: "Pricing", icon: Tag },
+    { id: "status", label: "Status", icon: Power, count: allProducts.length },
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -744,12 +815,42 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <SectionCard icon={KeyRound} title={`Stock Keys (${keys.length})`}>
+            {/* Search box in the header of the Stock Keys card */}
+            <SectionCard
+              icon={KeyRound}
+              title={
+                stockSearchQuery
+                  ? `Stock Keys (${filteredKeys.length} of ${keys.length})`
+                  : `Stock Keys (${keys.length})`
+              }
+              action={
+                <div className="relative w-full sm:w-64">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search product, duration, key..."
+                    value={stockSearchQuery}
+                    onChange={(e) => setStockSearchQuery(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-8 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                  />
+                  {stockSearchQuery && (
+                    <button
+                      onClick={() => setStockSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-0.5 rounded-md"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              }
+            >
               <div className="max-h-[420px] overflow-y-auto custom-scrollbar space-y-2.5">
                 {keys.length === 0 ? (
                   <p className="text-xs text-slate-500 py-6 text-center">No keys in stock.</p>
+                ) : filteredKeys.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-6 text-center">No keys match your search.</p>
                 ) : (
-                  keys.map((key, index) => (
+                  filteredKeys.map((key, index) => (
                     <div key={key.id || index} className="flex items-center justify-between gap-3 bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-white truncate">{key.product_name}</p>
@@ -839,11 +940,6 @@ export default function AdminPage() {
                       <span className="text-right">Reseller ₹</span>
                     </div>
                     {priceProduct.prices.map((tier: PriceTier) => {
-                      // What's actually live right now (saved override, or the
-                      // products.ts default if nothing's been saved yet). This
-                      // does NOT change as you type below — it only updates
-                      // after a successful save, so you always know what
-                      // customers are currently seeing.
                       const live = resolvePrice(priceOverrides, priceProduct.name, tier.duration, tier);
                       return (
                       <div key={tier.duration} className="grid grid-cols-[1fr_100px_100px] gap-3 items-center bg-slate-950/50 border border-slate-800 rounded-lg px-3 py-2.5">
@@ -886,6 +982,73 @@ export default function AdminPage() {
               </SectionCard>
             </div>
           </div>
+        )}
+
+        {/* STATUS */}
+        {activeTab === "status" && (
+          <SectionCard icon={Power} title="Product Status">
+            <p className="text-xs text-slate-500">
+              Toggle whether a product shows as <span className="text-emerald-400 font-semibold">Online</span> or{" "}
+              <span className="text-amber-400 font-semibold">Under Maintenance</span> on the storefront. Changes save
+              instantly and take effect immediately — no redeploy needed.
+            </p>
+
+            {statusError && (
+              <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3.5 py-3">
+                <AlertTriangle className="h-3.5 w-3.5 text-rose-400 mt-0.5 shrink-0" />
+                <pre className="text-[11px] text-rose-300 whitespace-pre-wrap font-sans leading-relaxed">{statusError}</pre>
+              </div>
+            )}
+
+            <div className="space-y-2 max-h-[560px] overflow-y-auto custom-scrollbar pr-1">
+              {allProducts.map((product) => {
+                const effectiveStatus: ProductStatus = statusOverrides[product.name] ?? product.status;
+                const isSaving = savingStatusFor === product.name;
+
+                return (
+                  <div
+                    key={product.id}
+                    className="flex items-center justify-between gap-3 bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-white truncate">{product.name}</p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">{product.category}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+                      <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleSetProductStatus(product.name, "ONLINE")}
+                          className={`text-[11px] font-semibold px-3 py-1.5 rounded-md transition-colors cursor-pointer disabled:cursor-not-allowed ${
+                            effectiveStatus === "ONLINE"
+                              ? "bg-emerald-600 text-white"
+                              : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          Online
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleSetProductStatus(product.name, "MAINTENANCE")}
+                          className={`text-[11px] font-semibold px-3 py-1.5 rounded-md transition-colors cursor-pointer disabled:cursor-not-allowed ${
+                            effectiveStatus === "MAINTENANCE"
+                              ? "bg-amber-600 text-white"
+                              : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          Maintenance
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionCard>
         )}
 
         {/* PURCHASES */}

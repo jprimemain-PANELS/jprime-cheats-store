@@ -35,6 +35,10 @@ interface ProductCardProps {
 
 const WALLET_BALANCE_EVENT = "wallet-balance-updated";
 
+// Special row in product_prices that stores the product status.
+// price_inr = 0 -> ONLINE, price_inr = 1 -> MAINTENANCE.
+const STATUS_ROW = "__status__";
+
 export function ProductCard({ product, index }: ProductCardProps) {
   const [selectedDuration, setSelectedDuration] = useState<string>(
     product.prices[0]?.duration ?? ""
@@ -43,6 +47,10 @@ export function ProductCard({ product, index }: ProductCardProps) {
   const [liveOverrides, setLiveOverrides] = useState<
     Record<string, { priceINR: number; resellerPrice?: number }>
   >({});
+
+  // Live status from the database (null = nothing saved, fall back to products.ts)
+  const [liveStatus, setLiveStatus] = useState<"ONLINE" | "MAINTENANCE" | null>(null);
+  const effectiveStatus: "ONLINE" | "MAINTENANCE" = liveStatus ?? product.status;
 
   const [isHovered, setIsHovered] = useState(false);
   const [availableStock, setAvailableStock] = useState<number | null>(null);
@@ -93,7 +101,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
   }, [selectedDuration]);
 
   /*
-   * Load live prices.
+   * Load live prices and live status (both come from product_prices).
    */
   useEffect(() => {
     let cancelled = false;
@@ -119,7 +127,14 @@ export function ProductCard({ product, index }: ProductCardProps) {
         { priceINR: number; resellerPrice?: number }
       > = {};
 
-      (data || []).forEach((row: any) => {
+      let statusFromDb: "ONLINE" | "MAINTENANCE" | null = null;
+
+      for (const row of (data || []) as any[]) {
+        if (row.duration === STATUS_ROW) {
+          statusFromDb = Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE";
+          continue;
+        }
+
         map[row.duration] = {
           priceINR: Number(row.price_inr),
           resellerPrice:
@@ -127,9 +142,10 @@ export function ProductCard({ product, index }: ProductCardProps) {
               ? Number(row.reseller_price)
               : undefined,
         };
-      });
+      }
 
       setLiveOverrides(map);
+      setLiveStatus(statusFromDb);
     }
 
     loadLivePrices();
@@ -177,7 +193,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
     };
   }, []);
 
-/*
+  /*
    * Load product stock.
    */
   async function loadStock() {
@@ -202,6 +218,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
     setAvailableStock(data?.length ?? 0);
   }
+
   /*
    * Load user role and wallet balance.
    */
@@ -287,7 +304,12 @@ export function ProductCard({ product, index }: ProductCardProps) {
   /*
    * Buy button.
    */
-const handleInitialBuyClick = async () => {
+  const handleInitialBuyClick = async () => {
+    if (effectiveStatus === "MAINTENANCE") {
+      alert("This product is under maintenance. Please check back soon.");
+      return;
+    }
+
     if (product.fulfillmentType !== "API" && availableStock === 0) {
       alert("This product is currently out of stock.");
       return;
@@ -536,26 +558,25 @@ const handleInitialBuyClick = async () => {
         {/* VIDEO */}
 
         <div className="relative aspect-video overflow-hidden bg-secondary/50">
-          {/* NEW: product status badge — purely visual, pointer-events-none
-              so it can never intercept clicks on the video controls or the
-              play button underneath. Uses product.status, which already
-              exists on every product in lib/products.ts. */}
+          {/* Product status badge — purely visual, pointer-events-none so it can
+              never intercept clicks on the video controls. Uses effectiveStatus:
+              the live status from the database, falling back to products.ts. */}
           <div className="pointer-events-none absolute left-2 top-2 z-20">
             <span
               className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide backdrop-blur-md ${
-                product.status === "ONLINE"
+                effectiveStatus === "ONLINE"
                   ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
                   : "border-amber-500/30 bg-amber-500/10 text-amber-400"
               }`}
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  product.status === "ONLINE"
+                  effectiveStatus === "ONLINE"
                     ? "bg-emerald-400 animate-pulse"
                     : "bg-amber-400"
                 }`}
               />
-              {product.status === "ONLINE" ? "Online" : "Maintenance"}
+              {effectiveStatus === "ONLINE" ? "Online" : "Maintenance"}
             </span>
           </div>
 
@@ -664,14 +685,19 @@ const handleInitialBuyClick = async () => {
           {/* BUTTONS */}
 
           <div className="flex gap-2 pt-2">
-           <Button
-              disabled={product.fulfillmentType !== "API" && availableStock === 0}
+            <Button
+              disabled={
+                effectiveStatus === "MAINTENANCE" ||
+                (product.fulfillmentType !== "API" && availableStock === 0)
+              }
               className="flex-1 bg-primary text-primary-foreground transition-all duration-300 hover:bg-primary/90 disabled:opacity-50"
               onClick={handleInitialBuyClick}
             >
               <ShoppingCart className="mr-2 h-4 w-4" />
 
-              {product.fulfillmentType !== "API" && availableStock === 0
+              {effectiveStatus === "MAINTENANCE"
+                ? "UNDER MAINTENANCE"
+                : product.fulfillmentType !== "API" && availableStock === 0
                 ? "OUT OF STOCK"
                 : "BUY"}
             </Button>
