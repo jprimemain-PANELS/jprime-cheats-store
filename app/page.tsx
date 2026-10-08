@@ -10,7 +10,7 @@ import { ComingSoon } from "@/components/coming-soon";
 import { FloatingSupport } from "@/components/floating-support";
 import { Footer } from "@/components/footer";
 import { supabase } from "@/lib/supabase";
-import { mobileProducts, pcProducts } from "@/lib/products";
+import { useCatalogProducts } from "@/lib/useCatalogProducts";
 
 export default function Home() {
   const router = useRouter();
@@ -22,6 +22,12 @@ export default function Home() {
   const [showProfile, setShowProfile] = useState(false);
   const [purchaseHistory, setPurchaseHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Products now come from products_catalog (via /api/catalog).
+  // If the catalog is empty or fails to load, the hook falls back to lib/products.ts.
+  const { products: catalogProducts, loading: catalogLoading } = useCatalogProducts();
+  const mobileProducts = catalogProducts.filter((p) => p.category === "mobile");
+  const pcProducts = catalogProducts.filter((p) => p.category === "pc");
 
   const productsRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +85,7 @@ export default function Home() {
       </div>
     );
   }
+}
 
   return (
     <main className="min-h-screen bg-[#030305] text-zinc-100 font-sans antialiased selection:bg-cyan-400 selection:text-black relative z-0">
@@ -180,8 +187,18 @@ export default function Home() {
                 </p>
               </div>
 
+              {/* Catalog loading indicator (only while products are being fetched) */}
+              {catalogLoading && activeCategory !== "ios" && (
+                <div className="py-16 flex justify-center">
+                  <div className="relative w-8 h-8">
+                    <div className="absolute inset-0 border-2 border-zinc-800 rounded-full" />
+                    <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-cyan-500 border-r-cyan-500 rounded-full" />
+                  </div>
+                </div>
+              )}
+
               {/* Product grid */}
-              {activeCategory === "mobile" && (
+              {!catalogLoading && activeCategory === "mobile" && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                   {mobileProducts.map((product, index) => (
                     <div
@@ -195,7 +212,7 @@ export default function Home() {
                 </div>
               )}
 
-              {activeCategory === "pc" && (
+              {!catalogLoading && activeCategory === "pc" && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                   {pcProducts.map((product, index) => (
                     <div
@@ -345,9 +362,10 @@ export default function Home() {
             </button>
           </div>
         </div>
-      )}
+      ))}
 
-      <style dangerouslySetInnerHTML={{ __html: `
+
+      <style dangerouslySetInnerHTML={{ __html: }}`
         @keyframes jprimeSpin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
@@ -386,37 +404,5 @@ export default function Home() {
           animation: jprimeScaleIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
         .jprime-fade-up {
-          animation: jprimeFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+          animation:
         }
-        .jprime-glow {
-          animation: jprimeGlow 6s ease-in-out infinite;
-        }
-        .jprime-glow-slow {
-          animation: jprimeGlowSlow 8s ease-in-out infinite;
-        }
-        .jprime-ping {
-          animation: jprimePing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #1f1f23;
-          border-radius: 99px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #2e2e33;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .jprime-spin, .jprime-fade-in, .jprime-scale-in, .jprime-fade-up,
-          .jprime-glow, .jprime-glow-slow, .jprime-ping {
-            animation: none !important;
-          }
-        }
-      `}} />
-    </main>
-  );
-}
