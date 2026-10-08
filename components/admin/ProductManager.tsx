@@ -112,6 +112,36 @@ function normalizeProduct(product: any): Product {
   };
 }
 
+async function adminCatalogRequest(
+  path: string,
+  options: RequestInit = {}
+) {
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const email = String(user?.email || "").trim();
+
+  if (!email) {
+    throw new Error("Admin session not found.");
+  }
+
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-email": email,
+      ...(options.headers || {}),
+    },
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || "Catalog request failed.");
+  }
+
+  return data;
+}
+
 export default function ProductManager() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selected, setSelected] = useState<Product | null>(null);
@@ -128,28 +158,25 @@ export default function ProductManager() {
   }, []);
 
   async function loadProducts() {
-    setLoading(true);
+  setLoading(true);
 
-    const { data, error } = await supabase
-      .from("products_catalog")
-      .select("*")
-      .order("name", { ascending: true });
+  try {
+    const result = await adminCatalogRequest("/api/admin/catalog");
 
-    if (error) {
-      console.error(error);
-      alert("Failed to load products: " + error.message);
-      setLoading(false);
-      return;
-    }
-
-    const rows = (data || []) as CatalogRow[];
+    const rows = result.products || [];
 
     setProducts(
-      rows.map((row) => normalizeProduct(row.data))
+      rows
+        .map((row: any) => normalizeProduct(row.data))
+        .filter(Boolean)
     );
-
+  } catch (error: any) {
+    console.error(error);
+    alert("Failed to load products: " + (error?.message || "Unknown error"));
+  } finally {
     setLoading(false);
   }
+}
 
   function newProduct() {
     setSelected({
@@ -298,22 +325,20 @@ export default function ProductManager() {
     await loadProducts();
   }
 
-  async function deleteProduct(product: Product) {
-    const confirmed = window.confirm(
-      `Delete "${product.name}" from Product Catalog?\n\nThis does NOT delete old stock keys or purchase history.`
-    );
+ async function deleteProduct(product: Product) {
+  const confirmed = window.confirm(
+    `Delete "${product.name}" from Product Catalog?\n\nThis does NOT delete old stock keys or purchase history.`
+  );
 
-    if (!confirmed) return;
+  if (!confirmed) return;
 
-    const { error } = await supabase
-      .from("products_catalog")
-      .delete()
-      .eq("product_id", product.id);
-
-    if (error) {
-      alert("Delete failed: " + error.message);
-      return;
-    }
+  try {
+    await adminCatalogRequest("/api/admin/catalog", {
+      method: "DELETE",
+      body: JSON.stringify({
+        product_id: product.id,
+      }),
+    });
 
     if (selected?.id === product.id) {
       setSelected(null);
@@ -321,7 +346,10 @@ export default function ProductManager() {
     }
 
     await loadProducts();
+  } catch (error: any) {
+    alert("Delete failed: " + (error?.message || "Unknown error"));
   }
+}
 
   async function importExistingProducts() {
     if (!allProducts?.length) {
