@@ -34,6 +34,7 @@ import {
 
 import { allProducts } from "@/lib/products";
 import type { Product, PriceTier } from "@/lib/products";
+import ProductManager from "@/components/admin/ProductManager";
 
 interface ManagedUser {
   id?: string | number;
@@ -47,7 +48,14 @@ interface ManagedUser {
 
 type PriceOverride = { priceINR: number; resellerPrice?: number };
 type ProductStatus = "ONLINE" | "MAINTENANCE";
-type Tab = "overview" | "inventory" | "pricing" | "status" | "purchases" | "users";
+type Tab =
+  | "overview"
+  | "inventory"
+  | "pricing"
+  | "status"
+  | "products"
+  | "purchases"
+  | "users";
 
 // Special row inside the existing product_prices table that stores a product's status.
 // price_inr = 0 -> ONLINE, price_inr = 1 -> MAINTENANCE. No new table needed.
@@ -604,6 +612,7 @@ export default function AdminPage() {
     { id: "inventory", label: "Inventory", icon: Boxes, count: keys.length },
     { id: "pricing", label: "Pricing", icon: Tag },
     { id: "status", label: "Status", icon: Power, count: allProducts.length },
+    { id: "products", label: "Products", icon: Package },
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -1050,6 +1059,9 @@ export default function AdminPage() {
             </div>
           </SectionCard>
         )}
+
+        {/* PRODUCTS (catalog manager — reads/writes products_catalog only) */}
+        {activeTab === "products" && <ProductManager />}
 
         {/* PURCHASES */}
         {activeTab === "purchases" && (
