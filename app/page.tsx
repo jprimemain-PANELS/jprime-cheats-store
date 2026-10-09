@@ -103,10 +103,10 @@ export default function Home() {
 
   if (checkingAuth) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#030305]">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#07040f]">
         <div className="relative w-10 h-10 mb-4">
           <div className="absolute inset-0 border-2 border-zinc-800 rounded-full" />
-          <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-cyan-500 border-r-cyan-500 rounded-full" />
+          <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-fuchsia-500 border-r-violet-500 rounded-full" />
         </div>
 
         <p className="text-zinc-500 text-xs font-medium">
@@ -136,26 +136,28 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#030305] text-zinc-100 font-sans antialiased selection:bg-cyan-400 selection:text-black relative z-0">
+    <main className="min-h-screen bg-[#07040f] text-zinc-100 font-sans antialiased selection:bg-fuchsia-500 selection:text-white relative z-0">
       {/* Ambient background glow */}
       <div
         className="absolute inset-0 pointer-events-none -z-10 overflow-hidden"
         aria-hidden="true"
       >
-        <div className="jprime-glow absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[360px] bg-cyan-500/[0.05] rounded-full blur-[130px]" />
+        <div className="jprime-glow absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[360px] bg-violet-600/[0.10] rounded-full blur-[130px]" />
 
-        <div className="jprime-glow-slow absolute top-[45%] right-[-8%] w-[420px] h-[420px] bg-cyan-500/[0.03] rounded-full blur-[110px]" />
+        <div className="jprime-glow-slow absolute top-[45%] right-[-8%] w-[420px] h-[420px] bg-fuchsia-500/[0.07] rounded-full blur-[110px]" />
+
+        <div className="jprime-glow-slow absolute top-[75%] left-[-10%] w-[380px] h-[380px] bg-violet-500/[0.06] rounded-full blur-[110px]" />
       </div>
 
       {/* Payment success modal */}
       {showSuccess && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 jprime-fade-in">
-          <div className="jprime-scale-in bg-[#0a0b0f] border border-zinc-800 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <div className="jprime-scale-in bg-[#0b0714] border border-violet-500/20 rounded-2xl p-8 max-w-md w-full shadow-2xl">
             <div className="text-center mb-6">
               <div className="relative w-12 h-12 mx-auto mb-4">
-                <span className="jprime-ping absolute inset-0 rounded-full bg-cyan-500/20" />
+                <span className="jprime-ping absolute inset-0 rounded-full bg-fuchsia-500/20" />
 
-                <div className="relative w-12 h-12 bg-cyan-500/10 text-cyan-400 rounded-full flex items-center justify-center border border-cyan-500/20">
+                <div className="relative w-12 h-12 bg-fuchsia-500/10 text-fuchsia-400 rounded-full flex items-center justify-center border border-fuchsia-500/25">
                   <ClipboardCheck className="h-5 w-5" />
                 </div>
               </div>
@@ -169,13 +171,13 @@ export default function Home() {
               </p>
             </div>
 
-            <div className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl break-all font-mono text-xs text-center text-cyan-400 mb-6 select-all">
+            <div className="bg-black/40 border border-zinc-800 p-4 rounded-xl break-all font-mono text-xs text-center text-fuchsia-300 mb-6 select-all">
               {deliveredKey}
             </div>
 
             <button
               onClick={() => setShowSuccess(false)}
-              className="w-full bg-cyan-500 hover:bg-cyan-400 text-black py-3.5 rounded-xl font-semibold text-sm transition-all active:scale-[0.98]"
+              className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:brightness-110 text-white py-3.5 rounded-xl font-semibold text-sm shadow-[0_8px_30px_-8px_rgba(192,38,211,0.7)] transition-all active:scale-[0.98]"
             >
               Continue
             </button>
@@ -229,13 +231,13 @@ export default function Home() {
                       onClick={() => setActiveCategory(cat.id)}
                       className={`flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl text-sm font-medium transition-all duration-300 active:scale-[0.97] ${
                         isSelected
-                          ? "bg-zinc-900 text-white border border-cyan-500/40 shadow-[0_0_20px_-4px_rgba(6,182,212,0.35)]"
-                          : "bg-zinc-900/40 text-zinc-500 border border-zinc-800/60 hover:text-zinc-300 hover:bg-zinc-900/70 hover:border-zinc-700"
+                          ? "bg-gradient-to-r from-violet-500/15 to-fuchsia-500/15 text-white border border-fuchsia-500/40 shadow-[0_0_20px_-4px_rgba(217,70,239,0.45)]"
+                          : "bg-white/[0.03] text-zinc-500 border border-white/10 hover:text-zinc-300 hover:bg-white/[0.06] hover:border-white/20"
                       }`}
                     >
                       <IconComponent
                         className={`h-4 w-4 transition-colors duration-300 ${
-                          isSelected ? "text-cyan-400" : ""
+                          isSelected ? "text-fuchsia-400" : ""
                         }`}
                       />
 
@@ -250,7 +252,7 @@ export default function Home() {
                 key={activeCategory}
                 className="text-center mb-10 sm:mb-12 jprime-fade-up"
               >
-                <h2 className="text-3xl sm:text-4xl font-semibold text-white">
+                <h2 className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
                   {activeCategory === "mobile" && "Mobile"}
                   {activeCategory === "pc" && "PC"}
                   {activeCategory === "ios" && "iOS"}
@@ -274,7 +276,7 @@ export default function Home() {
                   <div className="relative w-8 h-8">
                     <div className="absolute inset-0 border-2 border-zinc-800 rounded-full" />
 
-                    <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-cyan-500 border-r-cyan-500 rounded-full" />
+                    <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-fuchsia-500 border-r-violet-500 rounded-full" />
                   </div>
                 </div>
               )}
@@ -353,10 +355,10 @@ export default function Home() {
 
           setLoadingHistory(false);
         }}
-        className="fixed top-20 right-4 sm:top-24 sm:right-6 z-[40] p-3.5 sm:p-4 rounded-full bg-cyan-500 hover:bg-cyan-400 text-black transition-transform hover:scale-105 active:scale-95 shadow-[0_0_25px_rgba(6,182,212,0.35)] flex items-center justify-center"
+        className="fixed top-20 right-4 sm:top-24 sm:right-6 z-[40] p-3.5 sm:p-4 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 hover:brightness-110 text-white transition-transform hover:scale-105 active:scale-95 shadow-[0_0_25px_rgba(192,38,211,0.45)] flex items-center justify-center"
         title="View Profile"
       >
-        <span className="jprime-ping absolute inset-0 rounded-full bg-cyan-500/30" />
+        <span className="jprime-ping absolute inset-0 rounded-full bg-fuchsia-500/30" />
 
         <User className="h-4.5 w-4.5 sm:h-5 sm:w-5 relative" />
       </button>
@@ -364,10 +366,10 @@ export default function Home() {
       {/* Profile dialog */}
       {showProfile && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 jprime-fade-in">
-          <div className="jprime-scale-in bg-[#0a0b0f] border border-zinc-800 rounded-2xl p-6 sm:p-8 w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-zinc-900">
+          <div className="jprime-scale-in bg-[#0b0714] border border-violet-500/20 rounded-2xl p-6 sm:p-8 w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-cyan-400">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-fuchsia-500/25 flex items-center justify-center text-fuchsia-300">
                   <User className="h-4 w-4" />
                 </div>
 
@@ -378,7 +380,7 @@ export default function Home() {
 
               <button
                 onClick={() => setShowProfile(false)}
-                className="p-2 text-zinc-500 hover:text-zinc-300 rounded-lg hover:bg-zinc-900/50 transition-colors"
+                className="p-2 text-zinc-500 hover:text-zinc-300 rounded-lg hover:bg-white/5 transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -386,7 +388,7 @@ export default function Home() {
 
             <div className="grid grid-cols-2 gap-3 mb-6">
               <div
-                className="jprime-fade-up bg-zinc-950/60 border border-zinc-900 p-4 rounded-xl"
+                className="jprime-fade-up bg-white/[0.03] border border-white/10 p-4 rounded-xl"
                 style={{ animationDelay: "0.05s" }}
               >
                 <p className="text-xs text-zinc-500">Username</p>
@@ -397,18 +399,18 @@ export default function Home() {
               </div>
 
               <div
-                className="jprime-fade-up bg-zinc-950/60 border border-zinc-900 p-4 rounded-xl"
+                className="jprime-fade-up bg-white/[0.03] border border-white/10 p-4 rounded-xl"
                 style={{ animationDelay: "0.1s" }}
               >
                 <p className="text-xs text-zinc-500">Account type</p>
 
-                <p className="text-sm font-semibold text-cyan-400 mt-1 truncate">
+                <p className="text-sm font-semibold text-fuchsia-300 mt-1 truncate">
                   {userData?.role || "User"}
                 </p>
               </div>
 
               <div
-                className="jprime-fade-up bg-zinc-950/60 border border-zinc-900 p-4 rounded-xl col-span-2"
+                className="jprime-fade-up bg-white/[0.03] border border-white/10 p-4 rounded-xl col-span-2"
                 style={{ animationDelay: "0.15s" }}
               >
                 <p className="text-xs text-zinc-500">Email</p>
@@ -420,7 +422,7 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-2 mb-4">
-              <ShoppingBag className="h-4 w-4 text-cyan-400" />
+              <ShoppingBag className="h-4 w-4 text-fuchsia-400" />
 
               <h3 className="text-sm font-medium text-zinc-300">
                 Purchase history ({purchaseHistory.length})
@@ -433,20 +435,20 @@ export default function Home() {
                   <div className="relative w-5 h-5">
                     <div className="absolute inset-0 border-2 border-zinc-800 rounded-full" />
 
-                    <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-cyan-500 rounded-full" />
+                    <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-fuchsia-500 rounded-full" />
                   </div>
 
                   <p className="text-xs">Loading history…</p>
                 </div>
               ) : purchaseHistory.length === 0 ? (
-                <div className="text-center py-12 text-zinc-500 text-sm border border-dashed border-zinc-900 rounded-xl bg-zinc-950/20">
+                <div className="text-center py-12 text-zinc-500 text-sm border border-dashed border-white/10 rounded-xl bg-white/[0.02]">
                   No purchases yet.
                 </div>
               ) : (
                 purchaseHistory.map((item, index) => (
                   <div
                     key={index}
-                    className="jprime-fade-up bg-zinc-950 border border-zinc-900 p-4 rounded-xl hover:border-zinc-800 hover:-translate-y-0.5 transition-all duration-200"
+                    className="jprime-fade-up bg-white/[0.03] border border-white/10 p-4 rounded-xl hover:border-fuchsia-500/30 hover:-translate-y-0.5 transition-all duration-200"
                     style={{
                       animationDelay: `${Math.min(index, 8) * 0.05}s`,
                     }}
@@ -460,8 +462,8 @@ export default function Home() {
                       {new Date(item.created_at).toLocaleDateString()}
                     </p>
 
-                    <div className="flex items-center gap-2.5 mt-3 bg-zinc-900/40 p-2.5 rounded-lg border border-zinc-900">
-                      <p className="font-mono text-xs text-cyan-400 break-all flex-1 select-all">
+                    <div className="flex items-center gap-2.5 mt-3 bg-black/30 p-2.5 rounded-lg border border-white/5">
+                      <p className="font-mono text-xs text-fuchsia-300 break-all flex-1 select-all">
                         {item.key_code}
                       </p>
 
@@ -470,7 +472,7 @@ export default function Home() {
                           navigator.clipboard.writeText(item.key_code);
                           alert("Key copied to clipboard");
                         }}
-                        className="bg-zinc-800 hover:bg-cyan-500 hover:text-black text-zinc-300 px-3.5 py-1.5 rounded-md font-medium text-xs transition-all active:scale-[0.95] shrink-0"
+                        className="bg-white/10 hover:bg-gradient-to-r hover:from-violet-600 hover:to-fuchsia-600 hover:text-white text-zinc-300 px-3.5 py-1.5 rounded-md font-medium text-xs transition-all active:scale-[0.95] shrink-0"
                       >
                         Copy
                       </button>
@@ -482,7 +484,7 @@ export default function Home() {
 
             <button
               onClick={() => setShowProfile(false)}
-              className="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 py-3.5 rounded-xl font-medium text-sm transition-colors border border-zinc-800"
+              className="w-full bg-white/5 hover:bg-white/10 text-zinc-300 py-3.5 rounded-xl font-medium text-sm transition-colors border border-white/10"
             >
               Close
             </button>
@@ -607,12 +609,12 @@ export default function Home() {
             }
 
             .custom-scrollbar::-webkit-scrollbar-thumb {
-              background: #1f1f23;
+              background: rgba(192, 38, 211, 0.3);
               border-radius: 99px;
             }
 
             .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-              background: #2e2e33;
+              background: rgba(192, 38, 211, 0.5);
             }
 
             @media (prefers-reduced-motion: reduce) {

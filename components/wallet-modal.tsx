@@ -155,7 +155,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
     try {
       setHistoryLoading(true);
       setNotice(null);
-      
+
       const username = getStoredUsername();
       if (!username) {
         setNotice({ type: "error", message: "You must be logged in to view history." });
@@ -294,12 +294,12 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-hidden rounded-3xl border border-white/10 bg-[#09090B] p-0 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_30px_80px_-20px_rgba(0,0,0,0.8)]">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-hidden rounded-3xl border border-violet-500/20 bg-[#0b0714] p-0 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_30px_80px_-20px_rgba(0,0,0,0.8)]">
         {/* Ambient backdrop */}
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="wallet-mesh absolute inset-0" />
-          <div className="wallet-glow-a absolute -top-20 -right-14 h-56 w-56 rounded-full bg-cyan-500/10 blur-[70px]" />
-          <div className="wallet-glow-b absolute -bottom-20 -left-14 h-56 w-56 rounded-full bg-cyan-500/[0.07] blur-[70px]" />
+          <div className="wallet-glow-a absolute -top-20 -right-14 h-56 w-56 rounded-full bg-fuchsia-500/15 blur-[70px]" />
+          <div className="wallet-glow-b absolute -bottom-20 -left-14 h-56 w-56 rounded-full bg-violet-600/15 blur-[70px]" />
         </div>
 
         <div className="relative z-10 flex max-h-[90vh] flex-col overflow-y-auto custom-scrollbar p-6">
@@ -313,7 +313,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
               <div key={label} className="flex flex-1 items-center gap-2">
                 <div className="relative h-1 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
                   <div
-                    className="wallet-step-fill absolute inset-y-0 left-0 rounded-full bg-cyan-400"
+                    className="wallet-step-fill absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
                     style={{ width: i <= step ? "100%" : "0%" }}
                   />
                 </div>
@@ -324,19 +324,19 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
           {!showDeposit && !showHistory ? (
             <div key="wallet-home" className="wallet-panel-in relative">
               <div className="flex items-center gap-2.5 text-white">
-                <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/15 border border-cyan-500/20">
-                  <span className="wallet-ring absolute inset-0 rounded-xl border border-cyan-400/40" />
-                  <Wallet className="wallet-float h-4 w-4 text-cyan-400" />
+                <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-fuchsia-500/15 border border-fuchsia-500/25">
+                  <span className="wallet-ring absolute inset-0 rounded-xl border border-fuchsia-400/40" />
+                  <Wallet className="wallet-float h-4 w-4 text-fuchsia-400" />
                 </span>
                 <span className="text-base font-semibold">My Wallet</span>
               </div>
 
               {/* Balance */}
-              <div className="wallet-card relative mt-4 overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/[0.12] to-cyan-500/[0.03] p-5">
-                <div className="wallet-glow-a pointer-events-none absolute -top-10 -right-10 h-28 w-28 rounded-full bg-cyan-500/10 blur-2xl" />
+              <div className="wallet-card relative mt-4 overflow-hidden rounded-2xl border border-fuchsia-500/25 bg-gradient-to-br from-violet-500/[0.16] to-fuchsia-500/[0.05] p-5">
+                <div className="wallet-glow-a pointer-events-none absolute -top-10 -right-10 h-28 w-28 rounded-full bg-fuchsia-500/20 blur-2xl" />
                 <div className="relative flex items-center gap-1.5">
                   <span className="wallet-live-dot h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-300/90">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-fuchsia-300/90">
                     Current Balance
                   </p>
                 </div>
@@ -350,15 +350,15 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                 <button
                   onClick={() => setShowDeposit(true)}
                   style={{ animationDelay: "70ms" }}
-                  className="wallet-panel-in group flex w-full items-center justify-between rounded-xl border border-cyan-500/20 bg-cyan-500/[0.08] px-4 py-4 transition-all duration-300 ease-out hover:bg-cyan-500/[0.14] hover:border-cyan-500/35 hover:shadow-[0_0_30px_-10px_rgba(34,211,238,0.45)] active:scale-[0.98]"
+                  className="wallet-panel-in group flex w-full items-center justify-between rounded-xl border border-fuchsia-500/25 bg-fuchsia-500/[0.08] px-4 py-4 transition-all duration-300 ease-out hover:bg-fuchsia-500/[0.14] hover:border-fuchsia-500/40 hover:shadow-[0_0_30px_-10px_rgba(217,70,239,0.5)] active:scale-[0.98]"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/15 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-90">
-                      <Plus className="h-4 w-4 text-cyan-400" />
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-fuchsia-500/15 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-90">
+                      <Plus className="h-4 w-4 text-fuchsia-400" />
                     </div>
                     <span className="text-sm font-medium text-white">Add Money</span>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-cyan-400 transition-transform duration-300 ease-out group-hover:translate-x-1" />
+                  <ChevronRight className="h-4 w-4 text-fuchsia-400 transition-transform duration-300 ease-out group-hover:translate-x-1" />
                 </button>
 
                 <button
@@ -399,7 +399,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
 
               {historyLoading ? (
                 <div className="flex flex-col items-center justify-center py-12 text-neutral-400">
-                  <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
+                  <Loader2 className="h-6 w-6 animate-spin text-fuchsia-400" />
                   <p className="mt-2 text-xs">Synchronizing ledger lines...</p>
                 </div>
               ) : historyList.length === 0 ? (
@@ -482,7 +482,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                     onChange={handleAmountChange}
                     onBlur={handleAmountBlur}
                     placeholder="Enter amount"
-                    className="w-full rounded-lg border border-white/10 bg-[#111114] pl-10 pr-3 py-3 font-mono text-white outline-none transition-all duration-200 focus:border-cyan-500/40 focus:ring-2 focus:ring-cyan-500/10"
+                    className="w-full rounded-lg border border-white/10 bg-[#120c1f] pl-10 pr-3 py-3 font-mono text-white outline-none transition-all duration-200 focus:border-fuchsia-500/50 focus:ring-2 focus:ring-fuchsia-500/15"
                   />
                 </div>
 
@@ -497,7 +497,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                       }}
                       className={`rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 active:scale-95 ${
                         amount === String(preset)
-                          ? "border-cyan-500/40 bg-cyan-500/15 text-cyan-300"
+                          ? "border-fuchsia-500/50 bg-fuchsia-500/15 text-fuchsia-300"
                           : "border-white/10 bg-white/[0.03] text-neutral-400 hover:border-white/20 hover:text-white"
                       }`}
                     >
@@ -519,7 +519,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                       setMobileNumber(e.target.value.replace(/\D/g, "").slice(0, 10));
                     }}
                     placeholder="Your 10-digit mobile number"
-                    className="w-full rounded-lg border border-white/10 bg-[#111114] pl-10 pr-3 py-3 text-white outline-none transition-all duration-200 focus:border-cyan-500/40 focus:ring-2 focus:ring-cyan-500/10"
+                    className="w-full rounded-lg border border-white/10 bg-[#120c1f] pl-10 pr-3 py-3 text-white outline-none transition-all duration-200 focus:border-fuchsia-500/50 focus:ring-2 focus:ring-fuchsia-500/15"
                   />
                 </div>
               </div>
@@ -531,7 +531,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                       ? "border-red-500/25 bg-red-500/10 text-red-300"
                       : notice.type === "warning"
                       ? "border-amber-500/25 bg-amber-500/10 text-amber-300"
-                      : "border-cyan-500/25 bg-cyan-500/10 text-cyan-300"
+                      : "border-fuchsia-500/25 bg-fuchsia-500/10 text-fuchsia-300"
                   }`}
                 >
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -543,7 +543,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                 onClick={createWalletOrder}
                 disabled={loading}
                 style={{ animationDelay: "200ms" }}
-                className="wallet-shimmer wallet-panel-in relative w-full overflow-hidden rounded-lg bg-cyan-500 py-3.5 text-sm font-bold uppercase tracking-wide text-black transition-all duration-300 ease-out hover:bg-cyan-400 active:scale-[0.98] disabled:opacity-60"
+                className="wallet-shimmer wallet-panel-in relative w-full overflow-hidden rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-bold uppercase tracking-wide text-white shadow-[0_8px_30px_-8px_rgba(192,38,211,0.7)] transition-all duration-300 ease-out hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
               >
                 <span className="relative z-10 flex items-center justify-center gap-2">
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -576,7 +576,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                 </div>
               ) : (
                 <>
-                  <div className="rounded-2xl border border-cyan-500/20 bg-[#111114] p-4">
+                  <div className="rounded-2xl border border-fuchsia-500/25 bg-[#120c1f] p-4">
                     <div className="flex justify-center">
                       <div className="relative rounded-xl bg-white p-2.5">
                         {!qrLoaded && (
@@ -596,12 +596,12 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                     </div>
 
                     <div className="mt-4 space-y-2.5">
-                      <div className="flex items-center justify-between rounded-lg bg-black/20 p-2.5">
+                      <div className="flex items-center justify-between rounded-lg bg-black/25 p-2.5">
                         <span className="text-sm text-neutral-400">Amount</span>
                         <span className="font-mono font-bold text-white">₹{paymentData?.amount}</span>
                       </div>
 
-                      <div className="rounded-lg bg-black/20 p-2.5">
+                      <div className="rounded-lg bg-black/25 p-2.5">
                         <p className="text-xs text-neutral-400">UPI ID</p>
                         <p className="mt-0.5 break-all text-xs tracking-wide text-white">
                           {paymentData?.upi_id}
@@ -610,7 +610,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
 
                       <button
                         onClick={handleCopyUpi}
-                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/10 py-2.5 text-sm font-semibold text-cyan-300 transition-all duration-200 hover:bg-cyan-500/20 active:scale-[0.98]"
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-fuchsia-500/25 bg-fuchsia-500/10 py-2.5 text-sm font-semibold text-fuchsia-300 transition-all duration-200 hover:bg-fuchsia-500/20 active:scale-[0.98]"
                       >
                         {copied ? (
                           <>
@@ -634,7 +634,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                         setUtr(e.target.value.replace(/\D/g, "").slice(0, 12));
                       }}
                       placeholder="Enter 12-digit UTR"
-                      className="w-full rounded-lg border border-white/10 bg-[#111114] px-4 py-2.5 text-sm font-mono text-white outline-none transition-all duration-200 focus:border-cyan-500"
+                      className="w-full rounded-lg border border-white/10 bg-[#120c1f] px-4 py-2.5 text-sm font-mono text-white outline-none transition-all duration-200 focus:border-fuchsia-500"
                     />
                   </div>
 
@@ -646,7 +646,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                           : notice.type === "warning"
                           ? "border-amber-500/25 bg-amber-500/10 text-amber-300"
                           : notice.type === "info"
-                          ? "border-blue-500/25 bg-blue-500/10 text-blue-300"
+                          ? "border-violet-500/25 bg-violet-500/10 text-violet-300"
                           : "border-red-500/25 bg-red-500/10 text-red-300"
                       }`}
                     >
@@ -658,7 +658,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                   <button
                     onClick={verifyWalletPayment}
                     disabled={loading}
-                    className="relative w-full overflow-hidden rounded-lg bg-cyan-500 py-3 text-sm font-bold text-black transition-all duration-300 ease-out hover:bg-cyan-400 active:scale-[0.98] disabled:opacity-60"
+                    className="relative w-full overflow-hidden rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3 text-sm font-bold text-white shadow-[0_8px_30px_-8px_rgba(192,38,211,0.7)] transition-all duration-300 ease-out hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
                   >
                     <span className="relative z-10 flex items-center justify-center gap-2">
                       {loading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -679,17 +679,17 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
             background: transparent;
           }
           .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: rgba(6, 182, 212, 0.2);
+            background: rgba(192, 38, 211, 0.3);
             border-radius: 9999px;
           }
 
           .wallet-mesh {
             background-image: radial-gradient(
                 circle at 20% 15%,
-                rgba(34, 211, 238, 0.05),
+                rgba(139, 92, 246, 0.08),
                 transparent 55%
               ),
-              radial-gradient(circle at 85% 85%, rgba(34, 211, 238, 0.05), transparent 55%);
+              radial-gradient(circle at 85% 85%, rgba(217, 70, 239, 0.07), transparent 55%);
             background-size: 200% 200%;
             animation: walletMeshDrift 14s ease-in-out infinite;
           }

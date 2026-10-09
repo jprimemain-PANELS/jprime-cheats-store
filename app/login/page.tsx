@@ -2,15 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { User, Lock, Phone, Mail, ArrowRight } from "lucide-react";
+import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn } from "lucide-react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 
 /* ==========================================================================
-   FERROFLUID SHADER SYSTEM (INTERACTIVE & MOBILE COMPATIBLE BACKGROUND)
+   FERROFLUID SHADER SYSTEM (BACKGROUND)
    ========================================================================== */
 const MAX_COLORS = 8;
 
-const hexToRGB = (hex) => {
+const hexToRGB = (hex: string) => {
   const c = hex.replace("#", "").padEnd(6, "0");
   const r = parseInt(c.slice(0, 2), 16) / 255;
   const g = parseInt(c.slice(2, 4), 16) / 255;
@@ -18,11 +18,16 @@ const hexToRGB = (hex) => {
   return [r, g, b];
 };
 
-const prepColors = (input) => {
-  const base = (input && input.length ? input : ["#4F46E5", "#06B6D4", "#E0F2FE"]).slice(0, MAX_COLORS);
+const prepColors = (input: string[]) => {
+  const base = (
+    input && input.length
+      ? input
+      : ["#c026d3", "#7c3aed", "#9333ea"]
+  ).slice(0, MAX_COLORS);
   const count = base.length;
-  const arr = [];
-  for (let i = 0; i < MAX_COLORS; i++) arr.push(hexToRGB(base[Math.min(i, base.length - 1)]));
+  const arr: number[][] = [];
+  for (let i = 0; i < MAX_COLORS; i++)
+    arr.push(hexToRGB(base[Math.min(i, base.length - 1)]));
   const avg = [0, 0, 0];
   for (let i = 0; i < count; i++) {
     avg[0] += arr[i][0];
@@ -35,7 +40,7 @@ const prepColors = (input) => {
   return { arr, count, avg };
 };
 
-const flowVec = (d) => {
+const flowVec = (d: string) => {
   switch (d) {
     case "up":
       return [0, 1];
@@ -197,7 +202,7 @@ const Ferrofluid = ({
   className,
   dpr,
   paused = false,
-  colors = ["#ffffff", "#ffffff", "#ffffff"],
+  colors = ["#c026d3", "#7c3aed", "#e879f9"],
   speed = 0.5,
   scale = 1.6,
   turbulence = 1,
@@ -212,14 +217,14 @@ const Ferrofluid = ({
   mouseStrength = 1,
   mouseRadius = 0.35,
   mouseDampening = 0.15,
-  mixBlendMode
-}) => {
-  const containerRef = useRef(null);
-  const rafRef = useRef(null);
-  const programRef = useRef(null);
-  const meshRef = useRef(null);
-  const geometryRef = useRef(null);
-  const rendererRef = useRef(null);
+  mixBlendMode,
+}: any) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
+  const programRef = useRef<any>(null);
+  const meshRef = useRef<any>(null);
+  const geometryRef = useRef<any>(null);
+  const rendererRef = useRef<any>(null);
   const mouseTargetRef = useRef([0, 0]);
   const lastTimeRef = useRef(0);
 
@@ -234,16 +239,16 @@ const Ferrofluid = ({
       return dpr ?? (isMobile ? Math.min(baseDPR, 1.5) : baseDPR);
     };
 
-    let renderer;
+    let renderer: any;
     try {
       renderer = new Renderer({
         dpr: getSafeDPR(),
         alpha: true,
         antialias: true,
-        powerPreference: "high-performance"
+        powerPreference: "high-performance",
       });
     } catch (err) {
-      console.warn("WebGL compatibility system fallback activated:", err);
+      console.warn("WebGL fallback activated:", err);
       return;
     }
 
@@ -285,7 +290,7 @@ const Ferrofluid = ({
       uOpacity: { value: opacity },
       uMouseEnabled: { value: mouseInteraction ? 1 : 0 },
       uMouseStrength: { value: mouseStrength },
-      uMouseRadius: { value: mouseRadius }
+      uMouseRadius: { value: mouseRadius },
     };
 
     const program = new Program(gl, { vertex, fragment, uniforms });
@@ -307,7 +312,7 @@ const Ferrofluid = ({
     const ro = new ResizeObserver(resize);
     ro.observe(container);
 
-    const onPointerMove = (e) => {
+    const onPointerMove = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
       const scaleF = renderer.dpr || 1;
       const x = (e.clientX - rect.left) * scaleF;
@@ -321,7 +326,7 @@ const Ferrofluid = ({
       canvas.addEventListener("pointermove", onPointerMove);
     }
 
-    const loop = (t) => {
+    const loop = (t: number) => {
       rafRef.current = requestAnimationFrame(loop);
       uniforms.iTime.value = t * 0.001;
       if (mouseDampening > 0) {
@@ -355,7 +360,7 @@ const Ferrofluid = ({
       if (canvas.parentElement === container) {
         container.removeChild(canvas);
       }
-      const callIfFn = (obj, key) => {
+      const callIfFn = (obj: any, key: string) => {
         const fn = obj && obj[key];
         if (typeof fn === "function") {
           fn.call(obj);
@@ -387,7 +392,7 @@ const Ferrofluid = ({
     mouseInteraction,
     mouseStrength,
     mouseRadius,
-    mouseDampening
+    mouseDampening,
   ]);
 
   return (
@@ -395,198 +400,154 @@ const Ferrofluid = ({
       ref={containerRef}
       className={`absolute inset-0 w-full h-full overflow-hidden ${className ?? ""}`}
       style={{
-        ...(mixBlendMode && { mixBlendMode })
+        ...(mixBlendMode && { mixBlendMode }),
       }}
     />
   );
 };
 
 /* ==========================================================================
-   ULTRA-REALISTIC HIGH-FIDELITY CARTOON TOY COMPONENT
+   HUMPTY DUMPTY CHARACTER SITTING ON THE WALL BORDER
    ========================================================================== */
-const InteractiveToy = ({ currentField }) => {
+const SittingHumptyCharacter = ({ currentField }: { currentField: string }) => {
   return (
-    <div className="w-36 h-36 mx-auto relative -mb-5 z-30 transition-all duration-300 transform origin-bottom hover:scale-105 select-none pointer-events-none">
-      <svg viewBox="0 0 140 140" className="w-full h-full filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.6)]">
+    <div className="w-48 h-48 mx-auto relative -mb-10 z-30 transition-all duration-300 pointer-events-none select-none">
+      <svg viewBox="0 0 160 170" className="w-full h-full filter drop-shadow-[0_12px_28px_rgba(0,0,0,0.85)]">
         <defs>
-          {/* Volumetric Plastic Head Gradients */}
-          <radialGradient id="toySkin" cx="40%" cy="35%" r="65%">
-            <stop offset="0%" stopColor="#22d3ee" />
-            <stop offset="55%" stopColor="#0891b2" />
-            <stop offset="85%" stopColor="#0e7490" />
-            <stop offset="100%" stopColor="#155e75" />
+          {/* Egg / Head Flesh Skin Gradient */}
+          <radialGradient id="eggSkin" cx="40%" cy="30%" r="70%">
+            <stop offset="0%" stopColor="#ffedd5" />
+            <stop offset="50%" stopColor="#fed7aa" />
+            <stop offset="85%" stopColor="#fb923c" />
+            <stop offset="100%" stopColor="#ea580c" />
           </radialGradient>
-          
-          <linearGradient id="toySkinShadow" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#000000" stopOpacity="0" />
-            <stop offset="100%" stopColor="#000000" stopOpacity="0.45" />
-          </linearGradient>
 
-          {/* Glowing Neon Ear Tips */}
-          <radialGradient id="earGlow" cx="50%" cy="50%" r="50%">
+          {/* Shirt Gradient */}
+          <linearGradient id="shirtGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#ffffff" />
-            <stop offset="40%" stopColor="#38bdf8" />
-            <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
-          </radialGradient>
-
-          {/* Realistic Deep 3D Eye Orbitals */}
-          <radialGradient id="eyeBacking" cx="50%" cy="50%" r="50%">
-            <stop offset="75%" stopColor="#ffffff" />
-            <stop offset="93%" stopColor="#e4e4e7" />
-            <stop offset="100%" stopColor="#a1a1aa" />
-          </radialGradient>
-
-          <radialGradient id="pupilGrad" cx="40%" cy="40%" r="50%">
-            <stop offset="0%" stopColor="#27272a" />
-            <stop offset="70%" stopColor="#09090b" />
-            <stop offset="100%" stopColor="#000000" />
-          </radialGradient>
-
-          {/* Premium Specular Gloss Reflections */}
-          <linearGradient id="glossHighlight" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.65" />
-            <stop offset="40%" stopColor="#ffffff" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+            <stop offset="100%" stopColor="#f1f5f9" />
           </linearGradient>
 
-          {/* Mouth Depth Cavity */}
-          <linearGradient id="mouthInterior" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4c0519" />
-            <stop offset="100%" stopColor="#9f1239" />
+          {/* Pants / Trousers Gradient */}
+          <linearGradient id="pantsGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#86efac" />
+            <stop offset="50%" stopColor="#22c55e" />
+            <stop offset="100%" stopColor="#15803d" />
           </linearGradient>
 
-          {/* Soft Drop Shadow for Features */}
-          <filter id="softShadow" x="-10%" y="-10%" width="130%" height="130%">
-            <feDropShadow dx="0" dy="3" stdDeviation="2.5" floodColor="#020617" floodOpacity="0.5" />
-          </filter>
-          <filter id="innerGlow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="#ffffff" floodOpacity="0.3" />
+          {/* Boots / Shoes */}
+          <linearGradient id="shoeGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#78350f" />
+            <stop offset="100%" stopColor="#451a03" />
+          </linearGradient>
+
+          <filter id="humptyShadow">
+            <feDropShadow dx="0" dy="4" stdDeviation="3" floodColor="#000000" floodOpacity="0.5" />
           </filter>
         </defs>
 
-        {/* 3D Antennae / Ears Channel */}
-        <g filter="url(#softShadow)" className="transition-transform duration-500 origin-center">
-          {/* Left Ear Base & Gradient Structure */}
-          <path d="M 45,40 Q 25,12 32,8 Q 42,5 52,30" fill="url(#toySkin)" />
-          <path d="M 45,40 Q 25,12 32,8 Q 42,5 52,30" fill="url(#toySkinShadow)" />
-          <circle cx="31" cy="8" r="7" fill="url(#earGlow)" className="animate-pulse" />
-          
-          {/* Right Ear Base & Gradient Structure */}
-          <path d="M 95,40 Q 115,12 108,8 Q 98,5 88,30" fill="url(#toySkin)" />
-          <path d="M 95,40 Q 115,12 108,8 Q 98,5 88,30" fill="url(#toySkinShadow)" />
-          <circle cx="109" cy="8" r="7" fill="url(#earGlow)" className="animate-pulse" />
+        {/* --- LEGS DANGLING OVER WALL BORDER --- */}
+        <g filter="url(#humptyShadow)">
+          {/* Left Leg */}
+          <path d="M 58,110 L 58,142 A 8,8 0 0,0 66,150 L 68,150" stroke="#16a34a" strokeWidth="12" strokeLinecap="round" fill="none" />
+          <ellipse cx="64" cy="150" rx="9" ry="5" fill="url(#shoeGrad)" />
+
+          {/* Right Leg */}
+          <path d="M 102,110 L 102,142 A 8,8 0 0,0 110,150 L 112,150" stroke="#16a34a" strokeWidth="12" strokeLinecap="round" fill="none" />
+          <ellipse cx="108" cy="150" rx="9" ry="5" fill="url(#shoeGrad)" />
         </g>
 
-        {/* Core Volumetric Head Shape */}
-        <g filter="url(#softShadow)">
-          <circle cx="70" cy="70" r="38" fill="url(#toySkin)" />
-          {/* Ambient occlusion underlying profile depth */}
-          <circle cx="70" cy="70" r="38" fill="url(#toySkinShadow)" />
+        {/* --- EGG BODY / TROUSERS --- */}
+        <g filter="url(#humptyShadow)">
+          {/* Round Bottom Trousers */}
+          <path d="M 32,90 Q 30,118 80,118 Q 130,118 128,90 Z" fill="url(#pantsGrad)" />
+
+          {/* Upper Shirt Torso */}
+          <ellipse cx="80" cy="75" rx="46" ry="32" fill="url(#shirtGrad)" />
+
+          {/* Big Round Egg Head/Body */}
+          <ellipse cx="80" cy="55" rx="42" ry="38" fill="url(#eggSkin)" />
         </g>
 
-        {/* Highly Specular 3D Gloss Layer Anchor */}
-        <path d="M 36,54 A 36,36 0 0,1 104,54 A 38,38 0 0,0 36,54 Z" fill="url(#glossHighlight)" opacity="0.4" />
+        {/* --- SUSPENDERS & BOW TIE --- */}
+        <g>
+          {/* Left Strap */}
+          <path d="M 56,60 L 54,105" stroke="#451a03" strokeWidth="3" fill="none" />
+          {/* Right Strap */}
+          <path d="M 104,60 L 106,105" stroke="#451a03" strokeWidth="3" fill="none" />
 
-        {/* Realistic Plush Rosy Cheeks */}
-        <ellipse cx="44" cy="82" rx="7" ry="4.5" fill="#f43f5e" opacity="0.5" filter="blur(1px)" />
-        <ellipse cx="96" cy="82" rx="7" ry="4.5" fill="#f43f5e" opacity="0.5" filter="blur(1px)" />
+          {/* Bow Tie */}
+          <polygon points="70,68 70,76 80,72" fill="#dc2626" />
+          <polygon points="90,68 90,76 80,72" fill="#dc2626" />
+          <circle cx="80" cy="72" r="3" fill="#991b1b" />
+        </g>
 
-        {/* INTERACTIVE EYEBALL DYNAMICS */}
+        {/* --- ROSY CHEEKS --- */}
+        <ellipse cx="54" cy="58" rx="6" ry="3.5" fill="#f43f5e" opacity="0.45" />
+        <ellipse cx="106" cy="58" rx="6" ry="3.5" fill="#f43f5e" opacity="0.45" />
+
+        {/* --- INTERACTIVE EYEBALLS --- */}
         {currentField === "password" ? (
-          /* Password State: Super Funny covered / closed squeeze eyes looking up nervously */
-          <g filter="url(#softShadow)" className="transition-all duration-300 transform translate-y-[-5px]">
-            {/* Left Closed Curvature Slit */}
-            <path d="M 46,68 Q 55,56 61,66" stroke="#ffffff" strokeWidth="4.5" strokeLinecap="round" fill="none" />
-            <path d="M 46,68 Q 55,56 61,66" stroke="#0f172a" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-            
-            {/* Right Closed Curvature Slit */}
-            <path d="M 79,66 Q 85,56 94,68" stroke="#ffffff" strokeWidth="4.5" strokeLinecap="round" fill="none" />
-            <path d="M 79,66 Q 85,56 94,68" stroke="#0f172a" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+          /* PASSWORD STATE: Hands Covering Eyes Nervous Expression */
+          <g filter="url(#humptyShadow)">
+            <path d="M 52,48 Q 60,38 68,48" stroke="#451a03" strokeWidth="3" strokeLinecap="round" fill="none" />
+            <path d="M 92,48 Q 100,38 108,48" stroke="#451a03" strokeWidth="3" strokeLinecap="round" fill="none" />
 
-            {/* Hilarious sweat/ping dots escaping upwards */}
-            <circle cx="53" cy="52" r="2.5" fill="#38bdf8" className="animate-ping" />
-            <circle cx="87" cy="52" r="2.5" fill="#38bdf8" className="animate-ping" />
+            {/* Sweat drops */}
+            <circle cx="56" cy="34" r="2.5" fill="#38bdf8" className="animate-ping" />
+            <circle cx="104" cy="34" r="2.5" fill="#38bdf8" className="animate-ping" />
           </g>
         ) : currentField === "username" ? (
-          /* Username State: Ultra Ultra Wide Derpy Eyes looking directly down at input */
-          <g filter="url(#softShadow)" className="transition-all duration-300">
-            {/* Left Eye Sclera */}
-            <circle cx="52" cy="65" r="11" fill="url(#eyeBacking)" stroke="#0891b2" strokeWidth="1" />
-            <circle cx="54" cy="69" r="6" fill="url(#pupilGrad)" />
-            {/* Specular Iris Sparkles */}
-            <circle cx="52.5" cy="67.5" r="2" fill="#ffffff" />
-            <circle cx="55.5" cy="70.5" r="0.75" fill="#ffffff" />
+          /* USERNAME STATE: Looking Down Wide Eyes */
+          <g filter="url(#humptyShadow)">
+            <circle cx="62" cy="46" r="8" fill="#ffffff" />
+            <circle cx="63" cy="49" r="4" fill="#0f172a" />
+            <circle cx="62" cy="48" r="1.5" fill="#ffffff" />
 
-            {/* Right Eye Sclera */}
-            <circle cx="88" cy="65" r="11" fill="url(#eyeBacking)" stroke="#0891b2" strokeWidth="1" />
-            <circle cx="86" cy="69" r="6" fill="url(#pupilGrad)" />
-            {/* Specular Iris Sparkles */}
-            <circle cx="84.5" cy="67.5" r="2" fill="#ffffff" />
-            <circle cx="87.5" cy="70.5" r="0.75" fill="#ffffff" />
+            <circle cx="98" cy="46" r="8" fill="#ffffff" />
+            <circle cx="97" cy="49" r="4" fill="#0f172a" />
+            <circle cx="96" cy="48" r="1.5" fill="#ffffff" />
           </g>
         ) : (
-          /* Idle State: High Quality Premium Toy Glass Eyes */
-          <g filter="url(#softShadow)" className="transition-all duration-300">
-            {/* Left Eyeball Base */}
-            <circle cx="52" cy="65" r="10" fill="url(#eyeBacking)" stroke="#0e7490" strokeWidth="0.5" />
-            <circle cx="52" cy="65" r="5.5" fill="url(#pupilGrad)" />
-            <circle cx="50" cy="63" r="2.5" fill="#ffffff" filter="url(#innerGlow)" />
-            <circle cx="53.5" cy="66.5" r="1" fill="#ffffff" />
+          /* IDLE STATE: Smiling Eyeballs */
+          <g filter="url(#humptyShadow)">
+            <circle cx="62" cy="44" r="7" fill="#ffffff" />
+            <circle cx="62" cy="44" r="3.5" fill="#0f172a" />
+            <circle cx="60.5" cy="42.5" r="1.5" fill="#ffffff" />
 
-            {/* Right Eyeball Base */}
-            <circle cx="88" cy="65" r="10" fill="url(#eyeBacking)" stroke="#0e7490" strokeWidth="0.5" />
-            <circle cx="88" cy="65" r="5.5" fill="url(#pupilGrad)" />
-            <circle cx="86" cy="63" r="2.5" fill="#ffffff" filter="url(#innerGlow)" />
-            <circle cx="89.5" cy="66.5" r="1" fill="#ffffff" />
+            <circle cx="98" cy="44" r="7" fill="#ffffff" />
+            <circle cx="98" cy="44" r="3.5" fill="#0f172a" />
+            <circle cx="96.5" cy="42.5" r="1.5" fill="#ffffff" />
           </g>
         )}
 
-        {/* INTERACTIVE MOUTH CAVITY DYNAMICS */}
+        {/* --- INTERACTIVE MOUTH --- */}
         {currentField === "password" ? (
-          /* Password State: Shaking / Wavy Nervous Line Mouth Expression */
-          <path d="M 56,88 Q 63,82 70,88 T 84,88" stroke="#0f172a" strokeWidth="4.5" strokeLinecap="round" fill="none" className="transition-all duration-300" />
+          <path d="M 68,64 Q 80,58 92,64" stroke="#451a03" strokeWidth="3" strokeLinecap="round" fill="none" />
         ) : currentField === "username" ? (
-          /* Username State: Giant Rendered Open Mouth Smile with Soft 3D Tongue */
-          <g filter="url(#softShadow)" className="transition-all duration-300">
-            <path d="M 52,82 Q 70,104 88,82 Z" fill="url(#mouthInterior)" stroke="#0891b2" strokeWidth="1" />
-            {/* Volumetric Tongue Vector */}
-            <path d="M 60,91 Q 70,84 80,91 Q 75,102 65,101 Z" fill="#fb7185" />
-            <path d="M 52,82 Q 70,85 88,82" stroke="#0e7490" strokeWidth="2" strokeLinecap="round" />
-          </g>
+          <path d="M 66,60 Q 80,76 94,60 Z" fill="#9f1239" stroke="#451a03" strokeWidth="1.5" />
         ) : (
-          /* Idle State: Cute Smug Subtle Plastic Molded Smile Line */
-          <path d="M 55,84 Q 70,94 85,84" stroke="#0f172a" strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          <path d="M 68,60 Q 80,68 92,60" stroke="#451a03" strokeWidth="2.5" strokeLinecap="round" fill="none" />
         )}
 
-        {/* MULTI-AXIS 3D ARMS / PAWS DYNAMICS */}
+        {/* --- ARMS / HANDS DYNAMICS --- */}
         {currentField === "password" ? (
-          /* Password State: Volumetric arms moving directly up covering its side cheeks */
-          <g filter="url(#softShadow)" className="transition-all duration-500 transform translate-y-[-18px]">
-            {/* Left High Hand Vector */}
-            <path d="M 26,96 Q 34,64 48,60" stroke="url(#toySkin)" strokeWidth="9" strokeLinecap="round" fill="none" />
-            <path d="M 26,96 Q 34,64 48,60" stroke="url(#toySkinShadow)" strokeWidth="9" strokeLinecap="round" fill="none" />
-            
-            {/* Right High Hand Vector */}
-            <path d="M 114,96 Q 106,64 92,60" stroke="url(#toySkin)" strokeWidth="9" strokeLinecap="round" fill="none" />
-            <path d="M 114,96 Q 106,64 92,60" stroke="url(#toySkinShadow)" strokeWidth="9" strokeLinecap="round" fill="none" />
+          /* Hands Raised Covering Eyes */
+          <g filter="url(#humptyShadow)">
+            <path d="M 36,78 Q 42,42 58,42" stroke="url(#eggSkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
+            <path d="M 124,78 Q 118,42 102,42" stroke="url(#eggSkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
           </g>
         ) : currentField === "username" ? (
-          /* Username State: Hilarious celebrating waving arms pointing straight down */
-          <g filter="url(#softShadow)" className="transition-all duration-300">
-            <path d="M 28,96 Q 12,98 20,112" stroke="url(#toySkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
-            <path d="M 28,96 Q 12,98 20,112" stroke="url(#toySkinShadow)" strokeWidth="8" strokeLinecap="round" fill="none" />
-            
-            <path d="M 112,96 Q 128,98 120,112" stroke="url(#toySkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
-            <path d="M 112,96 Q 128,98 120,112" stroke="url(#toySkinShadow)" strokeWidth="8" strokeLinecap="round" fill="none" />
+          /* Celebrating Waving Arms */
+          <g filter="url(#humptyShadow)">
+            <path d="M 36,78 Q 20,60 26,45" stroke="url(#eggSkin)" strokeWidth="7" strokeLinecap="round" fill="none" />
+            <path d="M 124,78 Q 140,60 134,45" stroke="url(#eggSkin)" strokeWidth="7" strokeLinecap="round" fill="none" />
           </g>
         ) : (
-          /* Idle State: Soft Rounded Paws Resting Perfectly on Panel Rim */
-          <g filter="url(#softShadow)" className="transition-all duration-300">
-            <path d="M 28,96 Q 40,99 48,91" stroke="url(#toySkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
-            <path d="M 28,96 Q 40,99 48,91" stroke="url(#toySkinShadow)" strokeWidth="8" strokeLinecap="round" fill="none" />
-            
-            <path d="M 112,96 Q 100,99 92,91" stroke="url(#toySkin)" strokeWidth="8" strokeLinecap="round" fill="none" />
-            <path d="M 112,96 Q 100,99 92,91" stroke="url(#toySkinShadow)" strokeWidth="8" strokeLinecap="round" fill="none" />
+          /* Resting Arms on Lap */
+          <g filter="url(#humptyShadow)">
+            <path d="M 36,78 Q 48,88 56,84" stroke="url(#eggSkin)" strokeWidth="7" strokeLinecap="round" fill="none" />
+            <path d="M 124,78 Q 112,88 104,84" stroke="url(#eggSkin)" strokeWidth="7" strokeLinecap="round" fill="none" />
           </g>
         )}
       </svg>
@@ -603,8 +564,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
-  
-  // Real-time tracking of focused system input channels
+
   const [currentField, setCurrentField] = useState("idle");
 
   async function handleAuth() {
@@ -626,7 +586,7 @@ export default function LoginPage() {
         JSON.stringify({
           username: data.username,
           email: data.email,
-          role: data.role
+          role: data.role,
         })
       );
       window.location.href = "/";
@@ -653,8 +613,8 @@ export default function LoginPage() {
           password,
           email,
           mobile_number: mobileNumber,
-          role: "user"
-        }
+          role: "user",
+        },
       ]);
 
       if (error) {
@@ -667,12 +627,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#020204] text-zinc-100 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans antialiased selection:bg-cyan-500 selection:text-black">
-      
-      {/* ================= DYNAMIC SHADER BACKGROUND SYSTEM ================= */}
-      <div className="absolute inset-0 pointer-events-none z-0 bg-[#020204]">
+    <div className="min-h-screen bg-[#07040f] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans antialiased selection:bg-fuchsia-500 selection:text-white">
+      {/* Background Glow Blobs */}
+      <div className="pointer-events-none absolute -top-32 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-violet-600/30 blur-[120px]" />
+      <div className="pointer-events-none absolute top-40 -right-24 h-[260px] w-[260px] rounded-full bg-fuchsia-500/20 blur-[100px]" />
+
+      {/* SHADER BACKGROUND */}
+      <div className="absolute inset-0 pointer-events-none z-0">
         <Ferrofluid
-          colors={["#06b6d4", "#2563eb", "#0891b2"]}
+          colors={["#c026d3", "#7c3aed", "#e879f9"]}
           speed={0.5}
           scale={1.8}
           turbulence={1.1}
@@ -682,54 +645,54 @@ export default function LoginPage() {
           shimmer={1.5}
           glow={2.2}
           flowDirection="down"
-          opacity={1}
+          opacity={0.85}
           mouseInteraction={true}
           mouseStrength={0.9}
           mouseRadius={0.4}
         />
       </div>
 
-      {/* ================= INTERFACE CONTENT SYSTEM ================= */}
-      <div className="relative z-10 w-full max-w-md flex flex-col mt-4">
+      {/* MAIN CONTENT WRAPPER */}
+      <div className="relative z-10 w-full max-w-md flex flex-col mt-2">
         
-        {/* INTERACTIVE ULTRA-REALISTIC TOY COMPONENT */}
-        <InteractiveToy currentField={currentField} />
+        {/* CHARACTER SITTING ON TOP WALL / CARD BORDER */}
+        <SittingHumptyCharacter currentField={currentField} />
 
-        {/* PREMIUM MATTE INTERFACE PANEL WITH RAZOR EDGES */}
-        <div className="bg-[#050608]/90 backdrop-blur-2xl border border-zinc-800/50 rounded-3xl p-8 md:p-12 shadow-[0_40px_100px_rgba(0,0,0,0.85)] relative overflow-hidden group/card transition-all duration-500 hover:border-zinc-700/60">
+        {/* CARD CONTAINER (THE "WALL" TOP BORDER) */}
+        <div className="bg-[#07040f]/85 backdrop-blur-2xl border border-white/10 rounded-3xl p-7 md:p-9 shadow-[0_40px_100px_rgba(0,0,0,0.9)] relative overflow-hidden group/card transition-all duration-500 hover:border-fuchsia-500/30">
           
-          {/* MICRO GRAPHIC GLINT LAYER */}
-          <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
-            <div className="absolute top-[-150%] left-[-150%] w-[300%] h-[300%] bg-gradient-to-tr from-transparent via-white/[0.08] to-transparent transform rotate-[35deg] animate-sword-edge" />
-            <div className="absolute top-[-150%] left-[-150%] w-[300%] h-[300%] bg-gradient-to-tr from-transparent via-cyan-500/[0.03] to-transparent transform rotate-[35deg] animate-sword-flare" />
-          </div>
+          {/* Top Wall Border Accent Line */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-violet-500" />
 
-          {/* BRAND TYPOGRAPHY: CORPORATE MATTE MINIMALISM */}
-          <div className="text-center mb-10 relative z-20 select-none">
-            <h1 className="text-4xl font-light tracking-[0.35em] text-white/95 uppercase leading-none pl-[0.35em]">
-              JPRIME
+          {/* BRAND TYPOGRAPHY */}
+          <div className="text-center mb-6 relative z-20 select-none">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
+              <Sparkles className="h-3 w-3 text-fuchsia-400" />
+              <span className="text-[10px] font-medium tracking-wider text-white/60 uppercase">
+                JPRIME GLOBAL
+              </span>
+            </div>
+
+            <h1 className="text-3xl font-extrabold tracking-tight uppercase leading-none text-white">
+              JPRIME{" "}
+              <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
+                STORE
+              </span>
             </h1>
-            <p className="text-[10px] font-medium tracking-[0.65em] text-cyan-400/80 mt-3.5 uppercase pl-[0.65em]">
-              GLOBAL
-            </p>
-            
-            <div className="w-8 h-[1px] bg-zinc-800 mx-auto mt-6 mb-4" />
-            
-            <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em]">
+
+            <p className="text-white/40 text-[10px] font-semibold uppercase tracking-[0.2em] mt-2.5">
               {isLogin ? "Authentication Protocol" : "Registration Protocol"}
             </p>
           </div>
 
-          {/* PROFESSIONAL LOGIN BOXES (FLAT HIGH-CONTRAST INSET DESIGN) */}
-          <div className="space-y-3.5 relative z-20">
-            
-            {/* INPUT CHANNELS: USERNAME */}
-            <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
-              {/* Active Visual Indicator Anchor */}
-              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-zinc-800 group-focus-within/input:bg-cyan-400 transition-colors duration-300" />
-              
-              <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 text-zinc-500 group-focus-within/input:text-zinc-300 transition-colors duration-200">
-                <User className="h-4 w-4 stroke-[1.5]" />
+          {/* FORM INPUTS */}
+          <div className="space-y-3 relative z-20">
+            {/* USERNAME */}
+            <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
+
+              <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
+                <User className="h-4 w-4 stroke-[1.8]" />
               </span>
               <input
                 type="text"
@@ -738,19 +701,18 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 onFocus={() => setCurrentField("username")}
                 onBlur={() => setCurrentField("idle")}
-                className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
+                className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
               />
             </div>
 
-            {/* CONDITIONAL HANDLING FIELDS */}
+            {/* CONDITIONAL SIGNUP FIELDS */}
             {!isLogin && (
-              <div className="space-y-3.5 animate-form-reveal">
-                
-                {/* INPUT CHANNELS: EMAIL */}
-                <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-zinc-800 group-focus-within/input:bg-cyan-400 transition-colors duration-300" />
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 text-zinc-500 group-focus-within/input:text-zinc-300 transition-colors duration-200">
-                    <Mail className="h-4 w-4 stroke-[1.5]" />
+              <div className="space-y-3 animate-form-reveal">
+                {/* EMAIL */}
+                <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
+                    <Mail className="h-4 w-4 stroke-[1.8]" />
                   </span>
                   <input
                     type="email"
@@ -759,15 +721,15 @@ export default function LoginPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     onFocus={() => setCurrentField("username")}
                     onBlur={() => setCurrentField("idle")}
-                    className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
+                    className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
                   />
                 </div>
 
-                {/* INPUT CHANNELS: MOBILE */}
-                <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-zinc-800 group-focus-within/input:bg-cyan-400 transition-colors duration-300" />
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 text-zinc-500 group-focus-within/input:text-zinc-300 transition-colors duration-200">
-                    <Phone className="h-4 w-4 stroke-[1.5]" />
+                {/* MOBILE */}
+                <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
+                    <Phone className="h-4 w-4 stroke-[1.8]" />
                   </span>
                   <input
                     type="text"
@@ -776,18 +738,17 @@ export default function LoginPage() {
                     onChange={(e) => setMobileNumber(e.target.value)}
                     onFocus={() => setCurrentField("username")}
                     onBlur={() => setCurrentField("idle")}
-                    className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
+                    className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
                   />
                 </div>
-
               </div>
             )}
 
-            {/* INPUT CHANNELS: PASSWORD */}
-            <div className="relative group/input rounded-xl overflow-hidden border border-zinc-800 bg-black transition-all duration-300 focus-within:border-zinc-700">
-              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-zinc-800 group-focus-within/input:bg-cyan-400 transition-colors duration-300" />
-              <span className="absolute inset-y-0 left-0 flex items-center pl-4.5 text-zinc-500 group-focus-within/input:text-zinc-300 transition-colors duration-200">
-                <Lock className="h-4 w-4 stroke-[1.5]" />
+            {/* PASSWORD */}
+            <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
+              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
+              <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
+                <Lock className="h-4 w-4 stroke-[1.8]" />
               </span>
               <input
                 type="password"
@@ -796,58 +757,60 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 onFocus={() => setCurrentField("password")}
                 onBlur={() => setCurrentField("idle")}
-                className="w-full bg-transparent pl-13 pr-4 py-4 text-sm font-medium tracking-wide text-zinc-200 placeholder-zinc-600 outline-none transition-all duration-300"
+                className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
               />
             </div>
-
           </div>
 
-          {/* CORPORATE FLAT CONSOLE EXECUTION BUTTON */}
-          <div className="mt-8 relative z-20">
+          {/* SUBMIT BUTTON */}
+          <div className="mt-6 relative z-20">
             <button
               onClick={handleAuth}
-              className="w-full bg-zinc-100 hover:bg-white text-black py-4 rounded-xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-2 shadow-[0_4px_30px_rgba(255,255,255,0.05)]"
+              className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white py-3.5 rounded-xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_30px_-6px_rgba(192,38,211,0.6)] cursor-pointer"
             >
               <span>{isLogin ? "LOG IN" : "SIGN UP"}</span>
               <ArrowRight className="h-3.5 w-3.5 stroke-[2.5]" />
             </button>
           </div>
 
-          {/* ALTERNATE LINK INTERACTION */}
-          <div className="mt-8 text-center relative z-20 border-t border-zinc-900 pt-5">
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-zinc-500 hover:text-zinc-400 font-medium text-[11px] tracking-wider uppercase transition-colors duration-200"
-            >
-              {isLogin ? "Create an account" : "Return to login handle"}
-            </button>
+          {/* PROMINENT HIGH-VISIBILITY CREATE ACCOUNT CALLOUT CARD */}
+          <div className="mt-6 relative z-20 border-t border-white/10 pt-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-center backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-2.5">
+              <div className="text-left">
+                <span className="block text-xs font-bold text-white">
+                  {isLogin ? "Don't have an account?" : "Already registered?"}
+                </span>
+                <span className="text-[11px] text-white/50">
+                  {isLogin ? "Join 10,000+ active users today." : "Log back into your account."}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsLogin(!isLogin)}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl border border-fuchsia-500/40 bg-fuchsia-500/10 px-3.5 py-2 text-xs font-bold text-fuchsia-300 transition-all hover:bg-fuchsia-500/20 hover:border-fuchsia-500/60 active:scale-95 cursor-pointer shrink-0"
+              >
+                {isLogin ? (
+                  <>
+                    <UserPlus className="h-3.5 w-3.5" />
+                    Create One
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="h-3.5 w-3.5" />
+                    Log In
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
         </div>
-
       </div>
 
-      {/* COMPACT CLEAN MOTION UTILITIES */}
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes swordEdge {
-          0% { transform: translate(-35%, -35%) rotate(35deg); opacity: 0; }
-          4% { opacity: 1; }
-          20% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
-          100% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
-        }
-        @keyframes swordFlare {
-          0% { transform: translate(-35%, -35%) rotate(35deg); opacity: 0; }
-          3% { opacity: 0; }
-          7% { opacity: 1; }
-          24% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
-          100% { transform: translate(35%, 35%) rotate(35deg); opacity: 0; }
-        }
-        .animate-sword-edge {
-          animation: swordEdge 8s cubic-bezier(0.25, 1, 0.5, 1) infinite;
-        }
-        .animate-sword-flare {
-          animation: swordFlare 8s cubic-bezier(0.25, 1, 0.5, 1) infinite;
-        }
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @keyframes formReveal {
           from { opacity: 0; transform: translateY(-4px); }
           to { opacity: 1; transform: translateY(0); }
@@ -855,7 +818,9 @@ export default function LoginPage() {
         .animate-form-reveal {
           animation: formReveal 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-      `}} />
+      `,
+        }}
+      />
     </div>
   );
 }

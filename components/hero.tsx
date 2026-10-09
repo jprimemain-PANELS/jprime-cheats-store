@@ -1,10 +1,18 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Volume2 } from "lucide-react";
+import {
+  ArrowDown,
+  ChevronDown,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  Volume2,
+  Zap,
+} from "lucide-react";
 import { useState } from "react";
 
 interface HeroProps {
-  onScrollToProducts: () => void;
+  onScrollToProducts?: () => void;
 }
 
 const explainers = [
@@ -25,81 +33,133 @@ const explainers = [
   },
 ];
 
+const stats = [
+  { icon: Users, value: "10,000+", label: "Users" },
+  { icon: ShieldCheck, value: "Trusted", label: "Verified" },
+  { icon: Zap, value: "Instant", label: "Auto Delivery" },
+];
+
 export function Hero({ onScrollToProducts }: HeroProps) {
   const [showAudio, setShowAudio] = useState(false);
+  const [active, setActive] = useState(0);
+  const current = explainers[active];
 
   return (
-    <section className="relative flex flex-col items-center justify-start px-4 pt-20 pb-2 overflow-hidden">
-      {/* Background effects */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-[100px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-primary/3 rounded-full blur-[80px]" />
-      </div>
+    <section className="relative w-full overflow-hidden bg-[#07040f] px-4 pb-8 pt-24 text-white selection:bg-fuchsia-500 selection:text-white">
+      {/* Glow blobs */}
+      <div className="pointer-events-none absolute -top-32 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-violet-600/30 blur-[120px]" />
+      <div className="pointer-events-none absolute top-40 -right-24 h-[260px] w-[260px] rounded-full bg-fuchsia-500/20 blur-[100px]" />
+      <div className="pointer-events-none absolute top-72 -left-24 h-[260px] w-[260px] rounded-full bg-orange-500/10 blur-[100px]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-400/60 to-transparent" />
 
-      {/* Content */}
-      <div className="relative z-10 text-center max-w-4xl mx-auto">
-        {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-secondary/50 border border-border/50 mb-8">
-          <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-          <span className="text-sm text-muted-foreground">@JPRIMEADMIN-GARENA</span>
+      <div className="relative z-10 mx-auto flex max-w-2xl flex-col items-center text-center">
+        {/* Admin pill */}
+        <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 backdrop-blur-md">
+          <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
+          <span className="text-xs font-medium text-white/60">
+            Managed by{" "}
+            <span className="font-semibold text-white">@JPRIMEADMIN-GARENA</span>
+          </span>
         </div>
 
-        {/* Title */}
-        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-foreground mb-6">
-          <span className="block">JPRIME</span>
-          <span className="block text-primary">CHEATS STORE</span>
+        {/* Heading */}
+        <h1 className="text-5xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl md:text-7xl">
+          <span className="block text-white">JPRIME</span>
+          <span className="block bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
+            Cheats Store
+          </span>
         </h1>
 
-        {/* Tagline */}
-        <p className="text-sm text-muted-foreground mb-8 max-w-xl mx-auto text-balance">
-          Free Fire — professional mobile panel for CS &amp; BR rank push and all mods. Trusted by 10,000+ users.
+        {/* Description */}
+        <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 sm:text-base">
+          Free Fire — professional mobile panel for CS &amp; BR rank push and
+          all mods. Trusted by{" "}
+          <span className="font-semibold text-white">10,000+ users</span>.
         </p>
 
-        {/* Service explainer */}
-        <div className="max-w-2xl mx-auto mb-8">
-          <div className="bg-secondary/30 border border-border/50 rounded-2xl overflow-hidden text-left">
-            <button
-              type="button"
-              onClick={() => setShowAudio(!showAudio)}
-              aria-expanded={showAudio}
-              className="w-full flex items-center justify-between gap-4 p-5 text-left"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                  <Volume2 className="h-4 w-4 text-primary" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">
-                    How our service works
-                  </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    New here? Listen before you buy.
-                  </p>
-                </div>
-              </div>
-              {showAudio ? (
-                <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-              )}
-            </button>
+        {/* CTA */}
+        <button
+          type="button"
+          onClick={onScrollToProducts}
+          className="group mt-7 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 px-7 py-3.5 text-sm font-semibold shadow-[0_8px_40px_-8px_rgba(192,38,211,0.8)] transition-all hover:scale-[1.03] hover:shadow-[0_8px_50px_-6px_rgba(192,38,211,1)] active:scale-95"
+        >
+          Browse Panels
+          <ArrowDown className="h-4 w-4 transition-transform group-hover:translate-y-0.5" />
+        </button>
 
-            {showAudio && (
-              <div className="grid sm:grid-cols-3 gap-3 px-5 pb-5">
-                {explainers.map((item) => (
-                  <div key={item.label} className="bg-background/40 border border-border/50 rounded-xl p-3.5">
-                    <p className="text-xs font-medium text-foreground mb-2 flex items-center gap-1.5">
-                      <span>{item.flag}</span>
-                      <span>{item.label}</span>
-                    </p>
-                    <audio controls className="w-full h-9">
-                      <source src={item.src} />
-                    </audio>
-                  </div>
+        {/* Stat tiles (compact) */}
+        <div className="mt-8 grid w-full max-w-md grid-cols-3 gap-2">
+          {stats.map(({ icon: Icon, value, label }) => (
+            <div
+              key={label}
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-3 backdrop-blur-md"
+            >
+              <Icon className="mx-auto mb-1.5 h-3.5 w-3.5 text-fuchsia-400" />
+              <div className="text-[13px] font-bold text-white">{value}</div>
+              <div className="mt-0.5 text-[9px] uppercase tracking-wide text-white/40">
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Audio guide (compact) */}
+        <div className="mt-4 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] text-left backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => setShowAudio((v) => !v)}
+            aria-expanded={showAudio}
+            className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-white/[0.04]"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/30 to-fuchsia-500/30 text-fuchsia-300">
+                <Volume2 className="h-4 w-4" />
+              </div>
+              <div className="leading-tight">
+                <span className="block text-[13px] font-semibold text-white">
+                  How our service works
+                </span>
+                <span className="text-[11px] text-white/50">
+                  New here? Listen before you buy.
+                </span>
+              </div>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-white/50 transition-transform duration-300 ${
+                showAudio ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          {showAudio && (
+            <div className="space-y-2.5 border-t border-white/10 bg-black/30 p-3">
+              <div className="flex gap-1.5">
+                {explainers.map((item, i) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => setActive(i)}
+                    className={`flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-semibold transition-all ${
+                      active === i
+                        ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-fuchsia-900/40"
+                        : "border border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
+                    }`}
+                  >
+                    <span>{item.flag}</span>
+                    {item.label}
+                  </button>
                 ))}
               </div>
-            )}
-          </div>
+
+              <audio
+                key={current.label}
+                controls
+                className="h-8 w-full opacity-90"
+              >
+                <source src={current.src} />
+              </audio>
+            </div>
+          )}
         </div>
       </div>
     </section>

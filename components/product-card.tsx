@@ -12,6 +12,7 @@ import {
   ChevronRight,
   CheckCircle2,
   Copy,
+  Sparkles,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -197,7 +198,6 @@ export function ProductCard({ product, index }: ProductCardProps) {
    * Load product stock.
    */
   async function loadStock() {
-    // API products are delivered via supplier API, so skip local database stock check
     if (product.fulfillmentType === "API") {
       setAvailableStock(999);
       return;
@@ -236,9 +236,6 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
       setUserRole(user.role || "user");
 
-      /*
-       * Immediately use cached balance.
-       */
       if (
         user.wallet_balance !== undefined &&
         user.wallet_balance !== null
@@ -248,9 +245,6 @@ export function ProductCard({ product, index }: ProductCardProps) {
         setWalletBalance(Number(user.balance));
       }
 
-      /*
-       * Fetch fresh wallet balance.
-       */
       const identifier = user.username || user.email;
 
       if (!identifier) {
@@ -391,9 +385,6 @@ export function ProductCard({ product, index }: ProductCardProps) {
         return;
       }
 
-      /*
-       * Update wallet balance locally.
-       */
       if (result.newBalance !== undefined) {
         currentUser.wallet_balance = result.newBalance;
 
@@ -404,9 +395,6 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
         setWalletBalance(result.newBalance);
 
-        /*
-         * Broadcast wallet update.
-         */
         window.dispatchEvent(
           new CustomEvent(WALLET_BALANCE_EVENT, {
             detail: {
@@ -416,20 +404,10 @@ export function ProductCard({ product, index }: ProductCardProps) {
         );
       }
 
-      /*
-       * Close payment modal.
-       */
       setIsPaymentModalOpen(false);
-
-      /*
-       * Show purchased key.
-       */
       setPurchasedKey(result.key);
       setShowKeyModal(true);
 
-      /*
-       * Auto copy key.
-       */
       if (result.key) {
         try {
           await navigator.clipboard.writeText(result.key);
@@ -439,9 +417,6 @@ export function ProductCard({ product, index }: ProductCardProps) {
         }
       }
 
-      /*
-       * Refresh stock after purchase.
-       */
       await loadStock();
     } catch (error) {
       console.error("Wallet Payment Error:", error);
@@ -546,27 +521,26 @@ export function ProductCard({ product, index }: ProductCardProps) {
   return (
     <>
       {/* PRODUCT CARD */}
-
       <Card
-        className="group relative overflow-hidden border border-border/50 bg-card/50 backdrop-blur-sm transition-all duration-500 hover:border-primary/30 hover:shadow-[0_0_40px_rgba(0,200,255,0.08)]"
+        className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#07040f]/80 text-white backdrop-blur-md transition-all duration-500 hover:border-fuchsia-500/40 hover:shadow-[0_10px_40px_-10px_rgba(192,38,211,0.3)]"
         style={{
           animationDelay: `${index * 100}ms`,
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* VIDEO */}
+        {/* Glow Effects */}
+        <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-fuchsia-600/10 blur-[50px] transition-all group-hover:bg-fuchsia-600/25" />
+        <div className="pointer-events-none absolute -bottom-12 -left-12 h-32 w-32 rounded-full bg-violet-600/10 blur-[50px] transition-all group-hover:bg-violet-600/25" />
 
-        <div className="relative aspect-video overflow-hidden bg-secondary/50">
-          {/* Product status badge — purely visual, pointer-events-none so it can
-              never intercept clicks on the video controls. Uses effectiveStatus:
-              the live status from the database, falling back to products.ts. */}
-          <div className="pointer-events-none absolute left-2 top-2 z-20">
+        {/* VIDEO CONTAINER */}
+        <div className="relative aspect-video overflow-hidden bg-black/40">
+          <div className="pointer-events-none absolute left-3 top-3 z-20">
             <span
-              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide backdrop-blur-md ${
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider backdrop-blur-md ${
                 effectiveStatus === "ONLINE"
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                  : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                  ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-400"
+                  : "border-amber-500/30 bg-amber-500/15 text-amber-400"
               }`}
             >
               <span
@@ -591,18 +565,18 @@ export function ProductCard({ product, index }: ProductCardProps) {
               />
             </video>
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-violet-950/20 to-fuchsia-950/20">
               <div
-                className={`flex h-16 w-16 items-center justify-center rounded-full border border-primary/30 bg-primary/20 transition-all duration-300 ${
+                className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-violet-600/30 to-fuchsia-600/30 text-fuchsia-300 backdrop-blur-md transition-all duration-300 ${
                   isHovered
-                    ? "scale-110 bg-primary/30"
+                    ? "scale-110 border-fuchsia-500/50 shadow-[0_0_20px_rgba(192,38,211,0.5)]"
                     : ""
                 }`}
               >
-                <Play className="ml-1 h-6 w-6 text-primary" />
+                <Play className="ml-1 h-6 w-6 fill-current text-white" />
               </div>
 
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs font-medium text-white/50">
                 Demo Video
               </span>
             </div>
@@ -610,34 +584,32 @@ export function ProductCard({ product, index }: ProductCardProps) {
         </div>
 
         {/* CONTENT */}
-
         <div className="space-y-5 p-5">
           <div>
-            <h3 className="text-lg font-semibold leading-tight tracking-tight text-foreground">
+            <h3 className="text-lg font-bold leading-tight tracking-tight text-white">
               {product.name}
             </h3>
 
             <Badge
               variant="secondary"
-              className="mt-2 border-0 bg-secondary/80 text-xs text-muted-foreground"
+              className="mt-2 border border-white/10 bg-white/5 text-[10px] font-semibold uppercase tracking-wider text-fuchsia-300 backdrop-blur-md"
             >
               {product.category.toUpperCase()}
             </Badge>
           </div>
 
           {/* FEATURES */}
-
           <div className="space-y-2">
             {product.features.map((feature, i) => (
               <div
                 key={i}
                 className="flex items-center gap-2"
               >
-                <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
-                  <Check className="h-2.5 w-2.5 text-primary" />
+                <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-violet-500/30 to-fuchsia-500/30 text-fuchsia-400">
+                  <Check className="h-2.5 w-2.5" />
                 </div>
 
-                <span className="text-sm text-muted-foreground">
+                <span className="text-xs leading-relaxed text-white/70">
                   {feature}
                 </span>
               </div>
@@ -645,9 +617,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
           </div>
 
           {/* DURATIONS */}
-
           <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">
               Select Duration
             </p>
 
@@ -655,25 +626,24 @@ export function ProductCard({ product, index }: ProductCardProps) {
               {effectivePrices.map((price, i) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() =>
                     setSelectedDuration(price.duration)
                   }
-                  className={`flex flex-col items-start rounded-lg border p-3 transition-all duration-200 ${
-                    selectedPrice?.duration ===
-                    price.duration
-                      ? "border-primary/50 bg-primary/10"
-                      : "border-border/50 bg-secondary/30 hover:border-border hover:bg-secondary/50"
+                  className={`flex flex-col items-start rounded-xl border p-2.5 transition-all duration-200 cursor-pointer ${
+                    selectedPrice?.duration === price.duration
+                      ? "border-fuchsia-500/60 bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 text-white shadow-[0_0_15px_rgba(192,38,211,0.25)]"
+                      : "border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06]"
                   }`}
                 >
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-[11px] font-medium text-white/60">
                     {price.duration}
                   </span>
 
                   <div className="mt-0.5 flex items-baseline gap-1.5">
-                    <span className="text-sm font-semibold text-foreground">
+                    <span className="text-sm font-bold text-white">
                       {userRole === "reseller"
-                        ? price.resellerPrice ||
-                          price.priceINR
+                        ? price.resellerPrice || price.priceINR
                         : price.priceINR}
                     </span>
                   </div>
@@ -683,28 +653,27 @@ export function ProductCard({ product, index }: ProductCardProps) {
           </div>
 
           {/* BUTTONS */}
-
           <div className="flex gap-2 pt-2">
             <Button
               disabled={
                 effectiveStatus === "MAINTENANCE" ||
                 (product.fulfillmentType !== "API" && availableStock === 0)
               }
-              className="flex-1 bg-primary text-primary-foreground transition-all duration-300 hover:bg-primary/90 disabled:opacity-50"
+              className="flex-1 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-xs font-bold text-white shadow-[0_4px_25px_-4px_rgba(192,38,211,0.6)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_6px_30px_-2px_rgba(192,38,211,0.8)] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
               onClick={handleInitialBuyClick}
             >
               <ShoppingCart className="mr-2 h-4 w-4" />
 
               {effectiveStatus === "MAINTENANCE"
-                ? "UNDER MAINTENANCE"
+                ? "MAINTENANCE"
                 : product.fulfillmentType !== "API" && availableStock === 0
                 ? "OUT OF STOCK"
-                : "BUY"}
+                : "BUY NOW"}
             </Button>
 
             <Button
               variant="outline"
-              className="flex-1 border-border/50 text-foreground transition-all duration-300 hover:border-border hover:bg-secondary"
+              className="flex-1 rounded-xl border-white/10 bg-white/[0.04] text-xs font-semibold text-white/80 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
               onClick={() =>
                 window.open(
                   product.updateChannel,
@@ -712,127 +681,122 @@ export function ProductCard({ product, index }: ProductCardProps) {
                 )
               }
             >
-              <Bell className="mr-2 h-4 w-4" />
-
-              PANEL FILE LINK
+              <Bell className="mr-2 h-4 w-4 text-fuchsia-400" />
+              PANEL LINK
             </Button>
           </div>
         </div>
       </Card>
 
       {/* PAYMENT MODAL */}
-
       <Dialog
         open={isPaymentModalOpen}
         onOpenChange={setIsPaymentModalOpen}
       >
-        <DialogContent className="overflow-hidden rounded-2xl border border-border/80 bg-card/95 p-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:max-w-[440px]"
-        >
+        <DialogContent className="overflow-hidden rounded-2xl border border-white/10 bg-[#0a0614]/95 p-0 text-white shadow-[0_30px_90px_-20px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:max-w-[440px]">
           <div className="relative">
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0 overflow-hidden"
             >
-              <div className="paymodal-glow-a absolute -right-16 -top-20 h-56 w-56 rounded-full bg-primary/10 blur-[70px]" />
-
-              <div className="paymodal-glow-b absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-primary/[0.06] blur-[70px]" />
+              <div className="paymodal-glow-a absolute -right-16 -top-20 h-56 w-56 rounded-full bg-fuchsia-600/20 blur-[70px]" />
+              <div className="paymodal-glow-b absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-violet-600/20 blur-[70px]" />
             </div>
 
             <div className="paymodal-panel-in relative z-10 p-6">
               <DialogHeader className="space-y-2">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/15">
-                    <ShoppingCart className="h-4 w-4 text-primary" />
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/30 to-fuchsia-500/30 text-fuchsia-300">
+                    <ShoppingCart className="h-4 w-4" />
                   </span>
 
-                  <DialogTitle className="text-lg font-bold tracking-tight">
+                  <DialogTitle className="text-lg font-bold tracking-tight text-white">
                     Choose Payment Method
                   </DialogTitle>
                 </div>
 
-                <DialogDescription className="pl-[46px] text-sm">
+                <DialogDescription className="pl-[46px] text-xs text-white/60">
                   {product.name} —{" "}
-                  <span className="font-semibold text-primary">
+                  <span className="font-semibold text-fuchsia-300">
                     {selectedPrice?.duration}
                   </span>{" "}
-                  <span className="font-mono">
+                  <span className="font-mono text-white/80">
                     ({formattedPrice})
                   </span>
                 </DialogDescription>
               </DialogHeader>
 
               <div className="my-5 grid gap-3">
-                {/* WALLET */}
-
+                {/* WALLET PAYMENT BUTTON */}
                 <button
+                  type="button"
                   disabled={isProcessing}
                   onClick={handleWalletPayment}
-                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-xl border border-border/60 bg-secondary/30 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-fuchsia-500/50 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                 >
                   <span className="relative z-10 flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all group-hover/opt:bg-primary group-hover/opt:text-primary-foreground">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 text-fuchsia-300 transition-all group-hover/opt:scale-105">
                       <Wallet className="h-5 w-5" />
                     </span>
 
                     <span>
-                      <span className="block text-sm font-semibold">
+                      <span className="block text-sm font-semibold text-white">
                         Pay Using Wallet
                       </span>
 
-                      <span className="mt-0.5 block font-mono text-xs text-muted-foreground">
-                        Balance: ₹
-                        {walletBalance.toFixed(2)}
+                      <span className="mt-0.5 block font-mono text-xs text-white/50">
+                        Balance: ₹{walletBalance.toFixed(2)}
                       </span>
                     </span>
                   </span>
 
                   <span className="relative z-10 flex items-center gap-2">
-                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-500">
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
                       Instant
                     </span>
 
-                    <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover/opt:translate-x-0 group-hover/opt:opacity-100" />
+                    <ChevronRight className="h-4 w-4 text-white/40 transition-all group-hover/opt:translate-x-0.5 group-hover/opt:text-white" />
                   </span>
                 </button>
 
-                {/* UPI */}
-
+                {/* UPI PAYMENT BUTTON */}
                 <button
+                  type="button"
                   disabled={isProcessing}
                   onClick={handleUpiPayment}
-                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-xl border border-border/60 bg-secondary/30 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-fuchsia-500/50 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                 >
                   <span className="relative z-10 flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all group-hover/opt:bg-primary group-hover/opt:text-primary-foreground">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 text-fuchsia-300 transition-all group-hover/opt:scale-105">
                       <QrCode className="h-5 w-5" />
                     </span>
 
                     <span>
-                      <span className="block text-sm font-semibold">
+                      <span className="block text-sm font-semibold text-white">
                         Instant UPI Payment
                       </span>
 
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                      <span className="mt-0.5 block text-xs text-white/50">
                         Scan QR Code &amp; Enter UTR
                       </span>
                     </span>
                   </span>
 
-                  <ChevronRight className="relative z-10 h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover/opt:translate-x-0 group-hover/opt:opacity-100" />
+                  <ChevronRight className="relative z-10 h-4 w-4 text-white/40 transition-all group-hover/opt:translate-x-0.5 group-hover/opt:text-white" />
                 </button>
               </div>
 
               {isProcessing && (
-                <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-secondary/20 px-4 py-3">
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fuchsia-400" />
 
                   <div className="flex-1">
-                    <p className="text-xs font-medium">
+                    <p className="text-xs font-medium text-white/80">
                       Processing your request…
                     </p>
 
-                    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-border/50">
-                      <div className="paymodal-progress h-full w-1/3 rounded-full bg-primary" />
+                    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                      <div className="paymodal-progress h-full w-1/3 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500" />
                     </div>
                   </div>
                 </div>
@@ -911,68 +875,65 @@ export function ProductCard({ product, index }: ProductCardProps) {
       </Dialog>
 
       {/* SUCCESS / KEY MODAL */}
-
       <Dialog
         open={showKeyModal}
         onOpenChange={setShowKeyModal}
       >
-        <DialogContent className="overflow-hidden rounded-2xl border border-emerald-500/30 bg-card/95 p-0 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:max-w-[420px]"
-        >
+        <DialogContent className="overflow-hidden rounded-2xl border border-emerald-500/30 bg-[#0a0614]/95 p-0 text-white shadow-[0_30px_90px_-20px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:max-w-[420px]">
           <div className="relative">
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0 overflow-hidden"
             >
-              <div className="keycard-glow-a absolute -right-16 -top-20 h-56 w-56 rounded-full bg-emerald-500/10 blur-[70px]" />
-
-              <div className="keycard-glow-b absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-primary/[0.06] blur-[70px]" />
+              <div className="keycard-glow-a absolute -right-16 -top-20 h-56 w-56 rounded-full bg-emerald-500/15 blur-[70px]" />
+              <div className="keycard-glow-b absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-fuchsia-500/15 blur-[70px]" />
             </div>
 
             <div className="keycard-panel-in relative z-10 flex flex-col items-center p-6 text-center">
               <span className="relative mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
                 <span className="keycard-ring pointer-events-none absolute inset-0 rounded-full border border-emerald-400/40" />
-
                 <CheckCircle2 className="keycard-check-pop h-7 w-7 text-emerald-400" />
               </span>
 
               <DialogHeader className="items-center space-y-1.5">
-                <DialogTitle className="text-lg font-bold">
+                <DialogTitle className="text-lg font-bold text-white">
                   Purchase Successful!
                 </DialogTitle>
 
-                <DialogDescription className="text-sm">
+                <DialogDescription className="text-xs text-white/60">
                   {product.name} —{" "}
-                  <span className="font-semibold text-primary">
+                  <span className="font-semibold text-fuchsia-300">
                     {selectedPrice?.duration}
                   </span>
                 </DialogDescription>
               </DialogHeader>
 
               <div className="mt-5 w-full text-left">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/40">
                   Your Login Key
                 </p>
 
-                <div className="relative overflow-hidden rounded-xl border border-border/60 bg-secondary/30 p-4">
+                <div className="relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] p-4">
                   <div
                     aria-hidden
                     className="keycard-shimmer pointer-events-none absolute inset-0"
                   />
 
-                  <p className="relative z-10 break-all font-mono text-sm">
+                  <p className="relative z-10 break-all font-mono text-sm font-semibold text-emerald-300">
                     {purchasedKey}
                   </p>
                 </div>
               </div>
 
               <button
+                type="button"
                 onClick={handleCopyKeyAgain}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 py-2.5 text-sm font-semibold text-primary transition-all hover:bg-primary/20 active:scale-[0.98]"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-fuchsia-500/30 bg-gradient-to-r from-violet-600/30 to-fuchsia-600/30 py-2.5 text-xs font-bold text-white transition-all hover:bg-gradient-to-r hover:from-violet-600 hover:to-fuchsia-600 active:scale-[0.98] cursor-pointer"
               >
                 {keyCopied ? (
                   <>
-                    <Check className="h-4 w-4" />
-                    Copied
+                    <Check className="h-4 w-4 text-emerald-400" />
+                    Copied to Clipboard
                   </>
                 ) : (
                   <>
@@ -983,8 +944,9 @@ export function ProductCard({ product, index }: ProductCardProps) {
               </button>
 
               <button
+                type="button"
                 onClick={() => setShowKeyModal(false)}
-                className="mt-1.5 w-full rounded-lg py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="mt-2 w-full rounded-xl py-2 text-xs font-medium text-white/50 transition-colors hover:text-white cursor-pointer"
               >
                 Got it
               </button>
@@ -1076,7 +1038,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
               background: linear-gradient(
                 100deg,
                 transparent 30%,
-                rgba(16, 185, 129, 0.14) 50%,
+                rgba(192, 38, 211, 0.15) 50%,
                 transparent 70%
               );
 
@@ -1111,14 +1073,13 @@ export function ProductCard({ product, index }: ProductCardProps) {
       </Dialog>
 
       {/* AUTO COPY TOAST */}
-
       {showAutoCopyToast && (
         <div
           role="status"
           aria-live="polite"
           className="pointer-events-none fixed right-4 top-4 z-[999] flex justify-end"
         >
-          <div className="toast-in pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-emerald-500/25 bg-card/95 px-4 py-3 text-sm font-medium text-foreground shadow-[0_10px_40px_-10px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+          <div className="toast-in pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-emerald-500/30 bg-[#0a0614]/95 px-4 py-3 text-xs font-medium text-white shadow-[0_10px_40px_-10px_rgba(0,0,0,0.8)] backdrop-blur-xl">
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
 
             <span>
