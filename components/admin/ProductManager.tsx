@@ -258,27 +258,21 @@ export default function ProductManager() {
 
     setSaving(true);
 
-    const { error } = await supabase
-      .from("products_catalog")
-      .upsert(
-        {
-          product_id: cleaned.id,
-          name: cleaned.name,
-          data: cleaned,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "product_id",
-        }
-      );
-
-    setSaving(false);
-
-    if (error) {
+    try {
+      await adminCatalogRequest("/api/admin/catalog", {
+        method: "POST",
+        body: JSON.stringify({
+          product: cleaned,
+        }),
+      });
+    } catch (error: any) {
       console.error(error);
-      alert("Save failed: " + error.message);
+      alert("Save failed: " + (error?.message || "Unknown error"));
+      setSaving(false);
       return;
     }
+    
+    setSaving(false);
 
     /*
      * Keep the existing product_prices table working.
@@ -402,19 +396,23 @@ export default function ProductManager() {
       };
     });
 
-    const { error } = await supabase
-      .from("products_catalog")
-      .upsert(rows, {
-        onConflict: "product_id",
-      });
-
-    setImporting(false);
-
-    if (error) {
+    try {
+      for (const row of rows) {
+        await adminCatalogRequest("/api/admin/catalog", {
+          method: "POST",
+          body: JSON.stringify({
+            product: row.data,
+          }),
+        });
+      }
+    } catch (error: any) {
       console.error(error);
-      alert("Import failed: " + error.message);
+      setImporting(false);
+      alert("Import failed: " + (error?.message || "Unknown error"));
       return;
     }
+    
+    setImporting(false);
 
     alert(
       `${rows.length} existing products imported successfully.`
