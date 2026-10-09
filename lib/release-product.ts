@@ -385,7 +385,19 @@ async function purchaseFromSeller2(
       };
     }
 
+    const keysArray = Array.isArray(result?.keys)
+      ? result.keys
+      : Array.isArray(result?.data?.keys)
+        ? result.data.keys
+        : [];
+
+    const keyFromArray = keysArray.find(
+      (item: unknown) =>
+        typeof item === "string" && item.trim().length > 0
+    );
+
     const key =
+      keyFromArray ??
       result?.key ??
       result?.key_code ??
       result?.data?.key ??

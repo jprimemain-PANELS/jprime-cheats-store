@@ -30,11 +30,13 @@ import {
   AlertTriangle,
   Info,
   Power,
+  Crown,
 } from "lucide-react";
 
 import { allProducts } from "@/lib/products";
 import type { Product, PriceTier } from "@/lib/products";
 import ProductManager from "@/components/admin/ProductManager";
+import VipPriceManager from "@/components/admin/VipPriceManager";
 
 interface ManagedUser {
   id?: string | number;
@@ -54,6 +56,7 @@ type Tab =
   | "pricing"
   | "status"
   | "products"
+  | "vip"
   | "purchases"
   | "users";
 
@@ -540,6 +543,15 @@ export default function AdminPage() {
     });
   }, [users, userSearchQuery]);
 
+  // Resellers only — feeds the VIP Prices tab.
+  const resellerOptions = useMemo(
+    () =>
+      users
+        .filter((u) => u.role === "reseller")
+        .map((u) => ({ username: u.username, email: u.email })),
+    [users]
+  );
+
   const handleOpenManageModal = (user: ManagedUser) => {
     setSelectedUser(user);
     setEditRole(user.role || "user");
@@ -613,6 +625,7 @@ export default function AdminPage() {
     { id: "pricing", label: "Pricing", icon: Tag },
     { id: "status", label: "Status", icon: Power, count: allProducts.length },
     { id: "products", label: "Products", icon: Package },
+    { id: "vip", label: "VIP Prices", icon: Crown },
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -1062,6 +1075,9 @@ export default function AdminPage() {
 
         {/* PRODUCTS (catalog manager — reads/writes products_catalog only) */}
         {activeTab === "products" && <ProductManager />}
+
+        {/* VIP PRICES (per-reseller custom prices — reseller_price_overrides) */}
+        {activeTab === "vip" && <VipPriceManager resellers={resellerOptions} />}
 
         {/* PURCHASES */}
         {activeTab === "purchases" && (

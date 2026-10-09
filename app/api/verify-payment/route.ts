@@ -5,18 +5,42 @@ import { sendTelegramPurchase } from "@/lib/telegram";
 
 const FP_VERIFY_URL = "https://xyzcheats.com/gateway/verify.php";
 
+/**
+ * Mark a processing order as failed when key delivery fails.
+ * This prevents an automatic retry from buying another supplier key.
+ */
+async function markDeliveryFailed(gatewayOrderId: string) {
+  try {
+    const { error } = await supabase
+      .from("payment_orders")
+      .update({ status: "delivery_failed" })
+      .eq("gateway_order_id", gatewayOrderId)
+      .eq("status", "processing");
+
+    if (error) {
+      console.error("FAILED TO MARK DELIVERY FAILURE:", {
+        gatewayOrderId,
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("DELIVERY FAILURE STATUS EXCEPTION:", {
+      gatewayOrderId,
+      error,
+    });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // 1. Read and validate the request.
     const body = await request.json();
-    console.log("VERIFY BODY:", body);
 
-    const gatewayOrderId = body.gateway_order_id;
+    const gatewayOrderId = String(
+      body?.gateway_order_id ?? ""
+    ).trim();
 
-    // Sanitize UTR server-side: strip everything except digits to match input filtering
-    const rawUtr = body.utr;
-    const utr = rawUtr ? String(rawUtr).replace(/\D/g, "") : "";
-
-    console.log("UTR STATE:", utr);
+    const utr = String(body?.utr ?? "").replace(/\D/g, "");
 
     if (!gatewayOrderId || !utr) {
       return NextResponse.json(
@@ -32,6 +56,7 @@ export async function POST(request: NextRequest) {
 
     if (!apiKey) {
       console.error("FP_API_KEY is missing");
+
       return NextResponse.json(
         {
           success: false,
@@ -41,7 +66,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Find the internal payment order
+    // 2. Find the payment order.
     const { data: order, error: orderError } = await supabase
       .from("payment_orders")
       .select("*")
@@ -50,6 +75,7 @@ export async function POST(request: NextRequest) {
 
     if (orderError) {
       console.error("ORDER LOOKUP ERROR:", orderError);
+
       return NextResponse.json(
         {
           success: false,
@@ -69,17 +95,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. If already completed, return the previously delivered key from purchase_history
+    // 3. If already successful, return its recorded key.
     if (order.status === "success") {
-      const { data: existingPurchase } = await supabase
+      let historyQuery = supabase
         .from("purchase_history")
         .select("key_code")
         .eq("username", order.username)
         .eq("product_name", order.product_name)
-        .eq("duration", order.duration)
+        .eq("duration", order.duration);
+
+      // Avoid returning a key from an older purchase of the same product.
+      if (order.created_at) {
+        historyQuery = historyQuery.gte(
+          "created_at",
+          String(order.created_at)
+        );
+      }
+
+      const {
+        data: existingPurchase,
+        error: historyLookupError,
+      } = await historyQuery
         .order("id", { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      if (historyLookupError) {
+        console.error("EXISTING KEY LOOKUP ERROR:", {
+          gatewayOrderId,
+          error: historyLookupError,
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Order is complete, but the recorded key could not be loaded. Contact support.",
+          },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json({
         success: true,
@@ -88,9 +142,33 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 3. Ask FP gateway for actual payment status
+    // Never automatically buy another key for an order already being processed.
+    if (order.status === "processing") {
+      return NextResponse.json(
+        {
+          success: false,
+          status: "processing",
+          error: "This order is already being processed. Please check again shortly.",
+        },
+        { status: 409 }
+      );
+    }
+
+    // Failed delivery needs manual investigation, not another automatic purchase.
+    if (order.status === "delivery_failed") {
+      return NextResponse.json(
+        {
+          success: false,
+          status: "delivery_failed",
+          error: "This order needs support review. Do not submit another purchase for it.",
+        },
+        { status: 409 }
+      );
+    }
+
+    // 4. Verify the actual payment with the gateway.
     const verifyUrl = new URL(FP_VERIFY_URL);
-    verifyUrl.searchParams.set("order_id", String(gatewayOrderId));
+    verifyUrl.searchParams.set("order_id", gatewayOrderId);
     verifyUrl.searchParams.set("api_key", apiKey);
     verifyUrl.searchParams.set("utr", utr);
 
@@ -101,18 +179,17 @@ export async function POST(request: NextRequest) {
 
     const responseText = await gatewayResponse.text();
 
-    console.log("=================================");
-    console.log("GATEWAY ORDER ID:", gatewayOrderId);
-    console.log("GATEWAY HTTP STATUS:", gatewayResponse.status);
-    console.log("RAW GATEWAY RESPONSE:", responseText);
-    console.log("=================================");
-
     let gatewayData: any;
 
     try {
       gatewayData = JSON.parse(responseText);
     } catch {
-      console.error("INVALID VERIFY RESPONSE:", responseText);
+      // Avoid logging raw response data that might contain sensitive details.
+      console.error("PAYMENT GATEWAY RETURNED INVALID JSON:", {
+        gatewayOrderId,
+        httpStatus: gatewayResponse.status,
+      });
+
       return NextResponse.json(
         {
           success: false,
@@ -122,7 +199,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Payment is still pending
     if (gatewayData?.status === "pending") {
       return NextResponse.json({
         success: true,
@@ -130,13 +206,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Anything except confirmed success must not release a key
     if (
       !gatewayResponse.ok ||
       gatewayData?.status !== "success" ||
       !gatewayData?.data
     ) {
-      console.error("VERIFY PAYMENT FAILED:", gatewayData);
+      console.error("PAYMENT VERIFICATION FAILED:", {
+        gatewayOrderId,
+        httpStatus: gatewayResponse.status,
+        gatewayStatus: gatewayData?.status,
+      });
 
       return NextResponse.json(
         {
@@ -150,7 +229,7 @@ export async function POST(request: NextRequest) {
 
     const payment = gatewayData.data;
 
-    // Verify paid amount matches order amount
+    // 5. Confirm the paid amount matches the order.
     const expectedAmount = Number(order.amount);
     const paidAmount = Number(payment.amount);
 
@@ -159,10 +238,10 @@ export async function POST(request: NextRequest) {
       !Number.isFinite(paidAmount) ||
       Math.abs(expectedAmount - paidAmount) > 0.001
     ) {
-      console.error("AMOUNT MISMATCH:", {
+      console.error("PAYMENT AMOUNT MISMATCH:", {
+        gatewayOrderId,
         expectedAmount,
         paidAmount,
-        gatewayOrderId,
       });
 
       return NextResponse.json(
@@ -175,43 +254,119 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Release Product Key
-    let generatedKey: string | null = null;
-    try {
-      const delivery = await releaseProduct({
-        username: order.username,
-        product_name: order.product_name,
-        duration: order.duration,
-      });
+    // 6. Atomically claim the order before calling either supplier.
+    // Only one concurrent request can change the original status to processing.
+    const originalStatus = String(order.status ?? "");
 
-      generatedKey = delivery.key;
-    } catch (releaseErr: any) {
-      console.error("KEY RELEASE ERROR:", releaseErr.message);
+    if (!originalStatus) {
       return NextResponse.json(
         {
           success: false,
-          status: "out_of_stock",
-          error: releaseErr.message || "Failed to issue key.",
+          error: "Payment order has no valid status",
         },
         { status: 409 }
       );
     }
 
-    // 5. Update payment_orders status
-    const { error: paymentOrderUpdateError } = await supabase
+    const {
+      data: claimedOrder,
+      error: claimError,
+    } = await supabase
       .from("payment_orders")
-      .update({
-        status: "success",
-        used: true,
-      })
-      .eq("gateway_order_id", gatewayOrderId);
+      .update({ status: "processing" })
+      .eq("gateway_order_id", gatewayOrderId)
+      .eq("status", originalStatus)
+      .select("gateway_order_id")
+      .maybeSingle();
 
-    if (paymentOrderUpdateError) {
-      console.error("FAILED TO UPDATE ORDER STATUS:", paymentOrderUpdateError);
+    if (claimError) {
+      console.error("ORDER CLAIM ERROR:", {
+        gatewayOrderId,
+        error: claimError,
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Could not safely begin key delivery. Please check the order before retrying.",
+        },
+        { status: 500 }
+      );
     }
 
-    // 6. Record in purchase_history table
-    const { error: historyErr } = await supabase
+    if (!claimedOrder) {
+      return NextResponse.json(
+        {
+          success: false,
+          status: "processing",
+          error: "This order has already been claimed or updated. Check the order before retrying.",
+        },
+        { status: 409 }
+      );
+    }
+
+    // 7. Release the key from Seller 1, Seller 2, or local stock.
+    type DeliveryResult = Awaited<ReturnType<typeof releaseProduct>>;
+    let delivery: DeliveryResult;
+
+    try {
+      delivery = await releaseProduct({
+        username: order.username,
+        product_name: order.product_name,
+        duration: order.duration,
+      });
+    } catch (releaseError: unknown) {
+      const message =
+        releaseError instanceof Error
+          ? releaseError.message
+          : "Unknown key delivery error";
+
+      console.error("KEY RELEASE EXCEPTION:", {
+        gatewayOrderId,
+        message,
+      });
+
+      await markDeliveryFailed(gatewayOrderId);
+
+      return NextResponse.json(
+        {
+          success: false,
+          status: "delivery_failed",
+          error: "Payment could not be completed with key delivery. Contact support before retrying.",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (
+      !delivery.success ||
+      typeof delivery.key !== "string" ||
+      !delivery.key.trim()
+    ) {
+      const deliveryError =
+        "error" in delivery ? delivery.error : undefined;
+
+      console.error("KEY RELEASE FAILED:", {
+        gatewayOrderId,
+        error: deliveryError || "No valid key returned",
+      });
+
+      await markDeliveryFailed(gatewayOrderId);
+
+      return NextResponse.json(
+        {
+          success: false,
+          status: "delivery_failed",
+          error: "Payment could not be completed with key delivery. Contact support before retrying.",
+        },
+        { status: 409 }
+      );
+    }
+
+    const generatedKey = delivery.key.trim();
+
+    // 8. Record the exact generated key before finalizing the order.
+    const { error: historyError } = await supabase
       .from("purchase_history")
       .insert([
         {
@@ -223,11 +378,39 @@ export async function POST(request: NextRequest) {
         },
       ]);
 
-    if (historyErr) {
-      console.error("Failed to insert into purchase_history:", historyErr);
+    if (historyError) {
+      // Keep the order in "processing" to block automatic re-purchasing.
+      // Still return the key to this verified payment request.
+      console.error("PURCHASE HISTORY INSERT FAILED:", {
+        gatewayOrderId,
+        error: historyError,
+      });
+    } else {
+      // 9. Finalize the order only after the key has been recorded.
+      const {
+        data: finalizedOrder,
+        error: finalizeError,
+      } = await supabase
+        .from("payment_orders")
+        .update({
+          status: "success",
+          used: true,
+        })
+        .eq("gateway_order_id", gatewayOrderId)
+        .eq("status", "processing")
+        .select("gateway_order_id")
+        .maybeSingle();
+
+      if (finalizeError || !finalizedOrder) {
+        // Do not call releaseProduct again: the key has already been generated.
+        console.error("ORDER FINALIZATION NEEDS REVIEW:", {
+          gatewayOrderId,
+          error: finalizeError,
+        });
+      }
     }
 
-    // 7. Send Telegram Notification
+    // 10. Send Telegram notification. Notification failure must not lose the key.
     try {
       await sendTelegramPurchase({
         username: order.username,
@@ -235,11 +418,11 @@ export async function POST(request: NextRequest) {
         duration: order.duration,
         amount: Number(order.amount),
       });
-    } catch (telegramErr) {
-      console.error("Telegram notification error:", telegramErr);
+    } catch (telegramError) {
+      console.error("TELEGRAM NOTIFICATION ERROR:", telegramError);
     }
 
-    // 8. Return success
+    // 11. Return the generated key to the customer.
     return NextResponse.json({
       success: true,
       status: "success",
@@ -249,13 +432,13 @@ export async function POST(request: NextRequest) {
       sender_name: payment.sender_name || null,
       payment_time: payment.payment_time || null,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("VERIFY PAYMENT ERROR:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown server error",
+        error: "An unexpected payment verification error occurred. Contact support if payment was deducted.",
       },
       { status: 500 }
     );
