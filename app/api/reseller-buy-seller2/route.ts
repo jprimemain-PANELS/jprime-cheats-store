@@ -1,57 +1,19 @@
 import { NextResponse } from "next/server";
 
-export async function POST(request: Request) {
-  try {
-    const { variant_id } = await request.json();
+export const dynamic = "force-dynamic";
 
-    if (!variant_id) {
-      return NextResponse.json(
-        {
-          status: "error",
-          message: "Missing variant_id",
-        },
-        { status: 400 }
-      );
-    }
-
-    const apiToken = process.env.SELLER2_API_TOKEN;
-
-    if (!apiToken) {
-      return NextResponse.json(
-        {
-          status: "error",
-          message: "Seller 2 API token is not configured",
-        },
-        { status: 500 }
-      );
-    }
-
-    const response = await fetch(
-      "https://whitexmodz.store/api/v1/generate_key.php",
-      {
-        method: "POST",
-        headers: {
-          "X-API-Token": apiToken,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          variant_id: String(variant_id),
-          quantity: "1",
-        }).toString(),
-      }
-    );
-
-    const data = await response.json();
-
-    return NextResponse.json(data);
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        status: "error",
-        message:
-          error?.message || "Failed to contact Seller 2 API",
-      },
-      { status: 500 }
-    );
-  }
+/**
+ * DISABLED for security. This legacy endpoint was unauthenticated and could
+ * hand out keys / spend supplier balance / write purchase records for anyone.
+ * All purchases now go through /api/pay-via-wallet and /api/create-upi-order
+ * (server-verified session + server-side price).
+ */
+function gone() {
+  return NextResponse.json(
+    { success: false, error: "This endpoint has been retired." },
+    { status: 410, headers: { "Cache-Control": "no-store" } }
+  );
 }
+
+export const GET = gone;
+export const POST = gone;

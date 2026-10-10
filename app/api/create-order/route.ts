@@ -1,84 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-export async function POST(
-  request: NextRequest
-) {
+export const dynamic = "force-dynamic";
 
-  try {
-
-    const body =
-      await request.json();
-
-    const {
-      product,
-      duration,
-      price,
-    } = body;
-
-    const response = await fetch(
-      "https://sandbox.cashfree.com/pg/orders",
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json",
-
-          "x-client-id":
-            process.env
-              .NEXT_PUBLIC_CASHFREE_APP_ID || "",
-
-          "x-client-secret":
-            process.env
-              .CASHFREE_SECRET_KEY || "",
-
-          "x-api-version":
-            "2023-08-01",
-        },
-
-        body: JSON.stringify({
-
-          order_amount:
-            Number(price),
-
-          order_currency:
-            "INR",
-
-          customer_details: {
-            customer_id:
-              "test123",
-
-            customer_name:
-              "Jenith",
-
-            customer_email:
-              "test@example.com",
-
-            customer_phone:
-              "9999999999",
-          },
-
-          order_meta: {
-            return_url:
-`${process.env.NEXT_PUBLIC_SITE_URL}/payment-success?product=${encodeURIComponent(product)}&duration=${encodeURIComponent(duration)}`
-          },
-        }),
-      }
-    );
-
-    const data =
-      await response.json();
-
-    return NextResponse.json({
-      success: true,
-      data,
-    });
-
-  } catch (error) {
-
-    return NextResponse.json({
-      success: false,
-      error,
-    });
-  }
+/**
+ * DISABLED for security. This legacy endpoint was unauthenticated and could
+ * hand out keys / spend supplier balance / write purchase records for anyone.
+ * All purchases now go through /api/pay-via-wallet and /api/create-upi-order
+ * (server-verified session + server-side price).
+ */
+function gone() {
+  return NextResponse.json(
+    { success: false, error: "This endpoint has been retired." },
+    { status: 410, headers: { "Cache-Control": "no-store" } }
+  );
 }
+
+export const GET = gone;
+export const POST = gone;

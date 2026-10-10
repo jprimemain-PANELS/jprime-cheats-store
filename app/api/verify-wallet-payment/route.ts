@@ -1,211 +1,182 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireUser, rateLimit } from "@/lib/auth";
+import { creditWallet, logWalletTransaction } from "@/lib/wallet";
+
+export const dynamic = "force-dynamic";
 
 const FP_VERIFY_URL = "https://xyzcheats.com/gateway/verify.php";
+const NO_STORE = { "Cache-Control": "no-store" };
+
+function reply(status: number, payload: Record<string, unknown>) {
+  return NextResponse.json(payload, { status, headers: NO_STORE });
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const auth = await requireUser(request);
+    if (!auth.ok) return auth.response;
 
-    const gatewayOrderId = body.order_id || body.gateway_order_id;
-    const rawUtr = body.utr;
-    const utr = rawUtr ? String(rawUtr).replace(/\D/g, "") : "";
+    const { username } = auth.user;
 
-    // 1. Input Verification
-    if (!gatewayOrderId) {
-      return NextResponse.json(
-        { success: false, status: "invalid_request", message: "Missing order reference." },
-        { status: 400 }
-      );
+    if (!rateLimit(`verify-topup:${username}`, 20, 60_000)) {
+      return reply(429, { success: false, status: "rate_limited", message: "Too many attempts. Please wait a moment." });
     }
 
-    if (!utr || utr.length < 10) {
-      return NextResponse.json(
-        { success: false, status: "invalid_utr", message: "Invalid UTR format. Must be at least 10 digits." },
-        { status: 400 }
-      );
+    const body = await request.json().catch(() => ({}));
+    const gatewayOrderId = String(body?.order_id || body?.gateway_order_id || "").trim();
+    const utr = String(body?.utr ?? "").replace(/\D/g, "");
+
+    if (!gatewayOrderId) {
+      return reply(400, { success: false, status: "invalid_request", message: "Missing order reference." });
+    }
+    if (!utr || utr.length < 10 || utr.length > 30) {
+      return reply(400, { success: false, status: "invalid_utr", message: "Invalid UTR format. Must be at least 10 digits." });
     }
 
     const apiKey = process.env.FP_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        { success: false, status: "gateway_failed", message: "Gateway not configured properly." },
-        { status: 500 }
-      );
+      return reply(500, { success: false, status: "gateway_failed", message: "Gateway not configured properly." });
     }
 
-    // 2. Find existing deposit order
-    const { data: deposit, error: depositError } = await supabase
+    // 1. Load the deposit - and make sure it belongs to this user.
+    const { data: deposit, error: depositError } = await supabaseAdmin
       .from("deposit_history")
       .select("*")
       .eq("gateway_order_id", gatewayOrderId)
       .maybeSingle();
 
     if (depositError) {
-      return NextResponse.json(
-        { success: false, status: "error", message: "Unable to load deposit records." },
-        { status: 500 }
-      );
+      return reply(500, { success: false, status: "error", message: "Unable to load deposit records." });
     }
-
-    if (!deposit) {
-      return NextResponse.json(
-        { success: false, status: "not_found", message: "Payment order record not found." },
-        { status: 404 }
-      );
+    if (!deposit || deposit.username !== username) {
+      return reply(404, { success: false, status: "not_found", message: "Payment order record not found." });
     }
-
-    // 3. Already Verified
     if (deposit.status === "success") {
-      return NextResponse.json(
-        { success: false, status: "already_verified", message: "This deposit has already been credited." },
-        { status: 409 }
-      );
+      return reply(409, { success: false, status: "already_verified", message: "This deposit has already been credited." });
+    }
+    if (deposit.status !== "pending") {
+      return reply(409, { success: false, status: "error", message: "This deposit can no longer be verified." });
     }
 
-    // 4. Duplicate UTR Check
-    const { data: duplicateCheck } = await supabase
+    // 2. Replay protection: UTR already used by another deposit or purchase order.
+    const { data: dupDeposit } = await supabaseAdmin
       .from("deposit_history")
       .select("id")
       .eq("utr", utr)
-      .not("gateway_order_id", "eq", gatewayOrderId)
-      .maybeSingle();
+      .neq("gateway_order_id", gatewayOrderId)
+      .limit(1);
 
-    if (duplicateCheck) {
-      return NextResponse.json(
-        { success: false, status: "duplicate_utr", message: "This UTR was already applied to another payment." },
-        { status: 409 }
-      );
+    let duplicate = Boolean(dupDeposit && dupDeposit.length > 0);
+
+    if (!duplicate) {
+      const { data: dupOrder, error: dupOrderError } = await supabaseAdmin
+        .from("payment_orders")
+        .select("gateway_order_id")
+        .eq("utr", utr)
+        .limit(1);
+      duplicate = !dupOrderError && Boolean(dupOrder && dupOrder.length > 0);
     }
 
-    // 5. Gateway Verification Call
+    if (duplicate) {
+      return reply(409, { success: false, status: "duplicate_utr", message: "This UTR was already applied to another payment." });
+    }
+
+    // 3. Ask the gateway.
     const verifyUrl = new URL(FP_VERIFY_URL);
-    verifyUrl.searchParams.set("order_id", String(gatewayOrderId));
+    verifyUrl.searchParams.set("order_id", gatewayOrderId);
     verifyUrl.searchParams.set("api_key", apiKey);
     verifyUrl.searchParams.set("utr", utr);
 
-    const gatewayResponse = await fetch(verifyUrl.toString(), {
-      method: "GET",
-      cache: "no-store",
-    });
+    const gatewayResponse = await fetch(verifyUrl.toString(), { method: "GET", cache: "no-store" });
 
-    const responseText = await gatewayResponse.text();
     let gatewayData: any;
-
     try {
-      gatewayData = JSON.parse(responseText);
+      gatewayData = JSON.parse(await gatewayResponse.text());
     } catch {
-      return NextResponse.json(
-        { success: false, status: "gateway_failed", message: "Invalid data returned from payment gateway." },
-        { status: 502 }
-      );
+      return reply(502, { success: false, status: "gateway_failed", message: "Invalid data returned from payment gateway." });
     }
 
     if (gatewayData?.status === "pending") {
-      return NextResponse.json(
-        {
-          success: false,
-          status: "pending",
-          message: "Payment remains inside processing state. Please wait a moment and retry.",
-        },
-        { status: 202 }
-      );
+      return reply(202, {
+        success: false,
+        status: "pending",
+        message: "Payment remains inside processing state. Please wait a moment and retry.",
+      });
     }
 
-    // Strict Gatekeeper: Status MUST explicitly equal "success"
-    if (
-      !gatewayResponse.ok ||
-      gatewayData?.status !== "success" ||
-      !gatewayData?.data
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          status: "invalid_utr",
-          message: gatewayData?.message || "Invalid UTR or transaction not found with bank network.",
-        },
-        { status: 400 } // Added explicit status code
-      );
+    if (!gatewayResponse.ok || gatewayData?.status !== "success" || !gatewayData?.data) {
+      return reply(400, {
+        success: false,
+        status: "invalid_utr",
+        message: gatewayData?.message || "Invalid UTR or transaction not found with bank network.",
+      });
     }
 
     const payment = gatewayData.data;
     const expectedAmount = Number(deposit.amount);
     const paidAmount = Number(payment.amount);
 
-    // Check for lower or invalid amounts
-    if (Math.abs(expectedAmount - paidAmount) > 0.01) {
-      return NextResponse.json(
-        {
-          success: false,
-          status: "amount_mismatch",
-          message: `Amount mismatch: Expected ₹${expectedAmount}, but paid ₹${paidAmount}.`,
-        },
-        { status: 409 }
-      );
+    if (
+      !Number.isFinite(expectedAmount) ||
+      !Number.isFinite(paidAmount) ||
+      expectedAmount <= 0 ||
+      Math.abs(expectedAmount - paidAmount) > 0.01
+    ) {
+      return reply(409, { success: false, status: "amount_mismatch", message: "Payment amount does not match the order." });
     }
 
-    // 6. Database Updates
-    const { data: wallet, error: walletLoadError } = await supabase
-      .from("wallets")
-      .select("*")
-      .eq("username", deposit.username)
+    // 4. Atomically claim the deposit (pending -> success). Only ONE request can win,
+    //    so a deposit can never be credited twice, even under concurrent retries.
+    const claimBase = { status: "success" as const };
+    let claim = await supabaseAdmin
+      .from("deposit_history")
+      .update({ ...claimBase, utr: String(payment.utr || utr).replace(/\D/g, "") || utr })
+      .eq("gateway_order_id", gatewayOrderId)
+      .eq("status", "pending")
+      .select("gateway_order_id")
       .maybeSingle();
 
-    if (walletLoadError) {
-      return NextResponse.json(
-        { success: false, status: "error", message: "Failed to read user wallet balance." },
-        { status: 500 }
-      );
+    if (claim.error) {
+      if (claim.error.code === "23505") {
+        return reply(409, { success: false, status: "duplicate_utr", message: "This UTR was already applied to another payment." });
+      }
+      return reply(500, { success: false, status: "error", message: "Could not safely credit the deposit." });
+    }
+    if (!claim.data) {
+      return reply(409, { success: false, status: "already_verified", message: "This deposit has already been credited." });
     }
 
-    const currentBalance = wallet ? Number(wallet.balance) : 0;
-    const newBalance = currentBalance + paidAmount;
+    // 5. Credit the wallet (compare-and-swap). If it fails, release the claim so it can be retried.
+    const credit = await creditWallet(username, expectedAmount);
 
-    if (wallet) {
-      const { error: updErr } = await supabase
-        .from("wallets")
-        .update({ balance: newBalance })
-        .eq("username", deposit.username);
+    if (!credit.ok) {
+      await supabaseAdmin
+        .from("deposit_history")
+        .update({ status: "pending" })
+        .eq("gateway_order_id", gatewayOrderId)
+        .eq("status", "success");
 
-      if (updErr) throw new Error(`Wallet balance update failed: ${updErr.message}`);
-    } else {
-      const { error: insErr } = await supabase
-        .from("wallets")
-        .insert({ username: deposit.username, balance: newBalance });
-
-      if (insErr) throw new Error(`Wallet creation failed: ${insErr.message}`);
+      console.error("WALLET CREDIT FAILED, DEPOSIT RELEASED:", gatewayOrderId);
+      return reply(500, { success: false, status: "error", message: "Could not credit your wallet. Please retry." });
     }
 
-    // Log transaction
-    await supabase.from("wallet_transactions").insert({
-      username: deposit.username,
+    await logWalletTransaction({
+      username,
       type: "deposit",
-      amount: paidAmount,
-      balance_after: newBalance,
+      amount: expectedAmount,
+      balance_after: credit.balance,
       description: "Wallet Deposit Verification Successful",
     });
 
-    // Mark deposit as success
-    await supabase
-      .from("deposit_history")
-      .update({
-        status: "success",
-        utr: payment.utr || utr,
-      })
-      .eq("gateway_order_id", gatewayOrderId);
-
-    return NextResponse.json({
+    return reply(200, {
       success: true,
       status: "success",
-      balance: newBalance,
+      balance: credit.balance,
       message: "Payment verified and credited successfully!",
     });
-
-  } catch (err: any) {
-    console.error("Critical Verification Exception:", err);
-    return NextResponse.json(
-      { success: false, status: "error", message: err?.message || "Internal server error during verification." },
-      { status: 500 }
-    );
+  } catch (err) {
+    console.error("WALLET VERIFY ERROR:", err instanceof Error ? err.message : "unknown");
+    return reply(500, { success: false, status: "error", message: "Internal server error during verification." });
   }
 }

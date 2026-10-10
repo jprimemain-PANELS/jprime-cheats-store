@@ -1,42 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getSessionUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
 /**
- * POST /api/my-reseller-prices
- * Body: { username }
- * Returns only that reseller's own custom prices.
- * Returns an empty list for anyone whose role in the database is not "reseller".
+ * Returns the logged-in reseller's OWN custom (VIP) prices.
+ * Identity comes from the session cookie; any username in the body is ignored.
+ * Anyone who is not a reseller gets an empty list.
  */
-export async function POST(request: NextRequest) {
+async function handle() {
   try {
-    const body = await request.json();
-    const username = String(body?.username || "").trim();
+    const user = await getSessionUser();
 
-    if (!username) {
-      return NextResponse.json({ prices: [] }, { headers: NO_STORE });
-    }
-
-    const { data: user, error: userError } = await supabaseAdmin
-      .from("users")
-      .select("username, role")
-      .eq("username", username)
-      .maybeSingle();
-
-    if (userError || !user || user.role !== "reseller") {
+    if (!user || user.role !== "reseller") {
       return NextResponse.json({ prices: [] }, { headers: NO_STORE });
     }
 
     const { data, error } = await supabaseAdmin
       .from("reseller_price_overrides")
       .select("product_name, duration, reseller_price")
-      .eq("username", username);
+      .eq("username", user.username);
 
     if (error) {
-      console.error("MY RESELLER PRICES ERROR:", error);
+      console.error("MY RESELLER PRICES ERROR:", error.message);
       return NextResponse.json({ prices: [] }, { headers: NO_STORE });
     }
 
@@ -50,8 +39,10 @@ export async function POST(request: NextRequest) {
       },
       { headers: NO_STORE }
     );
-  } catch (error) {
-    console.error("MY RESELLER PRICES EXCEPTION:", error);
+  } catch {
     return NextResponse.json({ prices: [] }, { headers: NO_STORE });
   }
 }
+
+export const GET = handle;
+export const POST = handle;

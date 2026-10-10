@@ -27,18 +27,12 @@ interface VipRow {
 }
 
 async function adminRequest(path: string, options: RequestInit = {}) {
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const email = String(user?.email || "").trim();
-
-  if (!email) {
-    throw new Error("Admin session not found.");
-  }
-
+  // Authentication is the HttpOnly session cookie; the server re-checks the
+  // admin role on every call. No identity is sent from the browser.
   const response = await fetch(path, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "x-admin-email": email,
       ...(options.headers || {}),
     },
     cache: "no-store",

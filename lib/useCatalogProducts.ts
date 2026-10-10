@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { allProducts } from "@/lib/products";
 import type { Product } from "@/lib/products";
 
 export type CatalogSource = "catalog" | "fallback";
 
-// Loads customer-safe products from /api/catalog (backed by products_catalog).
-// If the catalog is empty or fails to load, falls back to allProducts
-// from lib/products.ts so the storefront never goes blank.
+// Loads customer-safe products from /api/catalog. The server falls back to the
+// built-in lib/products.ts list (with all supplier fields removed) when the
+// catalog is empty or unavailable, so the storefront never goes blank and
+// supplier IDs never reach the browser bundle.
 export function useCatalogProducts(): {
   products: Product[];
   loading: boolean;
@@ -22,7 +22,6 @@ export function useCatalogProducts(): {
     let cancelled = false;
 
     async function load() {
-      setLoading(true);
       try {
         const res = await fetch("/api/catalog", { cache: "no-store" });
         if (!res.ok) throw new Error(`Catalog request failed (${res.status})`);
@@ -32,27 +31,16 @@ export function useCatalogProducts(): {
 
         if (cancelled) return;
 
-        if (list.length > 0) {
-          setProducts(list);
-          setSource("catalog");
-        } else {
-          setProducts(allProducts);
-          setSource("fallback");
-        }
+        setProducts(list);
+        setSource(json?.source === "catalog" ? "catalog" : "fallback");
       } catch (err) {
-        console.error("Catalog load failed, using lib/products.ts:", err);
-        if (cancelled) return;
-        setProducts(allProducts);
-        setSource("fallback");
+        console.error("Catalog load failed:", err);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    const refreshCatalog = () => {
-      void load();
-    };
-
+    const refreshCatalog = () => { void load(); };
     void load();
     window.addEventListener("jprime-catalog-updated", refreshCatalog);
 

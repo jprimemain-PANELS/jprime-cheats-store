@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "@/lib/supabase";
 import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn } from "lucide-react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 
@@ -568,61 +567,61 @@ export default function LoginPage() {
   const [currentField, setCurrentField] = useState("idle");
 
   async function handleAuth() {
-    if (isLogin) {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("password", password)
-        .or(`username.eq.${username},mobile_number.eq.${username}`)
-        .single();
+    try {
+      if (isLogin) {
+        // The server verifies the password and sets an HttpOnly session cookie.
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
 
-      if (error || !data) {
-        alert("Invalid username or password");
-        return;
-      }
+        const result = await response.json().catch(() => ({}));
 
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          username: data.username,
-          email: data.email,
-          role: data.role,
-        })
-      );
-      window.location.href = "/";
-    } else {
-      if (!mobileNumber.trim() || mobileNumber.length < 10) {
-        alert("Enter valid mobile number");
-        return;
-      }
+        if (!response.ok || !result?.success || !result?.user) {
+          alert(result?.error || "Invalid username or password");
+          return;
+        }
 
-      const { data: existingUser } = await supabase
-        .from("users")
-        .select("*")
-        .eq("username", username)
-        .single();
-
-      if (existingUser) {
-        alert("Username already exists");
-        return;
-      }
-
-      const { error } = await supabase.from("users").insert([
-        {
-          username,
-          password,
-          email,
-          mobile_number: mobileNumber,
-          role: "user",
-        },
-      ]);
-
-      if (error) {
-        alert(error.message);
+        // Display-only hint for the UI. It is NOT used for authentication.
+        localStorage.setItem("jprime:lastActivityAt", String(Date.now()));
+        localStorage.setItem(
+          "user",
+          JSON.stringify({
+            username: result.user.username,
+            email: result.user.email,
+            role: result.user.role,
+          })
+        );
+        window.location.href = "/";
       } else {
-        alert("Signup Success");
-        setIsLogin(true);
+        if (!mobileNumber.trim() || mobileNumber.length < 10) {
+          alert("Enter valid mobile number");
+          return;
+        }
+
+        const response = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username,
+            password,
+            email,
+            mobile_number: mobileNumber,
+          }),
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || !result?.success) {
+          alert(result?.error || "Could not create account.");
+        } else {
+          alert("Signup Success");
+          setIsLogin(true);
+        }
       }
+    } catch {
+      alert("Network error. Please try again.");
     }
   }
 

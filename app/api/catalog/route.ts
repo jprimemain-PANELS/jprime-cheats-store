@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { allProducts } from "@/lib/products";
 import type { Product, PriceTier } from "@/lib/products";
 
 export const dynamic = "force-dynamic";
@@ -125,6 +126,29 @@ function toPublicProduct(
   return product;
 }
 
+// Server-side fallback (lib/products.ts) with every supplier field stripped,
+// so supplier IDs/durations/variants never reach the browser.
+function fallbackProducts(): Product[] {
+  return allProducts.map((p) => {
+    const safe: Product = {
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      prices: p.prices.map((t) => {
+        const tier: PriceTier = { duration: t.duration, priceINR: t.priceINR };
+        if (t.resellerPrice) tier.resellerPrice = t.resellerPrice;
+        return tier;
+      }),
+      updateChannel: p.updateChannel,
+      features: [...p.features],
+      status: p.status,
+    };
+    if (p.fulfillmentType) safe.fulfillmentType = p.fulfillmentType;
+    if (p.videoUrl) safe.videoUrl = p.videoUrl;
+    return safe;
+  });
+}
+
 export async function GET() {
   try {
     const { data, error } =
@@ -145,8 +169,8 @@ export async function GET() {
 
       return NextResponse.json(
         {
-          products: [],
-          error: "catalog_unavailable",
+          products: fallbackProducts(),
+          source: "fallback",
         },
         {
           status: 200,
@@ -167,8 +191,15 @@ export async function GET() {
           p !== null
       );
 
+    if (products.length === 0) {
+      return NextResponse.json(
+        { products: fallbackProducts(), source: "fallback" },
+        { headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
     return NextResponse.json(
-      { products },
+      { products, source: "catalog" },
       {
         headers: {
           "Cache-Control":
@@ -184,8 +215,8 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        products: [],
-        error: "catalog_unavailable",
+        products: fallbackProducts(),
+        source: "fallback",
       },
       {
         status: 200,

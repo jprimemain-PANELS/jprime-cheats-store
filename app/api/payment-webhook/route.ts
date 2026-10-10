@@ -1,63 +1,65 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from "next/server";
+import crypto from "crypto";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
-// Connect using the Service Role Key to bypass any Row Level Security (RLS) locks
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
 
-// Health check route - visit this in your browser to check if it's live
-export async function GET() {
-  return NextResponse.json({
-    success: true,
-    message: "Webhook Working",
-  });
+/**
+ * MacroDroid payment receiver.
+ * Now requires a shared secret (env: PAYMENT_WEBHOOK_SECRET) sent in the
+ * "x-webhook-secret" header. If the env var is not set the webhook is DISABLED
+ * (fails closed) - previously anyone on the internet could call it.
+ */
+function authorised(request: Request): boolean {
+  const secret = process.env.PAYMENT_WEBHOOK_SECRET;
+  if (!secret || secret.length < 16) return false;
+
+  const provided = request.headers.get("x-webhook-secret") || "";
+  const a = Buffer.from(provided);
+  const b = Buffer.from(secret);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Main payment receiver route for MacroDroid
+export async function GET() {
+  return NextResponse.json({ success: true });
+}
+
 export async function POST(request: Request) {
   try {
-    // Read the raw plain text incoming from MacroDroid
-    const rawText = await request.text(); // Receives: "Mr JENITH P sent ₹95.07"
+    if (!authorised(request)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (!rawText || rawText.trim() === "") {
+    const rawText = await request.text();
+
+    if (!rawText || rawText.trim() === "" || rawText.length > 2000) {
       return NextResponse.json({ error: "Notification text is empty." }, { status: 400 });
     }
 
-    // RegEx to pull out the exact price digits following the ₹ symbol
     const amountMatch = rawText.match(/₹\s*(\d+\.\d{2})/);
-    
+
     if (!amountMatch) {
       return NextResponse.json({ error: "Could not extract price amount from notification text." }, { status: 400 });
     }
 
-    // Grabs the amount as a clean string text (e.g., "95.07") for your database text column
-    const cleanAmountStr = amountMatch[1]; 
-
-    // Execute the database transaction function we made in Step 1
-    const { data, error } = await supabaseAdmin.rpc('process_payment_and_release_key', {
-      payment_amount: cleanAmountStr
+    const { data, error } = await supabaseAdmin.rpc("process_payment_and_release_key", {
+      payment_amount: amountMatch[1],
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("WEBHOOK RPC ERROR:", error.message);
+      return NextResponse.json({ error: "Processing failed." }, { status: 500 });
     }
 
-    // Grab the first row returned by the function array
-    const result = data[0];
+    const result = Array.isArray(data) ? data[0] : null;
 
-    if (!result.success) {
-      return NextResponse.json({ error: result.message }, { status: 404 });
+    if (!result || !result.success) {
+      return NextResponse.json({ error: "No matching payment." }, { status: 404 });
     }
 
-    // Success response back to MacroDroid
-    return NextResponse.json({ 
-      success: true, 
-      message: "Payment verified and key linked successfully!" 
-    });
-
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ success: true, message: "Payment verified and key linked successfully!" });
+  } catch (err) {
+    console.error("WEBHOOK ERROR:", err instanceof Error ? err.message : "unknown");
+    return NextResponse.json({ error: "Processing failed." }, { status: 500 });
   }
 }

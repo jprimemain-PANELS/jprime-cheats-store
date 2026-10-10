@@ -18,7 +18,6 @@ import { ProductCard } from "@/components/product-card";
 import { ComingSoon } from "@/components/coming-soon";
 import { FloatingSupport } from "@/components/floating-support";
 import { Footer } from "@/components/footer";
-import { supabase } from "@/lib/supabase";
 import { useCatalogProducts } from "@/lib/useCatalogProducts";
 
 export default function Home() {
@@ -52,39 +51,58 @@ export default function Home() {
   const productsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const user = localStorage.getItem("user");
+    let cancelled = false;
 
-    if (user) {
+    async function verifySession() {
+      // The server session cookie is the only source of truth for "logged in".
       try {
-        setUserData(JSON.parse(user));
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const json = await res.json();
+
+        if (cancelled) return;
+
+        if (!json?.success || !json?.user) {
+          try {
+            localStorage.removeItem("user");
+          } catch {}
+          router.replace("/login");
+          return;
+        }
+
+        // Keep the display hint (used by the navbar / wallet modal) in sync with the server.
+        try {
+          localStorage.setItem("user", JSON.stringify(json.user));
+        } catch {}
+
+        setUserData(json.user);
       } catch {
-        localStorage.removeItem("user");
-        router.replace("/login");
+        if (!cancelled) router.replace("/login");
         return;
       }
-    }
 
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
+      const copiedKey = localStorage.getItem("latest_key");
 
-    const copiedKey = localStorage.getItem("latest_key");
+      if (copiedKey) {
+        setDeliveredKey(copiedKey);
+        setShowSuccess(true);
 
-    if (copiedKey) {
-      setDeliveredKey(copiedKey);
-      setShowSuccess(true);
+        try {
+          navigator.clipboard.writeText(copiedKey);
+        } catch {
+          // Clipboard access may be unavailable.
+        }
 
-      try {
-        navigator.clipboard.writeText(copiedKey);
-      } catch {
-        // Clipboard access may be unavailable.
+        localStorage.removeItem("latest_key");
       }
 
-      localStorage.removeItem("latest_key");
+      if (!cancelled) setCheckingAuth(false);
     }
 
-    setCheckingAuth(false);
+    verifySession();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const scrollToProducts = () => {
@@ -343,17 +361,22 @@ export default function Home() {
           setShowProfile(true);
           setLoadingHistory(true);
 
-          const { data } = await supabase
-            .from("purchase_history")
-            .select("*")
-            .eq("username", userData?.username)
-            .order("created_at", { ascending: false });
-
-          if (data) {
-            setPurchaseHistory(data);
+          try {
+            const res = await fetch("/api/get-purchases", { cache: "no-store" });
+            const json = await res.json();
+            if (res.status === 401) {
+              localStorage.removeItem("user");
+              router.replace("/login");
+              return;
+            }
+            if (json?.success && Array.isArray(json.purchases)) {
+              setPurchaseHistory(json.purchases);
+            }
+          } catch (error) {
+            console.error("Failed to load purchase history:", error);
+          } finally {
+            setLoadingHistory(false);
           }
-
-          setLoadingHistory(false);
         }}
         className="fixed top-20 right-4 sm:top-24 sm:right-6 z-[40] p-3.5 sm:p-4 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 hover:brightness-110 text-white transition-transform hover:scale-105 active:scale-95 shadow-[0_0_25px_rgba(192,38,211,0.45)] flex items-center justify-center"
         title="View Profile"

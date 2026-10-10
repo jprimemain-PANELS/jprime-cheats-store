@@ -1,274 +1,128 @@
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireUser, rateLimit } from "@/lib/auth";
+import { getTrustedQuote } from "@/lib/pricing";
 
-import {
-  supabase,
-} from "@/lib/supabase";
+export const dynamic = "force-dynamic";
 
-const FP_CREATE_ORDER_URL =
-  "https://xyzcheats.com/gateway/create_order.php";
+const FP_CREATE_ORDER_URL = "https://xyzcheats.com/gateway/create_order.php";
+const NO_STORE = { "Cache-Control": "no-store" };
 
-export async function POST(
-  request: NextRequest
-) {
+function fail(error: string, status: number) {
+  return NextResponse.json({ success: false, error }, { status, headers: NO_STORE });
+}
+
+/**
+ * Creates a UPI order.
+ * - Buyer = authenticated session user (username in the body is ignored).
+ * - Amount = trusted server-side price (amount in the body is ignored).
+ */
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const auth = await requireUser(request);
+    if (!auth.ok) return auth.response;
 
-const {
-  username,
-  product_name,
-  duration,
-  amount,
-} = body;
+    const { username, role } = auth.user;
 
-    // Validate required information
-    if (
-      !username ||
-      !product_name ||
-      !duration ||
-      !amount
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Missing required order information",
-        },
-        {
-          status: 400,
-        }
-      );
+    if (!rateLimit(`upi-create:${username}`, 10, 60_000)) {
+      return fail("Too many requests. Please wait a moment.", 429);
     }
 
+    const body = await request.json().catch(() => ({}));
+    const productName = String(body?.product_name ?? "").trim();
+    const duration = String(body?.duration ?? "").trim();
 
-    const numericAmount =
-      Number(amount);
+    if (!productName || !duration) return fail("Missing required order information", 400);
 
-    if (
-      !Number.isFinite(numericAmount) ||
-      numericAmount <= 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid payment amount",
-        },
-        {
-          status: 400,
-        }
-      );
+    const quote = await getTrustedQuote({ username, role, productName, duration });
+    if (!quote.ok) return fail(quote.error, quote.httpStatus);
+    if (quote.status === "MAINTENANCE") {
+      return fail("This product is under maintenance. Please check back soon.", 409);
     }
 
-    // Secret key exists only on server
-    const apiKey =
-      process.env.FP_API_KEY;
-
+    const apiKey = process.env.FP_API_KEY;
     if (!apiKey) {
-      console.error(
-        "FP_API_KEY is missing"
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Payment gateway is not configured",
-        },
-        {
-          status: 500,
-        }
-      );
+      console.error("FP_API_KEY is missing");
+      return fail("Payment gateway is not configured", 500);
     }
 
-    // Create order with FP payment gateway
-    const gatewayUrl =
-      new URL(FP_CREATE_ORDER_URL);
+    const gatewayUrl = new URL(FP_CREATE_ORDER_URL);
+    gatewayUrl.searchParams.set("amount", String(quote.price));
+    gatewayUrl.searchParams.set("api_key", apiKey);
 
-    gatewayUrl.searchParams.set(
-      "amount",
-      String(numericAmount)
-    );
-
-    gatewayUrl.searchParams.set(
-      "api_key",
-      apiKey
-    );
-
-    const gatewayResponse =
-      await fetch(
-        gatewayUrl.toString(),
-        {
-          method: "GET",
-          cache: "no-store",
-        }
-      );
-
-    const responseText =
-      await gatewayResponse.text();
+    const gatewayResponse = await fetch(gatewayUrl.toString(), {
+      method: "GET",
+      cache: "no-store",
+    });
 
     let gatewayData: any;
-
     try {
-      gatewayData =
-        JSON.parse(responseText);
+      gatewayData = JSON.parse(await gatewayResponse.text());
     } catch {
-      console.error(
-        "Invalid gateway response:",
-        responseText
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Payment gateway returned an invalid response",
-        },
-        {
-          status: 502,
-        }
-      );
+      console.error("Invalid gateway response (create order)");
+      return fail("Payment gateway returned an invalid response", 502);
     }
 
     if (
       !gatewayResponse.ok ||
-      gatewayData?.status !==
-        "success" ||
+      gatewayData?.status !== "success" ||
       !gatewayData?.data?.order_id ||
       !gatewayData?.data?.qr_url
     ) {
-      console.error(
-        "Gateway order creation failed:",
-        gatewayData
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            gatewayData?.message ||
-            "Failed to create payment order",
-        },
-        {
-          status: 502,
-        }
-      );
+      console.error("Gateway order creation failed, HTTP", gatewayResponse.status);
+      return fail("Failed to create payment order", 502);
     }
 
-    const gatewayOrder =
-      gatewayData.data;
+    const gatewayOrder = gatewayData.data;
 
-    // Save the gateway order in Supabase
-    const {
-      data: savedOrder,
-      error: insertError,
-    } = await supabase
-      .from("payment_orders")
-      .insert([
-        {
-          username:
-            String(username),
+    // The gateway may add paise to make the amount unique; it must never be below the price.
+    const gatewayAmount = Number(gatewayOrder.amount);
+    if (
+      !Number.isFinite(gatewayAmount) ||
+      gatewayAmount < quote.price - 0.001 ||
+      gatewayAmount >= quote.price + 1
+    ) {
+      console.error("Gateway amount out of range", { expected: quote.price, gatewayAmount });
+      return fail("Payment gateway returned an unexpected amount", 502);
+    }
 
-          product_name:
-            String(product_name),
-
-          duration:
-            String(duration),
-
-          amount:
-            String(gatewayOrder.amount),
-
-          status: "pending",
-
-          used: false,
-
-          gateway_order_id:
-          String(
-            gatewayOrder.order_id
-          ),
-        
-        qr_url:
-          gatewayOrder.qr_url ||
-          null,
-        
-        upi_link:
-          gatewayOrder.upi_link ||
-          null,
-        
-        expires_at:
-          gatewayOrder.expires_at ||
-          null,
-        },
-      ])
-      .select()
-      .single();
+    const { error: insertError } = await supabaseAdmin.from("payment_orders").insert([
+      {
+        username,
+        product_name: productName,
+        duration,
+        amount: String(gatewayOrder.amount),
+        status: "pending",
+        used: false,
+        gateway_order_id: String(gatewayOrder.order_id),
+        qr_url: gatewayOrder.qr_url || null,
+        upi_link: gatewayOrder.upi_link || null,
+        expires_at: gatewayOrder.expires_at || null,
+      },
+    ]);
 
     if (insertError) {
-      console.error(
-        "PAYMENT ORDER INSERT ERROR:",
-        insertError
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            insertError.message,
-        },
-        {
-          status: 500,
-        }
-      );
+      console.error("PAYMENT ORDER INSERT ERROR:", insertError.message);
+      return fail("Could not save the payment order", 500);
     }
-
-    // Send safe order details to frontend
-    // FP_API_KEY is never returned.
-    return NextResponse.json({
-      success: true,
-
-      order: savedOrder,
-
-      payment: {
-        order_id:
-          gatewayOrder.order_id,
-
-        qr_url:
-          gatewayOrder.qr_url,
-
-        upi_link:
-          gatewayOrder.upi_link,
-
-        upi_id:
-          gatewayOrder.upi_id,
-
-        amount:
-          gatewayOrder.amount,
-
-        created_at:
-          gatewayOrder.created_at,
-
-        expires_at:
-          gatewayOrder.expires_at,
-      },
-    });
-  } catch (error) {
-    console.error(
-      "CREATE UPI ORDER ERROR:",
-      error
-    );
 
     return NextResponse.json(
       {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown server error",
+        success: true,
+        payment: {
+          order_id: gatewayOrder.order_id,
+          qr_url: gatewayOrder.qr_url,
+          upi_link: gatewayOrder.upi_link,
+          upi_id: gatewayOrder.upi_id,
+          amount: gatewayOrder.amount,
+          created_at: gatewayOrder.created_at,
+          expires_at: gatewayOrder.expires_at,
+        },
       },
-      {
-        status: 500,
-      }
+      { headers: NO_STORE }
     );
+  } catch (error) {
+    console.error("CREATE UPI ORDER ERROR:", error instanceof Error ? error.message : "unknown");
+    return fail("Unable to create the order", 500);
   }
 }

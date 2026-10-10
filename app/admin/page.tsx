@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo } from "react";
 import type { ReactNode } from "react";
-import { supabase } from "@/lib/supabase";
 import {
   Package,
   Users,
@@ -33,11 +32,9 @@ import {
   Crown,
 } from "lucide-react";
 
-import { allProducts } from "@/lib/products";
 import type { Product, PriceTier } from "@/lib/products";
 import ProductManager from "@/components/admin/ProductManager";
 import VipPriceManager from "@/components/admin/VipPriceManager";
-import { useCatalogProducts } from "@/lib/useCatalogProducts";
 
 interface ManagedUser {
   id?: string | number;
@@ -185,7 +182,32 @@ function StockBox({ duration, count }: { duration: string; count: number }) {
 
 // ---------- main page ----------
 
+// All admin writes go through the server, which re-verifies the admin session on every call.
+async function adminPost(body: Record<string, unknown>) {
+  const res = await fetch("/api/admin/data", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.error || "Request failed.");
+  }
+
+  return json;
+}
+
 export default function AdminPage() {
+  // Built-in product list, loaded from an admin-only endpoint
+  // (keeps supplier IDs out of the public browser bundle).
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const inventoryProducts = useMemo(
+    () => allProducts.filter((product) => product.fulfillmentType !== "API"),
+    [allProducts]
+  );
   const [keys, setKeys] = useState<any[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -227,40 +249,22 @@ export default function AdminPage() {
   const [amountInput, setAmountInput] = useState("");
   const [isSavingUser, setIsSavingUser] = useState(false);
 
-  // Use the current catalog for the quick-control tabs, while retaining legacy
-  // products until they are migrated. Catalog entries win when names match.
-  const { products: catalogProducts } = useCatalogProducts();
-  const adminProducts = useMemo(
-    () => (catalogProducts.length > 0 ? catalogProducts : allProducts),
-    [catalogProducts]
-  );
-
-  // Manual stock is only meaningful for local-fulfillment products.
-  const inventoryProducts = useMemo(
-    () => adminProducts.filter((product) => product.fulfillmentType !== "API"),
-    [adminProducts]
-  );
-
   useEffect(() => {
     checkAdmin();
   }, []);
 
   async function checkAdmin() {
     try {
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      // Role is decided by the server session, never by localStorage.
+      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      const json = await res.json();
 
-      if (!user?.email) {
+      if (!json?.success || !json?.user) {
         window.location.href = "/login";
         return;
       }
 
-      const { data } = await supabase
-        .from("users")
-        .select("*")
-        .eq("email", user.email)
-        .single();
-
-      if (!data || data.role !== "admin") {
+      if (json.user.role !== "admin") {
         setLoading(false);
         window.location.href = "/";
         return;
@@ -281,38 +285,34 @@ export default function AdminPage() {
   }, [selectedProduct, selectedDuration]);
 
   async function loadDashboard() {
-    const { data: stockData } = await supabase
-      .from("stock_keys")
-      .select("*")
-      .eq("is_used", false);
+    const res = await fetch("/api/admin/data", { cache: "no-store" });
+    const json = await res.json().catch(() => ({}));
 
-    const { data: usersData } = await supabase.from("users").select("*");
+    if (!res.ok || !json?.success) {
+      console.error("Failed to load admin data:", json?.error);
+      return {} as Record<string, PriceOverride>;
+    }
 
-    const { data: walletsData } = await supabase
-      .from("wallets")
-      .select("username, balance");
+    const stockData: any[] = json.keys || [];
+    const usersData: any[] = json.users || [];
+    const walletsData: any[] = json.wallets || [];
+    const purchaseData: any[] = json.purchases || [];
+    const priceRows: any[] = json.priceRows || [];
 
-    const walletMap = new Map(walletsData?.map((w) => [w.username, w.balance]) || []);
+    setAllProducts(Array.isArray(json.products) ? json.products : []);
 
-    const enrichedUsers: ManagedUser[] = (usersData || []).map((u: any) => ({
+    const walletMap = new Map(walletsData.map((w: any) => [w.username, w.balance]));
+
+    const enrichedUsers: ManagedUser[] = usersData.map((u: any) => ({
       ...u,
       wallet_balance: walletMap.get(u.username) ?? 0,
     }));
 
-    const { data: purchaseData } = await supabase
-      .from("purchase_history")
-      .select("*")
-      .order("id", { ascending: false });
-
     // Price + status both live in product_prices (status = special "__status__" row).
     // Empty is fine, everything falls back to products.ts.
-    const { data: priceRows, error: priceRowsError } = await supabase.from("product_prices").select("*");
-    if (priceRowsError) {
-      console.error("Failed to load price overrides:", priceRowsError.message);
-    }
     const overrideMap: Record<string, PriceOverride> = {};
     const statusMap: Record<string, ProductStatus> = {};
-    (priceRows || []).forEach((row: any) => {
+    priceRows.forEach((row: any) => {
       if (row.duration === STATUS_ROW) {
         statusMap[row.product_name] = Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE";
         return;
@@ -323,9 +323,9 @@ export default function AdminPage() {
       };
     });
 
-    setKeys(stockData || []);
+    setKeys(stockData);
     setUsers(enrichedUsers);
-    setPurchases(purchaseData || []);
+    setPurchases(purchaseData);
     setPriceOverrides(overrideMap);
     setStatusOverrides(statusMap);
     return overrideMap;
@@ -333,14 +333,17 @@ export default function AdminPage() {
 
   async function loadStock() {
     if (!selectedProduct?.name || !selectedDuration) return;
-    const { data } = await supabase
-      .from("stock_keys")
-      .select("*")
-      .eq("product_name", selectedProduct.name)
-      .eq("duration", selectedDuration)
-      .eq("is_used", false);
 
-    setAvailableStock(data?.length || 0);
+    try {
+      const json = await adminPost({
+        action: "stock_count",
+        product_name: selectedProduct.name,
+        duration: selectedDuration,
+      });
+      setAvailableStock(json.count || 0);
+    } catch {
+      setAvailableStock(0);
+    }
   }
 
   async function handleAddStock() {
@@ -356,37 +359,35 @@ export default function AdminPage() {
 
     if (splitKeys.length === 0) return;
 
-    const rows = splitKeys.map((key) => ({
-      product_name: selectedProduct.name,
-      duration: selectedDuration,
-      key_code: key,
-      is_used: false,
-    }));
+    try {
+      await adminPost({
+        action: "add_stock",
+        product_name: selectedProduct.name,
+        duration: selectedDuration,
+        keys: splitKeys,
+      });
 
-    const { error } = await supabase.from("stock_keys").insert(rows);
-
-    if (error) {
-      alert(error.message);
-    } else {
       alert("Stock Added Successfully");
       setNewKeys("");
       loadDashboard();
       loadStock();
+    } catch (err: any) {
+      alert(err?.message || "Could not add stock.");
     }
   }
 
   async function deleteStock(id: number) {
     if (!confirm("Delete this stock key?")) return;
 
-    const { error } = await supabase.from("stock_keys").delete().eq("id", id);
+    try {
+      await adminPost({ action: "delete_stock", id });
 
-    if (error) {
-      alert(error.message);
-    } else {
       loadDashboard();
       if (selectedProduct && selectedDuration) {
         loadStock();
       }
+    } catch (err: any) {
+      alert(err?.message || "Could not delete key.");
     }
   }
 
@@ -411,7 +412,7 @@ export default function AdminPage() {
   function handleSelectPriceProduct(name: string) {
     setPriceError(null);
     setPriceSavedAt(null);
-    const found = adminProducts.find((p) => p.name === name) || null;
+    const found = allProducts.find((p) => p.name === name) || null;
     setPriceProduct(found);
     if (!found) {
       setPriceDrafts({});
@@ -438,11 +439,7 @@ export default function AdminPage() {
         }))
         .filter((r) => !isNaN(r.price_inr));
 
-      const { error } = await supabase
-        .from("product_prices")
-        .upsert(rows, { onConflict: "product_name,duration" });
-
-      if (error) throw error;
+      await adminPost({ action: "save_prices", rows });
 
       // Re-pull from the DB so what's on screen always matches what's actually saved,
       // instead of trusting local state alone.
@@ -459,7 +456,7 @@ export default function AdminPage() {
   // ---- status ----
 
   async function handleSetProductStatus(productName: string, status: ProductStatus) {
-    const current = statusOverrides[productName] ?? adminProducts.find((p) => p.name === productName)?.status;
+    const current = statusOverrides[productName] ?? allProducts.find((p) => p.name === productName)?.status;
     if (current === status) return; // already set, nothing to save
 
     setSavingStatusFor(productName);
@@ -468,19 +465,7 @@ export default function AdminPage() {
     try {
       // Same table + same save method as prices. Status is a special row:
       // duration "__status__", price_inr 0 = ONLINE, 1 = MAINTENANCE.
-      const { error } = await supabase
-        .from("product_prices")
-        .upsert(
-          {
-            product_name: productName,
-            duration: STATUS_ROW,
-            price_inr: status === "MAINTENANCE" ? 1 : 0,
-            reseller_price: null,
-          },
-          { onConflict: "product_name,duration" }
-        );
-
-      if (error) throw error;
+      await adminPost({ action: "set_status", product_name: productName, status });
 
       // Re-pull from the DB so this always reflects what's actually saved.
       await loadDashboard();
@@ -526,12 +511,12 @@ export default function AdminPage() {
 
   const todayRevenue = useMemo(() => {
     return todayPurchases.reduce((sum, p) => {
-      const product = adminProducts.find((x) => x.name === p.product_name);
+      const product = allProducts.find((x) => x.name === p.product_name);
       const tier = product?.prices.find((t) => t.duration === p.duration);
       const resolved = resolvePrice(priceOverrides, p.product_name, p.duration, tier);
       return sum + resolved.priceINR;
     }, 0);
-  }, [todayPurchases, priceOverrides, adminProducts]);
+  }, [todayPurchases, priceOverrides]);
 
   // Filters the Stock Keys list by product name, duration, or key code.
   const filteredKeys = useMemo(() => {
@@ -580,38 +565,15 @@ export default function AdminPage() {
     setIsSavingUser(true);
 
     try {
-      if (editRole !== selectedUser.role) {
-        const { error: roleError } = await supabase
-          .from("users")
-          .update({ role: editRole })
-          .eq("username", selectedUser.username);
-
-        if (roleError) throw roleError;
-      }
-
       const numericAmount = parseFloat(amountInput);
-      if (balanceAction !== "none" && !isNaN(numericAmount) && numericAmount > 0) {
-        const currentBalance = selectedUser.wallet_balance || 0;
-        const newBalance =
-          balanceAction === "add"
-            ? currentBalance + numericAmount
-            : Math.max(0, currentBalance - numericAmount);
 
-        const { error: walletError } = await supabase
-          .from("wallets")
-          .update({ balance: newBalance })
-          .eq("username", selectedUser.username);
-
-        if (walletError) throw walletError;
-
-        await supabase.from("wallet_transactions").insert({
-          username: selectedUser.username,
-          type: balanceAction === "add" ? "credit" : "debit",
-          amount: numericAmount,
-          description: `Admin ${balanceAction === "add" ? "added" : "removed"} funds`,
-          created_at: new Date().toISOString(),
-        });
-      }
+      await adminPost({
+        action: "update_user",
+        username: selectedUser.username,
+        role: editRole,
+        balanceAction,
+        amount: !isNaN(numericAmount) && numericAmount > 0 ? numericAmount : 0,
+      });
 
       alert("User updated successfully");
       setIsManageModalOpen(false);
@@ -920,7 +882,7 @@ export default function AdminPage() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-3.5 pr-9 text-xs text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all appearance-none cursor-pointer"
                   >
                     <option value="">Choose product…</option>
-                    {adminProducts.map((p) => (
+                    {allProducts.map((p) => (
                       <option key={p.id} value={p.name}>{p.name}</option>
                     ))}
                   </select>
@@ -1038,7 +1000,7 @@ export default function AdminPage() {
             )}
 
             <div className="space-y-2 max-h-[560px] overflow-y-auto custom-scrollbar pr-1">
-              {adminProducts.map((product) => {
+              {allProducts.map((product) => {
                 const effectiveStatus: ProductStatus = statusOverrides[product.name] ?? product.status;
                 const isSaving = savingStatusFor === product.name;
 

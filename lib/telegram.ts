@@ -1,13 +1,21 @@
+const esc = (s: unknown) =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
 export async function sendTelegramPurchase({
   username,
   product,
   duration,
   amount,
+  method,
 }: {
   username: string;
   product: string;
   duration: string;
   amount: number;
+  method?: string;
 }) {
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -21,15 +29,16 @@ export async function sendTelegramPurchase({
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
+    timeZone: "Asia/Kolkata",
   });
 
-  const message = `🛒 <b>New Purchase</b>
+  const message = `🛒 <b>New Purchase${method ? ` via ${esc(method)}` : ""}</b>
 
-👤 User : <b>${username}</b>
-📦 Product : <b>${product}</b>
-⏳ Duration : <b>${duration}</b>
-💰 Paid : <b>₹${amount}</b>
-🕒 Time : <b>${time}</b>
+👤 User : <b>${esc(username)}</b>
+📦 Product : <b>${esc(product)}</b>
+⏳ Duration : <b>${esc(duration)}</b>
+💰 Paid : <b>₹${esc(amount)}</b>
+🕒 Time : <b>${esc(time)}</b>
 
 ✅ <b>Key Released</b>`;
 
@@ -37,9 +46,7 @@ export async function sendTelegramPurchase({
     `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: CHAT_ID,
         text: message,
@@ -48,7 +55,7 @@ export async function sendTelegramPurchase({
     }
   );
 
-  const result = await response.json();
-
-  console.log("Telegram Response:", result);
+  if (!response.ok) {
+    console.error("Telegram send failed, HTTP status:", response.status);
+  }
 }

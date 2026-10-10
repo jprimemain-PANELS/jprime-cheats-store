@@ -1,0 +1,14 @@
+JPRIME SECURITY PATCH — APPLICATION NOTES
+
+IMPORTANT: THIS PATCH HAS NOT BEEN TESTED AGAINST YOUR LIVE SUPABASE, PAYMENT GATEWAY OR SUPPLIERS.
+
+1. Back up the working project and database before applying.
+2. Merge files from this ZIP into the project root by their relative paths. Do not delete/replace the entire app directory.
+3. Add SESSION_SECRET (random, at least 32 characters) to local .env.local and Vercel server environment variables. Do not share the value.
+4. If MacroDroid still calls /api/payment-webhook, set PAYMENT_WEBHOOK_SECRET and configure MacroDroid to send it as x-webhook-secret. Otherwise wallet credits via that webhook will fail closed.
+5. Rotate the Seller 1 master key because the previous source contained a hard-coded fallback. Store the replacement only in server-side environment variables.
+6. The server cookie TTL is now 15 minutes. components/session-timeout.tsx sends a same-origin heartbeat no more than once per minute after user activity; no successful heartbeat means the server cookie expires.
+7. Run npm run build. Note that the project previously had TypeScript validation disabled and existing type errors; a successful Next build may not validate all types.
+8. Test only on a Vercel Preview first: login/signup, idle 15-minute logout, direct API after expiry, admin authorization, catalog, inventory, wallet purchase, UPI purchase/verification, deposit replay, supplier delivery and webhook. Do not run repeated paid tests that generate duplicate supplier keys.
+9. SQL UTR column/indexes and function permission restriction have already been run according to the user's reports. Do not rerun them blindly. Do not run SQL migration STEP 2 until Preview tests pass and all direct browser Supabase operations are confirmed removed.
+10. Live launch is blocked until Supabase usage/quota warning is resolved, secrets are set/rotated, and Preview tests pass.

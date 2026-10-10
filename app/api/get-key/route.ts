@@ -1,70 +1,19 @@
-import { NextRequest,
-  NextResponse }
-  from "next/server";
-  
-  import { supabase }
-  from "@/lib/supabase";
-  
-  export async function POST(
-    request: NextRequest
-  ) {
-  
-    const body =
-      await request.json();
-  
-    const {
-      product_name,
-      duration,
-    } = body;
-  
-    const { data, error } =
-      await supabase
-        .from("stock_keys")
-        .select("*")
-        .eq(
-          "product_name",
-          product_name
-        )
-        .eq(
-          "duration",
-          duration
-        )
-        .eq(
-          "is_used",
-          false
-        )
-        .limit(1)
-        .single();
-  
-    if (error || !data) {
-  
-      return NextResponse.json({
-        success: false,
-        message:
-          "No keys available",
-      });
-    }
-  
-    await supabase
-      .from("stock_keys")
-      .update({
-        is_used: true,
-      })
-      .eq(
-        "id",
-        data.id
-      );
-  
-    return NextResponse.json({
-      success: true,
-  
-      key:
-        data.key_code,
-  
-      product_name:
-        data.product_name,
-  
-      duration:
-        data.duration,
-    });
-  }
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * DISABLED for security. This legacy endpoint was unauthenticated and could
+ * hand out keys / spend supplier balance / write purchase records for anyone.
+ * All purchases now go through /api/pay-via-wallet and /api/create-upi-order
+ * (server-verified session + server-side price).
+ */
+function gone() {
+  return NextResponse.json(
+    { success: false, error: "This endpoint has been retired." },
+    { status: 410, headers: { "Cache-Control": "no-store" } }
+  );
+}
+
+export const GET = gone;
+export const POST = gone;

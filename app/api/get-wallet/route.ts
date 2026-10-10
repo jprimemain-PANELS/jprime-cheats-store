@@ -1,76 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth";
+import { getOrCreateBalance } from "@/lib/wallet";
 
-export async function POST(request: NextRequest) {
-  try {
-    const { username } = await request.json();
+export const dynamic = "force-dynamic";
 
-    if (!username) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Username required",
-        },
-        { status: 400 }
-      );
-    }
+const NO_STORE = { "Cache-Control": "no-store" };
 
-    // Query existing wallet record
-    const { data, error } = await supabase
-      .from("wallets")
-      .select("balance")
-      .eq("username", username)
-      .maybeSingle();
+// A user can only ever read THEIR OWN wallet. Any username in the body is ignored.
+async function handle(request: NextRequest) {
+  const auth = await requireUser(request);
+  if (!auth.ok) return auth.response;
 
-    if (error) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: error.message,
-        },
-        { status: 500 }
-      );
-    }
-
-    // Automatically create wallet if it doesn't exist
-    if (!data) {
-      const { error: insertError } = await supabase
-        .from("wallets")
-        .insert({
-          username,
-          balance: 0,
-        });
-
-      if (insertError) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: insertError.message,
-          },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        balance: 0,
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      balance: Number(data.balance ?? 0),
-    });
-  } catch (error) {
+  const balance = await getOrCreateBalance(auth.user.username);
+  if (balance === null) {
     return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error",
-      },
-      { status: 500 }
+      { success: false, error: "Could not load wallet." },
+      { status: 500, headers: NO_STORE }
     );
   }
+
+  return NextResponse.json(
+    {
+      success: true,
+      balance,
+      username: auth.user.username,
+      role: auth.user.role,
+    },
+    { headers: NO_STORE }
+  );
 }
+
+export const POST = handle;
+export const GET = handle;

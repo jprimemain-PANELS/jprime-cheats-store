@@ -12,8 +12,6 @@ import {
   ChevronUp,
 } from "lucide-react";
 
-import { supabase } from "@/lib/supabase";
-import { allProducts } from "@/lib/products";
 
 type Supplier = "SELLER1" | "SELLER2" | "LOCAL";
 
@@ -51,8 +49,6 @@ interface CatalogRow {
   name: string;
   data: Product;
 }
-
-const STATUS_ROW = "__status__";
 
 const emptyProduct: Product = {
   id: "",
@@ -118,18 +114,12 @@ async function adminCatalogRequest(
   path: string,
   options: RequestInit = {}
 ) {
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const email = String(user?.email || "").trim();
-
-  if (!email) {
-    throw new Error("Admin session not found.");
-  }
-
+  // Authentication is the HttpOnly session cookie; the server re-checks the
+  // admin role on every call. No identity is sent from the browser.
   const response = await fetch(path, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "x-admin-email": email,
       ...(options.headers || {}),
     },
     cache: "no-store",
@@ -145,6 +135,15 @@ async function adminCatalogRequest(
 }
 
 export default function ProductManager() {
+  // Built-in product list, from an admin-only endpoint (used by "Import Existing").
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+
+  useEffect(() => {
+    adminCatalogRequest("/api/admin/legacy-products")
+      .then((r) => setAllProducts(Array.isArray(r.products) ? r.products : []))
+      .catch(() => setAllProducts([]));
+  }, []);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [selected, setSelected] = useState<Product | null>(null);
 
@@ -163,35 +162,24 @@ export default function ProductManager() {
     setLoading(true);
 
     try {
-      const result = await adminCatalogRequest("/api/admin/catalog");
-      const rows = result.products || [];
-
-      // The storefront still reads immediate price/status overrides from product_prices.
-      // Merge those values into the editor so Product Manager and quick-control tabs agree.
-      const { data: priceRows, error: priceRowsError } = await supabase
-        .from("product_prices")
-        .select("product_name, duration, price_inr, reseller_price");
-
-      if (priceRowsError) {
-        console.warn("Could not load live price/status overrides:", priceRowsError.message);
-      }
-
+      const [catalogResult, adminResult] = await Promise.all([
+        adminCatalogRequest("/api/admin/catalog"),
+        adminCatalogRequest("/api/admin/data"),
+      ]);
+      const rows = catalogResult.products || [];
+      const priceRows: any[] = Array.isArray(adminResult.priceRows) ? adminResult.priceRows : [];
       const pricesByKey = new Map<string, { priceINR: number; resellerPrice: number | null }>();
       const statusesByName = new Map<string, "ONLINE" | "MAINTENANCE">();
 
-      for (const row of priceRows || []) {
-        if (row.duration === STATUS_ROW) {
-          statusesByName.set(
-            row.product_name,
-            Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE"
-          );
-          continue;
+      for (const row of priceRows) {
+        if (row.duration === "__status__") {
+          statusesByName.set(row.product_name, Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE");
+        } else {
+          pricesByKey.set(`${row.product_name}::${row.duration}`, {
+            priceINR: Number(row.price_inr),
+            resellerPrice: row.reseller_price == null ? null : Number(row.reseller_price),
+          });
         }
-
-        pricesByKey.set(`${row.product_name}::${row.duration}`, {
-          priceINR: Number(row.price_inr),
-          resellerPrice: row.reseller_price == null ? null : Number(row.reseller_price),
-        });
       }
 
       const mergedProducts = rows.map((row: any) => {
@@ -199,7 +187,7 @@ export default function ProductManager() {
         return {
           ...product,
           status: statusesByName.get(product.name) ?? product.status,
-          prices: product.prices.map((tier) => {
+          prices: product.prices.map((tier: any) => {
             const override = pricesByKey.get(`${product.name}::${tier.duration}`);
             if (!override || !Number.isFinite(override.priceINR)) return tier;
             return {
@@ -321,58 +309,47 @@ export default function ProductManager() {
      * This means your current storefront price override
      * system continues to work.
      */
-    for (const tier of cleaned.prices) {
-      const price = Number(
-        String(tier.priceINR).replace(/[^0-9.]/g, "")
-      );
+    const priceRows = cleaned.prices
+      .map((tier: any) => {
+        const price = Number(String(tier.priceINR).replace(/[^0-9.]/g, ""));
+        const reseller = tier.resellerPrice
+          ? Number(String(tier.resellerPrice).replace(/[^0-9.]/g, ""))
+          : null;
 
-      const reseller = tier.resellerPrice
-        ? Number(
-            String(tier.resellerPrice).replace(
-              /[^0-9.]/g,
-              ""
-            )
-          )
-        : null;
+        return {
+          product_name: cleaned.name,
+          duration: tier.duration,
+          price_inr: price,
+          reseller_price: reseller !== null && Number.isNaN(reseller) ? null : reseller,
+        };
+      })
+      .filter((r: any) => !Number.isNaN(r.price) && r.price > 0);
 
-      if (!Number.isNaN(price)) {
-        await supabase
-          .from("product_prices")
-          .upsert(
-            {
-              product_name: cleaned.name,
-              duration: tier.duration,
-              price_inr: price,
-              reseller_price: reseller,
-            },
-            {
-              onConflict:
-                "product_name,duration",
-            }
-          );
+    if (priceRows.length > 0) {
+      try {
+        await adminCatalogRequest("/api/admin/data", {
+          method: "POST",
+          body: JSON.stringify({ action: "save_prices", rows: priceRows }),
+        });
+      } catch (error: any) {
+        console.error(error);
+        alert("Product saved, but price sync failed: " + (error?.message || "Unknown error"));
       }
     }
 
-    const { error: statusSyncError } = await supabase
-      .from("product_prices")
-      .upsert(
-        {
-          product_name: cleaned.name,
-          duration: STATUS_ROW,
-          price_inr: cleaned.status === "MAINTENANCE" ? 1 : 0,
-          reseller_price: null,
-        },
-        { onConflict: "product_name,duration" }
-      );
-
-    if (statusSyncError) {
-      console.error("Product saved but storefront status sync failed:", statusSyncError.message);
-      alert("Product saved, but the live status could not be synchronized. Check the database error before relying on the status change.");
-    } else {
-      alert("Product saved successfully.");
+    try {
+      await adminCatalogRequest("/api/admin/data", {
+        method: "POST",
+        body: JSON.stringify({ action: "set_status", product_name: cleaned.name, status: cleaned.status }),
+      });
+    } catch (error: any) {
+      console.error(error);
+      alert("Product saved, but status sync failed: " + (error?.message || "Unknown error"));
     }
 
     window.dispatchEvent(new Event("jprime-catalog-updated"));
+    alert("Product saved successfully.");
+
     setShowEditor(false);
     setSelected(null);
 

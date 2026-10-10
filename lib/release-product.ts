@@ -1,5 +1,7 @@
-import { supabase } from "@/lib/supabase";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+
+// Stock keys are read/written with the service-role client only (the table is not exposed to the browser).
+const supabase = supabaseAdmin;
 import {
   allProducts,
   type Product,
@@ -217,8 +219,9 @@ async function purchaseFromSeller1(
     }
 
     console.log(
-      "SELLER 1 BUY RESPONSE:",
-      result
+      "SELLER 1 BUY RESPONSE STATUS:",
+      response.status,
+      result?.status
     );
 
     if (
@@ -364,8 +367,9 @@ async function purchaseFromSeller2(
     }
 
     console.log(
-      "SELLER 2 BUY RESPONSE:",
-      result
+      "SELLER 2 BUY RESPONSE STATUS:",
+      response.status,
+      result?.success
     );
 
     /*

@@ -1,50 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-async function requireAdmin(request: NextRequest) {
-  const email = request.headers.get("x-admin-email")?.trim();
-
-  if (!email) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { success: false, error: "Admin email is required" },
-        { status: 401 }
-      ),
-    };
-  }
-
-  const { data: user, error } = await supabaseAdmin
-    .from("users")
-    .select("id, email, role")
-    .eq("email", email)
-    .maybeSingle();
-
-  if (error) {
-    console.error("ADMIN LOOKUP ERROR:", error);
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { success: false, error: "Could not verify admin" },
-        { status: 500 }
-      ),
-    };
-  }
-
-  if (!user || user.role !== "admin") {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 403 }
-      ),
-    };
-  }
-
-  return { ok: true };
-}
 
 async function loadRows(username: string) {
   return supabaseAdmin

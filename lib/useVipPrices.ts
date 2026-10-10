@@ -5,17 +5,15 @@ import { useEffect, useState } from "react";
 type VipMap = Record<string, number>;
 
 const TTL_MS = 30_000;
-const cache = new Map<string, { at: number; promise: Promise<VipMap> }>();
+let cached: { at: number; promise: Promise<VipMap> } | null = null;
 
-// One request per reseller, shared by every ProductCard on the page.
-function loadVipPrices(username: string): Promise<VipMap> {
-  const hit = cache.get(username);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.promise;
+// One request shared by every ProductCard on the page. The server identifies
+// the reseller from the session cookie - no username is ever sent.
+function loadVipPrices(): Promise<VipMap> {
+  if (cached && Date.now() - cached.at < TTL_MS) return cached.promise;
 
   const promise = fetch("/api/my-reseller-prices", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username }),
+    method: "GET",
     cache: "no-store",
   })
     .then((res) => res.json())
@@ -31,35 +29,30 @@ function loadVipPrices(username: string): Promise<VipMap> {
     })
     .catch(() => ({} as VipMap));
 
-  cache.set(username, { at: Date.now(), promise });
+  cached = { at: Date.now(), promise };
   return promise;
 }
 
-// Returns { "Product Name::duration": customResellerPrice } for the logged-in
-// reseller. Anyone else gets an empty object.
-export function useVipPrices(): VipMap {
+// Returns { "Product Name::duration": customResellerPrice } for the
+// logged-in reseller. Pass `enabled=false` for non-resellers (no request made).
+export function useVipPrices(enabled: boolean = true): VipMap {
   const [prices, setPrices] = useState<VipMap>({});
 
   useEffect(() => {
-    let cancelled = false;
-
-    try {
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
-      const username = String(user?.username || "").trim();
-
-      if (!username || user?.role !== "reseller") return;
-
-      loadVipPrices(username).then((map) => {
-        if (!cancelled) setPrices(map);
-      });
-    } catch {
-      // ignore: falls back to the common reseller price
+    if (!enabled) {
+      setPrices({});
+      return;
     }
+
+    let cancelled = false;
+    loadVipPrices().then((map) => {
+      if (!cancelled) setPrices(map);
+    });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [enabled]);
 
   return prices;
 }

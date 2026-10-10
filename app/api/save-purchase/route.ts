@@ -1,91 +1,19 @@
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
+import { NextResponse } from "next/server";
 
-import {
-  createClient,
-} from "@supabase/supabase-js";
+export const dynamic = "force-dynamic";
 
-const supabase =
-  createClient(
-    process.env
-      .NEXT_PUBLIC_SUPABASE_URL || "",
-
-    process.env
-      .NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+/**
+ * DISABLED for security. This legacy endpoint was unauthenticated and could
+ * hand out keys / spend supplier balance / write purchase records for anyone.
+ * All purchases now go through /api/pay-via-wallet and /api/create-upi-order
+ * (server-verified session + server-side price).
+ */
+function gone() {
+  return NextResponse.json(
+    { success: false, error: "This endpoint has been retired." },
+    { status: 410, headers: { "Cache-Control": "no-store" } }
   );
-
-export async function POST(
-  request: NextRequest
-) {
-
-  try {
-
-    const body =
-      await request.json();
-
-    console.log(
-      "BODY:",
-      body
-    );
-
-    const {
-      username,
-      product_name,
-      duration,
-      key_code,
-    } = body;
-
-    const { data, error } =
-      await supabase
-        .from(
-          "purchase_history"
-        )
-        .insert([
-          {
-            username,
-            product_name,
-            duration,
-            key_code,
-          },
-        ])
-        .select();
-
-    console.log(
-      "INSERT DATA:",
-      data
-    );
-
-    console.log(
-      "INSERT ERROR:",
-      error
-    );
-
-    if (error) {
-
-      return NextResponse.json({
-        success: false,
-        error:
-          error.message,
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      data,
-    });
-
-  } catch (error) {
-
-    console.log(
-      "SERVER ERROR:",
-      error
-    );
-
-    return NextResponse.json({
-      success: false,
-      error,
-    });
-  }
 }
+
+export const GET = gone;
+export const POST = gone;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin as supabase } from "@/lib/supabase-admin";
+import { requireUser, rateLimit } from "@/lib/auth";
 import { releaseProduct } from "@/lib/release-product";
 import { sendTelegramPurchase } from "@/lib/telegram";
 
@@ -31,10 +32,23 @@ async function markDeliveryFailed(gatewayOrderId: string) {
   }
 }
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   try {
+    // 0. Only a logged-in user may verify, and only their OWN order.
+    const auth = await requireUser(request);
+    if (!auth.ok) return auth.response;
+
+    if (!rateLimit(`verify-pay:${auth.user.username}`, 20, 60_000)) {
+      return NextResponse.json(
+        { success: false, error: "Too many attempts. Please wait a moment." },
+        { status: 429 }
+      );
+    }
+
     // 1. Read and validate the request.
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
 
     const gatewayOrderId = String(
       body?.gateway_order_id ?? ""
@@ -91,6 +105,14 @@ export async function POST(request: NextRequest) {
           success: false,
           error: "Payment order not found",
         },
+        { status: 404 }
+      );
+    }
+
+    // Ownership: never reveal that someone else's order exists.
+    if (order.username !== auth.user.username) {
+      return NextResponse.json(
+        { success: false, error: "Payment order not found" },
         { status: 404 }
       );
     }
@@ -164,6 +186,40 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 }
       );
+    }
+
+    // Only a pending order can be claimed for delivery.
+    if (order.status !== "pending") {
+      return NextResponse.json(
+        {
+          success: false,
+          status: String(order.status || "unknown"),
+          error: "This order can no longer be verified.",
+        },
+        { status: 409 }
+      );
+    }
+
+    // Replay protection: a UTR that already settled any other order is rejected.
+    // (Columns are checked defensively: works before and after the optional SQL migration.)
+    for (const table of ["payment_orders", "deposit_history"] as const) {
+      const { data: dup, error: dupError } = await supabase
+        .from(table)
+        .select("gateway_order_id")
+        .eq("utr", utr)
+        .neq("gateway_order_id", gatewayOrderId)
+        .limit(1);
+
+      if (!dupError && dup && dup.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            status: "duplicate_utr",
+            error: "This UTR was already used for another payment.",
+          },
+          { status: 409 }
+        );
+      }
     }
 
     // 4. Verify the actual payment with the gateway.
@@ -268,16 +324,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const {
-      data: claimedOrder,
-      error: claimError,
-    } = await supabase
+    let claim = await supabase
       .from("payment_orders")
-      .update({ status: "processing" })
+      .update({ status: "processing", utr })
       .eq("gateway_order_id", gatewayOrderId)
       .eq("status", originalStatus)
       .select("gateway_order_id")
       .maybeSingle();
+
+    if (claim.error) {
+      if (claim.error.code === "23505") {
+        return NextResponse.json(
+          {
+            success: false,
+            status: "duplicate_utr",
+            error: "This UTR was already used for another payment.",
+          },
+          { status: 409 }
+        );
+      }
+
+      // utr column not present yet (SQL migration not applied): claim without it.
+      if (claim.error.code === "42703" || /utr/i.test(claim.error.message || "")) {
+        claim = await supabase
+          .from("payment_orders")
+          .update({ status: "processing" })
+          .eq("gateway_order_id", gatewayOrderId)
+          .eq("status", originalStatus)
+          .select("gateway_order_id")
+          .maybeSingle();
+      }
+    }
+
+    const claimedOrder = claim.data;
+    const claimError = claim.error;
 
     if (claimError) {
       console.error("ORDER CLAIM ERROR:", {
@@ -417,6 +497,7 @@ export async function POST(request: NextRequest) {
         product: order.product_name,
         duration: order.duration,
         amount: Number(order.amount),
+        method: "UPI",
       });
     } catch (telegramError) {
       console.error("TELEGRAM NOTIFICATION ERROR:", telegramError);

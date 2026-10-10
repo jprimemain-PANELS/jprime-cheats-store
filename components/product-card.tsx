@@ -26,7 +26,6 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 
-import { supabase } from "@/lib/supabase";
 import { useVipPrices } from "@/lib/useVipPrices";
 import type { Product, PriceTier } from "@/lib/products";
 
@@ -69,7 +68,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
   // Per-reseller (VIP) custom prices. Empty for everyone except resellers
   // who have custom prices saved by the admin.
-  const vipPrices = useVipPrices();
+  const vipPrices = useVipPrices(userRole === "reseller");
 
   /*
    * Merge live prices from Supabase with products.ts prices.
@@ -96,7 +95,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
       const vip = vipPrices[`${product.name}::${tier.duration}`];
 
-      if (vip != null) {
+      if (userRole === "reseller" && vip != null && Number.isFinite(vip)) {
         result = {
           ...result,
           resellerPrice: `₹${Math.round(vip)}`,
@@ -127,15 +126,24 @@ export function ProductCard({ product, index }: ProductCardProps) {
     let cancelled = false;
 
     async function loadLivePrices() {
-      const { data, error } = await supabase
-        .from("product_prices")
-        .select("duration, price_inr, reseller_price")
-        .eq("product_name", product.name);
+      let data: any[] = [];
 
-      if (error) {
+      try {
+        const res = await fetch(
+          `/api/product-prices?product=${encodeURIComponent(product.name)}`,
+          { cache: "no-store" }
+        );
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const json = await res.json();
+        data = Array.isArray(json?.rows) ? json.rows : [];
+      } catch (error: any) {
         console.error(
           `Live price lookup failed for "${product.name}":`,
-          error.message
+          error?.message || error
         );
         return;
       }
@@ -217,77 +225,72 @@ export function ProductCard({ product, index }: ProductCardProps) {
    * Load product stock.
    */
   async function loadStock() {
+    // API products are delivered via supplier API, so skip local database stock check
     if (product.fulfillmentType === "API") {
       setAvailableStock(999);
       return;
     }
 
-    const { data, error } = await supabase
-      .from("stock_keys")
-      .select("*")
-      .eq("product_name", product.name)
-      .eq("duration", selectedDuration)
-      .eq("is_used", false);
+    try {
+      const res = await fetch(
+        `/api/stock-count?product=${encodeURIComponent(
+          product.name
+        )}&duration=${encodeURIComponent(selectedDuration)}`,
+        { cache: "no-store" }
+      );
 
-    if (error) {
-      console.error("Stock loading error:", error.message);
+      const json = await res.json();
+
+      if (!res.ok || typeof json?.count !== "number") {
+        setAvailableStock(null);
+        return;
+      }
+
+      setAvailableStock(json.count);
+    } catch (error) {
+      console.error("Stock loading error:", error);
       setAvailableStock(null);
-      return;
     }
-
-    setAvailableStock(data?.length ?? 0);
   }
 
   /*
    * Load user role and wallet balance.
    */
-  async function loadUserData() {
-    if (typeof window === "undefined") return;
-
-    const savedUser = localStorage.getItem("user");
-
-    if (!savedUser) {
-      return;
-    }
+  async function loadUserData(): Promise<boolean> {
+    if (typeof window === "undefined") return false;
 
     try {
-      const user = JSON.parse(savedUser);
-
-      setUserRole(user.role || "user");
-
-      if (
-        user.wallet_balance !== undefined &&
-        user.wallet_balance !== null
-      ) {
-        setWalletBalance(Number(user.wallet_balance));
-      } else if (user.balance !== undefined && user.balance !== null) {
-        setWalletBalance(Number(user.balance));
-      }
-
-      const identifier = user.username || user.email;
-
-      if (!identifier) {
-        return;
-      }
-
       const response = await fetch("/api/get-wallet", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          username: user.username || user.email,
-        }),
+        cache: "no-store",
       });
+
+      if (response.status === 401) {
+        // Session missing or expired: forget the stale display hint.
+        try {
+          localStorage.removeItem("user");
+        } catch {}
+
+        setUserRole("user");
+        setWalletBalance(0);
+        return false;
+      }
 
       const result = await response.json();
 
       if (result.success) {
+        setUserRole(result.role || "user");
         setWalletBalance(Number(result.balance));
+        return true;
       }
     } catch (error) {
       console.error("Error reading user data:", error);
     }
+
+    return false;
   }
 
   /*
@@ -328,23 +331,13 @@ export function ProductCard({ product, index }: ProductCardProps) {
       return;
     }
 
-    const savedUserRaw = localStorage.getItem("user");
+    const loggedIn = await loadUserData();
 
-    let currentUser: any = {};
-
-    try {
-      currentUser = JSON.parse(savedUserRaw || "{}");
-    } catch {
-      currentUser = {};
-    }
-
-    if (!currentUser?.username && !currentUser?.email) {
+    if (!loggedIn) {
       alert("Please login before purchasing.");
       window.location.href = "/login";
       return;
     }
-
-    await loadUserData();
 
     setIsPaymentModalOpen(true);
   };
@@ -355,16 +348,6 @@ export function ProductCard({ product, index }: ProductCardProps) {
   const handleWalletPayment = async () => {
     try {
       setIsProcessing(true);
-
-      const savedUserRaw = localStorage.getItem("user");
-
-      let currentUser: any = {};
-
-      try {
-        currentUser = JSON.parse(savedUserRaw || "{}");
-      } catch {
-        currentUser = {};
-      }
 
       const numericPrice = getNumericPrice();
 
@@ -384,36 +367,41 @@ export function ProductCard({ product, index }: ProductCardProps) {
         headers: {
           "Content-Type": "application/json",
         },
+        // The server decides who the buyer is and what the price is.
         body: JSON.stringify({
-          username:
-            currentUser.username || currentUser.email,
-
           product_name: product.name,
 
           duration: selectedPrice.duration,
-
-          amount: numericPrice,
         }),
       });
 
       const result = await response.json();
 
+      if (response.status === 401) {
+        alert("Your session has expired. Please login again.");
+        window.location.href = "/login";
+        return;
+      }
+
       if (!response.ok || !result.success) {
+        if (typeof result.newBalance === "number") {
+          setWalletBalance(result.newBalance);
+        }
+
         alert(result.error || "Wallet payment failed.");
         setIsProcessing(false);
         return;
       }
 
+      /*
+       * Update wallet balance locally.
+       */
       if (result.newBalance !== undefined) {
-        currentUser.wallet_balance = result.newBalance;
-
-        localStorage.setItem(
-          "user",
-          JSON.stringify(currentUser)
-        );
-
         setWalletBalance(result.newBalance);
 
+        /*
+         * Broadcast wallet update.
+         */
         window.dispatchEvent(
           new CustomEvent(WALLET_BALANCE_EVENT, {
             detail: {
@@ -423,11 +411,20 @@ export function ProductCard({ product, index }: ProductCardProps) {
         );
       }
 
+      /*
+       * Close payment modal.
+       */
       setIsPaymentModalOpen(false);
 
+      /*
+       * Show purchased key.
+       */
       setPurchasedKey(result.key);
       setShowKeyModal(true);
 
+      /*
+       * Auto copy key.
+       */
       if (result.key) {
         try {
           await navigator.clipboard.writeText(result.key);
@@ -437,6 +434,9 @@ export function ProductCard({ product, index }: ProductCardProps) {
         }
       }
 
+      /*
+       * Refresh stock after purchase.
+       */
       await loadStock();
     } catch (error) {
       console.error("Wallet Payment Error:", error);
@@ -453,36 +453,27 @@ export function ProductCard({ product, index }: ProductCardProps) {
     try {
       setIsProcessing(true);
 
-      const savedUserRaw = localStorage.getItem("user");
-
-      let currentUser: any = {};
-
-      try {
-        currentUser = JSON.parse(savedUserRaw || "{}");
-      } catch {
-        currentUser = {};
-      }
-
-      const finalPrice = getNumericPrice();
-
       const response = await fetch("/api/create-upi-order", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        // The server decides who the buyer is and what the price is.
         body: JSON.stringify({
-          username:
-            currentUser.username || currentUser.email,
-
           product_name: product.name,
 
           duration: selectedPrice.duration,
-
-          amount: String(finalPrice),
         }),
       });
 
       const result = await response.json();
+
+      if (response.status === 401) {
+        alert("Your session has expired. Please login again.");
+        setIsProcessing(false);
+        window.location.href = "/login";
+        return;
+      }
 
       if (!response.ok || !result.success) {
         alert(
