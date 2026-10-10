@@ -37,6 +37,7 @@ import { allProducts } from "@/lib/products";
 import type { Product, PriceTier } from "@/lib/products";
 import ProductManager from "@/components/admin/ProductManager";
 import VipPriceManager from "@/components/admin/VipPriceManager";
+import { useCatalogProducts } from "@/lib/useCatalogProducts";
 
 interface ManagedUser {
   id?: string | number;
@@ -226,6 +227,20 @@ export default function AdminPage() {
   const [amountInput, setAmountInput] = useState("");
   const [isSavingUser, setIsSavingUser] = useState(false);
 
+  // Use the current catalog for the quick-control tabs, while retaining legacy
+  // products until they are migrated. Catalog entries win when names match.
+  const { products: catalogProducts } = useCatalogProducts();
+  const adminProducts = useMemo(
+    () => (catalogProducts.length > 0 ? catalogProducts : allProducts),
+    [catalogProducts]
+  );
+
+  // Manual stock is only meaningful for local-fulfillment products.
+  const inventoryProducts = useMemo(
+    () => adminProducts.filter((product) => product.fulfillmentType !== "API"),
+    [adminProducts]
+  );
+
   useEffect(() => {
     checkAdmin();
   }, []);
@@ -396,7 +411,7 @@ export default function AdminPage() {
   function handleSelectPriceProduct(name: string) {
     setPriceError(null);
     setPriceSavedAt(null);
-    const found = allProducts.find((p) => p.name === name) || null;
+    const found = adminProducts.find((p) => p.name === name) || null;
     setPriceProduct(found);
     if (!found) {
       setPriceDrafts({});
@@ -444,7 +459,7 @@ export default function AdminPage() {
   // ---- status ----
 
   async function handleSetProductStatus(productName: string, status: ProductStatus) {
-    const current = statusOverrides[productName] ?? allProducts.find((p) => p.name === productName)?.status;
+    const current = statusOverrides[productName] ?? adminProducts.find((p) => p.name === productName)?.status;
     if (current === status) return; // already set, nothing to save
 
     setSavingStatusFor(productName);
@@ -479,7 +494,7 @@ export default function AdminPage() {
   // ---- derived data ----
 
   const stockMatrix = useMemo(() => {
-    return allProducts.map((product) => ({
+    return inventoryProducts.map((product) => ({
       id: product.id,
       name: product.name,
       rows: product.prices.map((tier) => ({
@@ -489,7 +504,7 @@ export default function AdminPage() {
         ).length,
       })),
     }));
-  }, [keys]);
+  }, [keys, inventoryProducts]);
 
   const lowStockAlerts = useMemo(() => {
     const threshold = 3;
@@ -511,12 +526,12 @@ export default function AdminPage() {
 
   const todayRevenue = useMemo(() => {
     return todayPurchases.reduce((sum, p) => {
-      const product = allProducts.find((x) => x.name === p.product_name);
+      const product = adminProducts.find((x) => x.name === p.product_name);
       const tier = product?.prices.find((t) => t.duration === p.duration);
       const resolved = resolvePrice(priceOverrides, p.product_name, p.duration, tier);
       return sum + resolved.priceINR;
     }, 0);
-  }, [todayPurchases, priceOverrides]);
+  }, [todayPurchases, priceOverrides, adminProducts]);
 
   // Filters the Stock Keys list by product name, duration, or key code.
   const filteredKeys = useMemo(() => {
@@ -761,14 +776,14 @@ export default function AdminPage() {
                         <select
                           value={selectedProduct?.name || ""}
                           onChange={(e) => {
-                            const found = allProducts.find((p) => p.name === e.target.value) || null;
+                            const found = inventoryProducts.find((p) => p.name === e.target.value) || null;
                             setSelectedProduct(found);
                             setSelectedDuration("");
                           }}
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-3.5 pr-9 text-xs text-slate-100 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all appearance-none cursor-pointer"
                         >
                           <option value="">Choose product…</option>
-                          {allProducts.map((p) => (
+                          {inventoryProducts.map((p) => (
                             <option key={p.id} value={p.name}>{p.name}</option>
                           ))}
                         </select>
@@ -905,7 +920,7 @@ export default function AdminPage() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-3.5 pr-9 text-xs text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all appearance-none cursor-pointer"
                   >
                     <option value="">Choose product…</option>
-                    {allProducts.map((p) => (
+                    {adminProducts.map((p) => (
                       <option key={p.id} value={p.name}>{p.name}</option>
                     ))}
                   </select>
@@ -1023,7 +1038,7 @@ export default function AdminPage() {
             )}
 
             <div className="space-y-2 max-h-[560px] overflow-y-auto custom-scrollbar pr-1">
-              {allProducts.map((product) => {
+              {adminProducts.map((product) => {
                 const effectiveStatus: ProductStatus = statusOverrides[product.name] ?? product.status;
                 const isSaving = savingStatusFor === product.name;
 

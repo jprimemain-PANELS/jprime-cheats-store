@@ -22,6 +22,7 @@ export function useCatalogProducts(): {
     let cancelled = false;
 
     async function load() {
+      setLoading(true);
       try {
         const res = await fetch("/api/catalog", { cache: "no-store" });
         if (!res.ok) throw new Error(`Catalog request failed (${res.status})`);
@@ -48,10 +49,16 @@ export function useCatalogProducts(): {
       }
     }
 
-    load();
+    const refreshCatalog = () => {
+      void load();
+    };
+
+    void load();
+    window.addEventListener("jprime-catalog-updated", refreshCatalog);
 
     return () => {
       cancelled = true;
+      window.removeEventListener("jprime-catalog-updated", refreshCatalog);
     };
   }, []);
 

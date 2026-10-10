@@ -52,6 +52,8 @@ interface CatalogRow {
   data: Product;
 }
 
+const STATUS_ROW = "__status__";
+
 const emptyProduct: Product = {
   id: "",
   name: "",
@@ -158,25 +160,65 @@ export default function ProductManager() {
   }, []);
 
   async function loadProducts() {
-  setLoading(true);
+    setLoading(true);
 
-  try {
-    const result = await adminCatalogRequest("/api/admin/catalog");
+    try {
+      const result = await adminCatalogRequest("/api/admin/catalog");
+      const rows = result.products || [];
 
-    const rows = result.products || [];
+      // The storefront still reads immediate price/status overrides from product_prices.
+      // Merge those values into the editor so Product Manager and quick-control tabs agree.
+      const { data: priceRows, error: priceRowsError } = await supabase
+        .from("product_prices")
+        .select("product_name, duration, price_inr, reseller_price");
 
-    setProducts(
-      rows
-        .map((row: any) => normalizeProduct(row.data))
-        .filter(Boolean)
-    );
-  } catch (error: any) {
-    console.error(error);
-    alert("Failed to load products: " + (error?.message || "Unknown error"));
-  } finally {
-    setLoading(false);
+      if (priceRowsError) {
+        console.warn("Could not load live price/status overrides:", priceRowsError.message);
+      }
+
+      const pricesByKey = new Map<string, { priceINR: number; resellerPrice: number | null }>();
+      const statusesByName = new Map<string, "ONLINE" | "MAINTENANCE">();
+
+      for (const row of priceRows || []) {
+        if (row.duration === STATUS_ROW) {
+          statusesByName.set(
+            row.product_name,
+            Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE"
+          );
+          continue;
+        }
+
+        pricesByKey.set(`${row.product_name}::${row.duration}`, {
+          priceINR: Number(row.price_inr),
+          resellerPrice: row.reseller_price == null ? null : Number(row.reseller_price),
+        });
+      }
+
+      const mergedProducts = rows.map((row: any) => {
+        const product = normalizeProduct(row.data);
+        return {
+          ...product,
+          status: statusesByName.get(product.name) ?? product.status,
+          prices: product.prices.map((tier) => {
+            const override = pricesByKey.get(`${product.name}::${tier.duration}`);
+            if (!override || !Number.isFinite(override.priceINR)) return tier;
+            return {
+              ...tier,
+              priceINR: String(override.priceINR),
+              resellerPrice: override.resellerPrice == null ? "" : String(override.resellerPrice),
+            };
+          }),
+        } as Product;
+      });
+
+      setProducts(mergedProducts);
+    } catch (error: any) {
+      console.error(error);
+      alert("Failed to load products: " + (error?.message || "Unknown error"));
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   function newProduct() {
     setSelected({
@@ -311,8 +353,26 @@ export default function ProductManager() {
       }
     }
 
-    alert("Product saved successfully.");
+    const { error: statusSyncError } = await supabase
+      .from("product_prices")
+      .upsert(
+        {
+          product_name: cleaned.name,
+          duration: STATUS_ROW,
+          price_inr: cleaned.status === "MAINTENANCE" ? 1 : 0,
+          reseller_price: null,
+        },
+        { onConflict: "product_name,duration" }
+      );
 
+    if (statusSyncError) {
+      console.error("Product saved but storefront status sync failed:", statusSyncError.message);
+      alert("Product saved, but the live status could not be synchronized. Check the database error before relying on the status change.");
+    } else {
+      alert("Product saved successfully.");
+    }
+
+    window.dispatchEvent(new Event("jprime-catalog-updated"));
     setShowEditor(false);
     setSelected(null);
 
@@ -339,6 +399,7 @@ export default function ProductManager() {
       setShowEditor(false);
     }
 
+    window.dispatchEvent(new Event("jprime-catalog-updated"));
     await loadProducts();
   } catch (error: any) {
     alert("Delete failed: " + (error?.message || "Unknown error"));
@@ -418,6 +479,7 @@ export default function ProductManager() {
       `${rows.length} existing products imported successfully.`
     );
 
+    window.dispatchEvent(new Event("jprime-catalog-updated"));
     await loadProducts();
   }
 
