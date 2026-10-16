@@ -47,8 +47,26 @@ async function adminRequest(path: string, options: RequestInit = {}) {
   return data;
 }
 
+function buildCommonResellerLookup(priceRows: unknown[]): Record<string, number> {
+  const byKey: Record<string, number> = {};
+  for (const row of priceRows) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as { product_name?: string; duration?: string; reseller_price?: unknown };
+    if (r.duration === "__status__") continue;
+    const name = String(r.product_name || "");
+    const duration = String(r.duration || "");
+    if (!name || !duration) continue;
+    if (r.reseller_price == null) continue;
+    const value = Number(r.reseller_price);
+    if (!Number.isFinite(value)) continue;
+    byKey[`${name}::${duration}`] = value;
+  }
+  return byKey;
+}
+
 export default function VipPriceManager({ resellers }: { resellers: ResellerOption[] }) {
   const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [commonResellerByKey, setCommonResellerByKey] = useState<Record<string, number>>({});
   const [loadingCatalog, setLoadingCatalog] = useState(true);
 
   const [username, setUsername] = useState("");
@@ -68,8 +86,12 @@ export default function VipPriceManager({ resellers }: { resellers: ResellerOpti
 
     async function loadCatalog() {
       try {
-        const result = await adminRequest("/api/admin/catalog");
-        const list: CatalogProduct[] = (result.products || [])
+        const [catalogResult, adminResult] = await Promise.all([
+          adminRequest("/api/admin/catalog"),
+          adminRequest("/api/admin/data"),
+        ]);
+        const priceRows: unknown[] = Array.isArray(adminResult.priceRows) ? adminResult.priceRows : [];
+        const list: CatalogProduct[] = (catalogResult.products || [])
           .map((row: any) => {
             const d = row?.data || {};
             return {
@@ -86,7 +108,10 @@ export default function VipPriceManager({ resellers }: { resellers: ResellerOpti
           })
           .filter((p: CatalogProduct) => p.name && p.prices.length > 0);
 
-        if (!cancelled) setProducts(list);
+        if (!cancelled) {
+          setProducts(list);
+          setCommonResellerByKey(buildCommonResellerLookup(priceRows));
+        }
       } catch (err: any) {
         if (!cancelled) setError(err?.message || "Failed to load products.");
       } finally {
@@ -348,28 +373,32 @@ export default function VipPriceManager({ resellers }: { resellers: ResellerOpti
                 <span className="text-right">VIP ₹</span>
               </div>
 
-              {selectedProduct.prices.map((tier) => (
-                <div
-                  key={tier.duration}
-                  className="grid grid-cols-[1fr_120px_120px] gap-3 items-center bg-slate-950/50 border border-slate-800 rounded-lg px-3 py-2.5"
-                >
-                  <span className="text-xs font-medium text-slate-300 min-w-0 truncate">{tier.duration}</span>
-                  <span className="text-xs text-slate-500 text-right tabular-nums">
-                    {tier.resellerPrice ? `₹${tier.resellerPrice}` : "—"}
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    placeholder="common"
-                    value={drafts[tier.duration] ?? ""}
-                    onChange={(e) =>
-                      setDrafts((prev) => ({ ...prev, [tier.duration]: e.target.value }))
-                    }
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-2 text-xs text-slate-100 text-right outline-none focus:border-amber-500 placeholder-slate-600"
-                  />
-                </div>
-              ))}
+              {selectedProduct.prices.map((tier) => {
+                const commonKey = `${selectedProduct.name}::${tier.duration}`;
+                const commonPrice = commonResellerByKey[commonKey];
+                return (
+                  <div
+                    key={tier.duration}
+                    className="grid grid-cols-[1fr_120px_120px] gap-3 items-center bg-slate-950/50 border border-slate-800 rounded-lg px-3 py-2.5"
+                  >
+                    <span className="text-xs font-medium text-slate-300 min-w-0 truncate">{tier.duration}</span>
+                    <span className="text-xs text-slate-500 text-right tabular-nums">
+                      {commonPrice !== undefined ? `₹${commonPrice}` : "—"}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="common"
+                      value={drafts[tier.duration] ?? ""}
+                      onChange={(e) =>
+                        setDrafts((prev) => ({ ...prev, [tier.duration]: e.target.value }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-2 text-xs text-slate-100 text-right outline-none focus:border-amber-500 placeholder-slate-600"
+                    />
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

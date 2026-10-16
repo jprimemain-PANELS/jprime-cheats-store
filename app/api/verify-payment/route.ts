@@ -446,6 +446,9 @@ export async function POST(request: NextRequest) {
     const generatedKey = delivery.key.trim();
 
     // 8. Record the exact generated key before finalizing the order.
+
+    const purchasedAt = new Date().toISOString();
+
     const { error: historyError } = await supabase
       .from("purchase_history")
       .insert([
@@ -454,9 +457,12 @@ export async function POST(request: NextRequest) {
           product_name: order.product_name,
           duration: order.duration,
           key_code: generatedKey,
-          created_at: new Date().toISOString(),
+          price_paid: String(order.amount),
+          purchased_at: purchasedAt,
+          created_at: purchasedAt,
         },
       ]);
+    
 
     if (historyError) {
       // Keep the order in "processing" to block automatic re-purchasing.

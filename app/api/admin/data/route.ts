@@ -150,10 +150,20 @@ export async function POST(request: NextRequest) {
       const { error } = await supabaseAdmin
         .from("product_prices")
         .upsert(clean, { onConflict: "product_name,duration" });
-      if (error) {
-        console.error("SAVE PRICES ERROR:", error.message);
-        return fail("Could not save prices.", 500);
-      }
+        if (error) {
+          console.error("SAVE PRICES ERROR:", error);
+        
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Could not save prices: ${error.message}`,
+              code: error.code,
+              details: error.details,
+              hint: error.hint,
+            },
+            { status: 500, headers: NO_STORE }
+          );
+        }
       return NextResponse.json({ success: true }, { headers: NO_STORE });
     }
 

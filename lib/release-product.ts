@@ -195,26 +195,31 @@ async function purchaseFromSeller1(
         }
       );
 
-    const responseText =
+    const rawResponseText =
       await response.text();
+
+    // Handle a possible UTF-8 BOM and harmless surrounding whitespace.
+    const responseText = rawResponseText
+      .replace(/^\uFEFF/, "")
+      .trim();
 
     let result: any;
 
     try {
-      result =
-        JSON.parse(
-          responseText
-        );
+      result = JSON.parse(responseText);
     } catch {
-      console.error(
-        "SELLER 1 INVALID RESPONSE:",
-        responseText
-      );
+      // Never log the raw supplier body: it may contain a generated key.
+      console.error("SELLER 1 NON-JSON RESPONSE:", {
+        httpStatus: response.status,
+        ok: response.ok,
+        contentType:
+          response.headers.get("content-type") || "(missing)",
+        bodyLength: rawResponseText.length,
+      });
 
       return {
         success: false,
-        error:
-          "Seller 1 returned invalid data.",
+        error: "Seller 1 returned invalid data.",
       };
     }
 
@@ -246,10 +251,17 @@ async function purchaseFromSeller1(
       result?.access_key;
 
     if (!key) {
-      console.error(
-        "SELLER 1 SUCCESS BUT NO KEY:",
-        result
-      );
+      console.error("SELLER 1 SUCCESS BUT NO KEY:", {
+        httpStatus: response.status,
+        topLevelFields:
+          result && typeof result === "object"
+            ? Object.keys(result).slice(0, 20)
+            : [],
+        dataFields:
+          result?.data && typeof result.data === "object"
+            ? Object.keys(result.data).slice(0, 20)
+            : [],
+      });
 
       return {
         success: false,
@@ -343,26 +355,31 @@ async function purchaseFromSeller2(
         }
       );
 
-    const responseText =
+    const rawResponseText =
       await response.text();
+
+    // Handle a possible UTF-8 BOM and harmless surrounding whitespace.
+    const responseText = rawResponseText
+      .replace(/^\uFEFF/, "")
+      .trim();
 
     let result: any;
 
     try {
-      result =
-        JSON.parse(
-          responseText
-        );
+      result = JSON.parse(responseText);
     } catch {
-      console.error(
-        "SELLER 2 INVALID RESPONSE:",
-        responseText
-      );
+      // Log diagnostic metadata only; never print a supplier body/key.
+      console.error("SELLER 2 NON-JSON RESPONSE:", {
+        httpStatus: response.status,
+        ok: response.ok,
+        contentType:
+          response.headers.get("content-type") || "(missing)",
+        bodyLength: rawResponseText.length,
+      });
 
       return {
         success: false,
-        error:
-          "Seller 2 returned invalid data.",
+        error: "Seller 2 returned invalid data.",
       };
     }
 
@@ -411,10 +428,19 @@ async function purchaseFromSeller2(
       result?.access_key;
 
     if (!key) {
-      console.error(
-        "SELLER 2 SUCCESS BUT NO KEY:",
-        result
-      );
+      console.error("SELLER 2 SUCCESS BUT NO KEY:", {
+        httpStatus: response.status,
+        topLevelFields:
+          result && typeof result === "object"
+            ? Object.keys(result).slice(0, 20)
+            : [],
+        dataFields:
+          result?.data && typeof result.data === "object"
+            ? Object.keys(result.data).slice(0, 20)
+            : [],
+        keysIsArray: Array.isArray(result?.keys),
+        dataKeysIsArray: Array.isArray(result?.data?.keys),
+      });
 
       return {
         success: false,

@@ -106,15 +106,23 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Purchase history (key is recorded so the user can always recover it).
-    const { error: historyError } = await supabaseAdmin.from("purchase_history").insert([
-      {
-        username,
-        product_name: productName,
-        duration,
-        key_code: key,
-        created_at: new Date().toISOString(),
-      },
-    ]);
+
+    const purchasedAt = new Date().toISOString();
+
+    const { error: historyError } = await supabaseAdmin
+      .from("purchase_history")
+      .insert([
+        {
+          username,
+          product_name: productName,
+          duration,
+          key_code: key,
+          price_paid: String(quote.price),
+          purchased_at: purchasedAt,
+          created_at: purchasedAt,
+        },
+      ]);
+    
     if (historyError) {
       console.error("PURCHASE HISTORY INSERT FAILED:", historyError.message);
     }

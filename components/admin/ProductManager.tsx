@@ -323,7 +323,7 @@ export default function ProductManager() {
           reseller_price: reseller !== null && Number.isNaN(reseller) ? null : reseller,
         };
       })
-      .filter((r: any) => !Number.isNaN(r.price) && r.price > 0);
+      .filter((r: any) => !Number.isNaN(r.price_inr) && r.price_inr > 0);
 
     if (priceRows.length > 0) {
       try {
