@@ -95,25 +95,47 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, count: count ?? 0 }, { headers: NO_STORE });
     }
 
+
     if (action === "add_stock") {
       const productName = String(body.product_name || "").trim();
       const duration = String(body.duration || "").trim();
+    
       const keys: string[] = (Array.isArray(body.keys) ? body.keys : [])
         .map((k: unknown) => String(k ?? "").trim())
         .filter(Boolean)
         .slice(0, 2000);
-
-      if (!productName || !duration || keys.length === 0) return fail("Missing product, duration or keys.");
-
-      const { error } = await supabaseAdmin.from("stock_keys").insert(
-        keys.map((key_code) => ({ product_name: productName, duration, key_code, is_used: false }))
-      );
+    
+      if (!productName || !duration || keys.length === 0) {
+        return fail("Missing product, duration or keys.");
+      }
+    
+      const rows = keys.map((key_code) => ({
+        id: crypto.randomUUID(),
+        product_name: productName,
+        product_slug: null,
+        duration,
+        key_code,
+        license_key: key_code,
+        is_used: "false",
+        used_by: null,
+        created_at: new Date().toISOString(),
+      }));
+    
+      const { error } = await supabaseAdmin
+        .from("stock_keys")
+        .insert(rows);
+    
       if (error) {
         console.error("ADD STOCK ERROR:", error.message);
-        return fail("Could not add stock.", 500);
+        return fail(`Could not add stock: ${error.message}`, 500);
       }
-      return NextResponse.json({ success: true }, { headers: NO_STORE });
+    
+      return NextResponse.json(
+        { success: true, added: rows.length },
+        { headers: NO_STORE }
+      );
     }
+    
 
     if (action === "delete_stock") {
       const id = Number(body.id);
