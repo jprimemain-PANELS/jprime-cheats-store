@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       const { error: upgradeError } = await supabaseAdmin
         .from("users")
         .update({ password: hashed })
-        .eq("username", user.username)
+        .eq("id", String(user.id))
         .eq("password", storedPassword);
 
       if (upgradeError) {
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       },
       { headers: NO_STORE }
     );
-    return attachSessionCookie(response, String(user.username), storedPassword);
+    return attachSessionCookie(response, String(user.username), storedPassword, String(user.id));
   } catch (error) {
     console.error("LOGIN ERROR:", error instanceof Error ? error.message : "unknown");
     return NextResponse.json(

@@ -56,6 +56,9 @@ export function ProductCard({ product, index }: ProductCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [availableStock, setAvailableStock] = useState<number | null>(null);
   const [userRole, setUserRole] = useState("user");
+  // Do not display any tier price until the authenticated role has been resolved.
+  const [roleReady, setRoleReady] = useState(false);
+  const [pricingIdentity, setPricingIdentity] = useState("anonymous");
   const [walletBalance, setWalletBalance] = useState<number>(0);
 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -68,7 +71,13 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
   // Per-reseller (VIP) custom prices. Empty for everyone except resellers
   // who have custom prices saved by the admin.
-  const vipPrices = useVipPrices(userRole === "reseller");
+  const vipPriceState = useVipPrices(
+    roleReady && userRole === "reseller",
+    pricingIdentity
+  );
+  const vipPrices = vipPriceState.prices;
+  // VIP/custom reseller pricing must finish loading before any price is visible.
+  const pricingReady = roleReady && (userRole !== "reseller" || vipPriceState.loaded);
 
   /*
    * Merge live prices from Supabase with products.ts prices.
@@ -104,7 +113,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
       return result;
     });
-  }, [product.name, product.prices, liveOverrides, vipPrices]);
+  }, [product.name, product.prices, liveOverrides, vipPrices, userRole]);
 
   const selectedPrice: PriceTier =
     effectivePrices.find(
@@ -112,12 +121,16 @@ export function ProductCard({ product, index }: ProductCardProps) {
     ) ?? effectivePrices[0];
 
   /*
-   * Load stock and user information.
+   * Load stock whenever the selected duration changes. Role is loaded separately
+   * below because wallet reads can fail independently of authentication.
    */
   useEffect(() => {
     loadStock();
-    loadUserData();
   }, [selectedDuration]);
+
+  useEffect(() => {
+    loadUserData();
+  }, []);
 
   /*
    * Load live prices and live status (both come from product_prices).
@@ -254,43 +267,72 @@ export function ProductCard({ product, index }: ProductCardProps) {
   }
 
   /*
-   * Load user role and wallet balance.
+   * Load the authenticated role independently from the wallet.
+   *
+   * IMPORTANT: /api/get-wallet can return 500 when the wallet table has duplicate
+   * rows. That must not make an authenticated reseller silently see user pricing.
+   * /api/auth/me resolves the current account/role from the verified session and
+   * database user ID; wallet balance is a separate best-effort request.
    */
   async function loadUserData(): Promise<boolean> {
     if (typeof window === "undefined") return false;
 
-    try {
-      const response = await fetch("/api/get-wallet", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-      });
+    const roleTask = (async (): Promise<boolean> => {
+      try {
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        const result = await response.json().catch(() => null);
 
-      if (response.status === 401) {
-        // Session missing or expired: forget the stale display hint.
-        try {
-          localStorage.removeItem("user");
-        } catch {}
+        if (response.ok && result?.success && result?.user) {
+          const role = String(result.user.role || "user").trim().toLowerCase();
+          setUserRole(role === "reseller" || role === "admin" ? role : "user");
+          setPricingIdentity(String(result.user.id ?? result.user.username ?? "authenticated-user"));
+          setRoleReady(true);
+          return true;
+        }
 
-        setUserRole("user");
-        setWalletBalance(0);
+        // No valid authenticated user: show ordinary public pricing.
+        if (response.status === 401 || (response.ok && result?.user === null)) {
+          setUserRole("user");
+          setPricingIdentity("anonymous");
+          setRoleReady(true);
+          return false;
+        }
+
+        console.error("Could not load authenticated user role.");
+        return false;
+      } catch (error) {
+        console.error("Error reading authenticated user role:", error);
         return false;
       }
+    })();
 
-      const result = await response.json();
+    const walletTask = (async (): Promise<void> => {
+      try {
+        const response = await fetch("/api/get-wallet", {
+          method: "GET",
+          cache: "no-store",
+        });
 
-      if (result.success) {
-        setUserRole(result.role || "user");
-        setWalletBalance(Number(result.balance));
-        return true;
+        if (response.status === 401) {
+          setWalletBalance(0);
+          return;
+        }
+
+        const result = await response.json().catch(() => null);
+        if (response.ok && result?.success) {
+          const balance = Number(result.balance);
+          setWalletBalance(Number.isFinite(balance) ? balance : 0);
+        } else {
+          // Keep role/pricing loaded from /api/auth/me even if the wallet fails.
+          console.error("Wallet balance unavailable; role pricing remains active.");
+        }
+      } catch (error) {
+        console.error("Error reading wallet balance:", error);
       }
-    } catch (error) {
-      console.error("Error reading user data:", error);
-    }
+    })();
 
-    return false;
+    const [roleLoaded] = await Promise.all([roleTask, walletTask]);
+    return roleLoaded;
   }
 
   /*
@@ -311,11 +353,13 @@ export function ProductCard({ product, index }: ProductCardProps) {
     ) || 0;
   };
 
-  const formattedPrice = selectedPrice
-    ? userRole === "reseller"
-      ? selectedPrice.resellerPrice || selectedPrice.priceINR
-      : selectedPrice.priceINR
-    : "₹0";
+  const formattedPrice = !pricingReady
+    ? "Loading price…"
+    : selectedPrice
+      ? userRole === "reseller"
+        ? selectedPrice.resellerPrice || selectedPrice.priceINR
+        : selectedPrice.priceINR
+      : "₹0";
 
   /*
    * Buy button.
@@ -652,10 +696,17 @@ export function ProductCard({ product, index }: ProductCardProps) {
                     </span>
 
                     <div className="mt-1 flex items-baseline gap-1.5">
-                      <span className="text-base font-extrabold text-white">
-                        {userRole === "reseller"
-                          ? price.resellerPrice || price.priceINR
-                          : price.priceINR}
+                      <span className="text-base font-extrabold text-white" aria-live="polite">
+                        {pricingReady ? (
+                          userRole === "reseller"
+                            ? price.resellerPrice || price.priceINR
+                            : price.priceINR
+                        ) : (
+                          <span
+                            aria-label="Loading account price"
+                            className="inline-block h-5 w-14 animate-pulse rounded bg-white/10 align-middle"
+                          />
+                        )}
                       </span>
                     </div>
                   </button>
@@ -668,6 +719,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
           <div className="flex gap-2.5 pt-2">
             <Button
               disabled={
+                !pricingReady ||
                 effectiveStatus === "MAINTENANCE" ||
                 (product.fulfillmentType !== "API" && availableStock === 0)
               }

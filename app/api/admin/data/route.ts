@@ -95,47 +95,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, count: count ?? 0 }, { headers: NO_STORE });
     }
 
-
     if (action === "add_stock") {
       const productName = String(body.product_name || "").trim();
       const duration = String(body.duration || "").trim();
-    
       const keys: string[] = (Array.isArray(body.keys) ? body.keys : [])
         .map((k: unknown) => String(k ?? "").trim())
         .filter(Boolean)
         .slice(0, 2000);
-    
-      if (!productName || !duration || keys.length === 0) {
-        return fail("Missing product, duration or keys.");
-      }
-    
-      const rows = keys.map((key_code) => ({
-        id: crypto.randomUUID(),
-        product_name: productName,
-        product_slug: null,
-        duration,
-        key_code,
-        license_key: key_code,
-        is_used: "false",
-        used_by: null,
-        created_at: new Date().toISOString(),
-      }));
-    
-      const { error } = await supabaseAdmin
-        .from("stock_keys")
-        .insert(rows);
-    
+
+      if (!productName || !duration || keys.length === 0) return fail("Missing product, duration or keys.");
+
+      const { error } = await supabaseAdmin.from("stock_keys").insert(
+        keys.map((key_code) => ({ product_name: productName, duration, key_code, is_used: false }))
+      );
       if (error) {
         console.error("ADD STOCK ERROR:", error.message);
-        return fail(`Could not add stock: ${error.message}`, 500);
+        return fail("Could not add stock.", 500);
       }
-    
-      return NextResponse.json(
-        { success: true, added: rows.length },
-        { headers: NO_STORE }
-      );
+      return NextResponse.json({ success: true }, { headers: NO_STORE });
     }
-    
 
     if (action === "delete_stock") {
       const id = Number(body.id);
@@ -172,20 +150,10 @@ export async function POST(request: NextRequest) {
       const { error } = await supabaseAdmin
         .from("product_prices")
         .upsert(clean, { onConflict: "product_name,duration" });
-        if (error) {
-          console.error("SAVE PRICES ERROR:", error);
-        
-          return NextResponse.json(
-            {
-              success: false,
-              error: `Could not save prices: ${error.message}`,
-              code: error.code,
-              details: error.details,
-              hint: error.hint,
-            },
-            { status: 500, headers: NO_STORE }
-          );
-        }
+      if (error) {
+        console.error("SAVE PRICES ERROR:", error.message);
+        return fail("Could not save prices.", 500);
+      }
       return NextResponse.json({ success: true }, { headers: NO_STORE });
     }
 
@@ -209,22 +177,24 @@ export async function POST(request: NextRequest) {
 
     /* ---------- users / wallets ---------- */
     if (action === "update_user") {
-      const username = String(body.username || "").trim();
-      if (!username) return fail("Missing username.");
+      const userId = String(body.userId ?? "").trim();
+      if (!userId) return fail("Missing user ID. Refresh the admin page and try again.");
 
       const { data: target, error: targetError } = await supabaseAdmin
         .from("users")
-        .select("username, role")
-        .eq("username", username)
+        .select("id, username, role")
+        .eq("id", userId)
         .maybeSingle();
       if (targetError || !target) return fail("User not found.", 404);
+      const username = String(target.username ?? "");
+      if (!username) return fail("This account has no username and cannot have a wallet.");
 
       if (body.role !== undefined && String(body.role) !== target.role) {
         const role = String(body.role);
         if (!ROLES.includes(role)) return fail("Invalid role.");
-        if (username === auth.user.username) return fail("You cannot change your own role.");
+        if (String(target.id) === String(auth.user.id)) return fail("You cannot change your own role.");
 
-        const { error } = await supabaseAdmin.from("users").update({ role }).eq("username", username);
+        const { error } = await supabaseAdmin.from("users").update({ role }).eq("id", userId);
         if (error) return fail("Could not update role.", 500);
       }
 

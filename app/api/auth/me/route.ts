@@ -8,7 +8,7 @@ export async function GET() {
   const user = await getSessionUser();
   return NextResponse.json(
     user
-      ? { success: true, user: { username: user.username, email: user.email, role: user.role } }
+      ? { success: true, user: { id: user.id, username: user.username, email: user.email, role: user.role } }
       : { success: false, user: null },
     { headers: { "Cache-Control": "no-store" } }
   );

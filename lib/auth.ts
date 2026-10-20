@@ -23,6 +23,10 @@ export type SessionUser = {
   role: string;
 };
 
+export function normalizeRole(role: unknown): string {
+  return String(role ?? "user").trim().toLowerCase();
+}
+
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -110,10 +114,11 @@ export function verifyPassword(plain: string, stored: string): boolean {
 /* session tokens                                                      */
 /* ------------------------------------------------------------------ */
 
-type TokenPayload = { u: string; pf: string; exp: number };
+type TokenPayload = { i?: string; u: string; pf: string; exp: number };
 
-export function createSessionToken(username: string, storedPassword: string): string {
+export function createSessionToken(username: string, storedPassword: string, userId: string | number): string {
   const payload: TokenPayload = {
+    i: String(userId),
     u: username,
     pf: passwordFingerprint(storedPassword),
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
@@ -147,9 +152,10 @@ function parseToken(token: string): TokenPayload | null {
 export function attachSessionCookie(
   response: NextResponse,
   username: string,
-  storedPassword: string
+  storedPassword: string,
+  userId: string | number
 ): NextResponse {
-  response.cookies.set(SESSION_COOKIE, createSessionToken(username, storedPassword), {
+  response.cookies.set(SESSION_COOKIE, createSessionToken(username, storedPassword, userId), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -191,21 +197,34 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   }
   if (!payload) return null;
 
-  const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("*")
-    .eq("username", payload.u)
-    .limit(2);
-
-  if (error || !data || data.length !== 1) return null;
-
-  const row: any = data[0];
+  // New sessions contain the immutable users.id so duplicate usernames cannot
+  // make a valid account ambiguous. Legacy sessions are accepted only when the
+  // username resolves to exactly one user; otherwise the user must log in again.
+  let row: any = null;
+  if (payload.i) {
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .eq("id", payload.i)
+      .maybeSingle();
+    if (error || !data) return null;
+    row = data;
+    if (String(row.username ?? "") !== payload.u) return null;
+  } else {
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .eq("username", payload.u)
+      .limit(2);
+    if (error || !data || data.length !== 1) return null;
+    row = data[0];
+  }
   if (!safeEqual(passwordFingerprint(String(row.password ?? "")), payload.pf)) {
     return null;
   }
 
   return {
-    id: row.id ?? null,
+    id: row.id == null ? null : String(row.id),
     username: String(row.username),
     email: row.email ? String(row.email) : null,
     role: String(row.role || "user"),

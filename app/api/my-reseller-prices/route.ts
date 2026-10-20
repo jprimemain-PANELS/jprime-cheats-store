@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, normalizeRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +15,16 @@ async function handle() {
   try {
     const user = await getSessionUser();
 
-    if (!user || user.role !== "reseller") {
+    if (!user || normalizeRole(user.role) !== "reseller") {
       return NextResponse.json({ prices: [] }, { headers: NO_STORE });
     }
+
+    const username = String(user.username).trim();
 
     const { data, error } = await supabaseAdmin
       .from("reseller_price_overrides")
       .select("product_name, duration, reseller_price")
-      .eq("username", user.username);
+      .eq("username", username);
 
     if (error) {
       console.error("MY RESELLER PRICES ERROR:", error.message);
@@ -32,8 +34,8 @@ async function handle() {
     return NextResponse.json(
       {
         prices: (data || []).map((r: any) => ({
-          product_name: r.product_name,
-          duration: r.duration,
+          product_name: String(r.product_name ?? "").trim(),
+          duration: String(r.duration ?? "").trim(),
           reseller_price: Number(r.reseller_price),
         })),
       },

@@ -567,8 +567,10 @@ export default function AdminPage() {
     try {
       const numericAmount = parseFloat(amountInput);
 
+      if (selectedUser.id == null) throw new Error("This user record has no ID. Refresh the admin page and try again.");
       await adminPost({
         action: "update_user",
+        userId: String(selectedUser.id),
         username: selectedUser.username,
         role: editRole,
         balanceAction,

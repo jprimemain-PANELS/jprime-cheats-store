@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allProducts } from "@/lib/products";
+import { normalizeRole } from "@/lib/auth";
 
 /**
  * Trusted, server-side price + status resolution.
@@ -67,6 +68,7 @@ export async function getTrustedQuote(params: {
 }): Promise<TrustedQuote> {
   const productName = String(params.productName || "").trim();
   const duration = String(params.duration || "").trim();
+  const role = normalizeRole(params.role);
 
   if (!productName || !duration || duration === STATUS_ROW) {
     return { ok: false, error: "Invalid product.", httpStatus: 400 };
@@ -97,7 +99,7 @@ export async function getTrustedQuote(params: {
       status = Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE";
       continue;
     }
-    if (row.duration === duration) {
+    if (String(row.duration ?? "").trim() === duration) {
       const p = Number(row.price_inr);
       if (Number.isFinite(p)) retail = Math.round(p);
       if (row.reseller_price != null && Number.isFinite(Number(row.reseller_price))) {
@@ -108,7 +110,7 @@ export async function getTrustedQuote(params: {
 
   let price = retail;
 
-  if (params.role === "reseller") {
+  if (role === "reseller") {
     price = reseller ?? retail;
 
     const { data: vip, error: vipError } = await supabaseAdmin

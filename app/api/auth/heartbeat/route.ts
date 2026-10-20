@@ -23,10 +23,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (user.id == null) {
+    return NextResponse.json(
+      { success: false, error: "Session could not be refreshed. Please log in again." },
+      { status: 401, headers: NO_STORE }
+    );
+  }
+
   const { data, error } = await supabaseAdmin
     .from("users")
     .select("password")
-    .eq("username", user.username)
+    .eq("id", String(user.id))
     .maybeSingle();
 
   if (error || !data || typeof data.password !== "string") {
@@ -37,5 +44,5 @@ export async function POST(request: NextRequest) {
   }
 
   const response = NextResponse.json({ success: true }, { headers: NO_STORE });
-  return attachSessionCookie(response, user.username, data.password);
+  return attachSessionCookie(response, user.username, data.password, String(user.id));
 }

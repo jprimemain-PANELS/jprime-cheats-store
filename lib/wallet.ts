@@ -1,136 +1,94 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /**
- * Wallet helpers. All balance changes go through compare-and-swap updates
- * (`update ... where balance = <value we read>`), so two concurrent requests
- * can never both spend / credit the same starting balance.
- * Uses the service-role client; callers must have authenticated the user first.
+ * Wallet helpers call SECURITY DEFINER PostgreSQL functions installed by
+ * WALLET_REPAIR_AND_FIX.sql. The database takes an advisory lock per exact
+ * username, consolidates exact-match duplicates, and changes the balance in
+ * one transaction. Usernames that differ by case or whitespace are NOT merged.
  */
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
-const MAX_ATTEMPTS = 8;
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 export type WalletResult =
   | { ok: true; balance: number }
   | { ok: false; reason: "insufficient" | "invalid" | "error"; balance?: number };
 
-export async function getBalance(username: string): Promise<number | null> {
-  const { data, error } = await supabaseAdmin
-    .from("wallets")
-    .select("balance")
-    .eq("username", username)
-    .maybeSingle();
+type WalletRpcResult = {
+  ok?: boolean;
+  reason?: string;
+  balance?: number | string;
+};
 
+export async function getBalance(username: string): Promise<number | null> {
+  if (typeof username !== "string" || username.length === 0) return null;
+  const { data, error } = await supabaseAdmin.rpc("jprime_wallet_get_balance", {
+    p_username: username,
+  });
   if (error) {
     console.error("WALLET READ ERROR:", error.message);
     return null;
   }
-  return data ? Number(data.balance ?? 0) : 0;
+  const balance = Number(data ?? 0);
+  return Number.isFinite(balance) ? round2(balance) : null;
 }
 
 /** Returns the balance, creating a zero wallet if the user has none (own wallet only). */
 export async function getOrCreateBalance(username: string): Promise<number | null> {
-  const { data, error } = await supabaseAdmin
-    .from("wallets")
-    .select("balance")
-    .eq("username", username)
-    .maybeSingle();
-
+  if (typeof username !== "string" || username.length === 0) return null;
+  const { data, error } = await supabaseAdmin.rpc("jprime_wallet_get_or_create_balance", {
+    p_username: username,
+  });
   if (error) {
-    console.error("WALLET READ ERROR:", error.message);
+    console.error("WALLET READ/CREATE ERROR:", error.message);
     return null;
   }
-  if (data) return Number(data.balance ?? 0);
-
-  const { error: insertError } = await supabaseAdmin
-    .from("wallets")
-    .insert({ username, balance: 0 });
-
-  if (insertError) {
-    // Possibly created concurrently – re-read.
-    const again = await getBalance(username);
-    return again;
-  }
-  return 0;
+  const balance = Number(data ?? 0);
+  return Number.isFinite(balance) ? round2(balance) : null;
 }
 
 export async function debitWallet(username: string, amount: number): Promise<WalletResult> {
   const amt = round2(Number(amount));
-  if (!Number.isFinite(amt) || amt <= 0) return { ok: false, reason: "invalid" };
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const { data: wallet, error } = await supabaseAdmin
-      .from("wallets")
-      .select("balance")
-      .eq("username", username)
-      .maybeSingle();
-
-    if (error || !wallet) return { ok: false, reason: "error" };
-
-    const current = Number(wallet.balance ?? 0);
-    if (!Number.isFinite(current)) return { ok: false, reason: "error" };
-    if (current < amt) return { ok: false, reason: "insufficient", balance: current };
-
-    const next = round2(current - amt);
-
-    const { data: updated, error: updateError } = await supabaseAdmin
-      .from("wallets")
-      .update({ balance: next })
-      .eq("username", username)
-      .eq("balance", wallet.balance)
-      .select("balance")
-      .maybeSingle();
-
-    if (updateError) {
-      console.error("WALLET DEBIT ERROR:", updateError.message);
-      return { ok: false, reason: "error" };
-    }
-    if (updated) return { ok: true, balance: Number(updated.balance) };
-    // balance changed under us -> retry with the fresh value
+  if (typeof username !== "string" || username.length === 0 || !Number.isFinite(amt) || amt <= 0) {
+    return { ok: false, reason: "invalid" };
   }
+
+  const { data, error } = await supabaseAdmin.rpc("jprime_wallet_debit", {
+    p_username: username,
+    p_amount: amt,
+  });
+  if (error) {
+    console.error("WALLET DEBIT ERROR:", error.message);
+    return { ok: false, reason: "error" };
+  }
+
+  const result = data as WalletRpcResult | null;
+  if (result?.ok === true) return { ok: true, balance: round2(Number(result.balance ?? 0)) };
+  if (result?.reason === "insufficient") {
+    return { ok: false, reason: "insufficient", balance: round2(Number(result.balance ?? 0)) };
+  }
+  if (result?.reason === "invalid") return { ok: false, reason: "invalid" };
+  console.error("WALLET DEBIT RPC returned an unexpected response.");
   return { ok: false, reason: "error" };
 }
 
 export async function creditWallet(username: string, amount: number): Promise<WalletResult> {
   const amt = round2(Number(amount));
-  if (!Number.isFinite(amt) || amt <= 0) return { ok: false, reason: "invalid" };
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const { data: wallet, error } = await supabaseAdmin
-      .from("wallets")
-      .select("balance")
-      .eq("username", username)
-      .maybeSingle();
-
-    if (error) return { ok: false, reason: "error" };
-
-    if (!wallet) {
-      const { data: created, error: insertError } = await supabaseAdmin
-        .from("wallets")
-        .insert({ username, balance: amt })
-        .select("balance")
-        .maybeSingle();
-      if (created) return { ok: true, balance: Number(created.balance) };
-      if (insertError) continue; // created concurrently -> retry as update
-      continue;
-    }
-
-    const next = round2(Number(wallet.balance ?? 0) + amt);
-
-    const { data: updated, error: updateError } = await supabaseAdmin
-      .from("wallets")
-      .update({ balance: next })
-      .eq("username", username)
-      .eq("balance", wallet.balance)
-      .select("balance")
-      .maybeSingle();
-
-    if (updateError) {
-      console.error("WALLET CREDIT ERROR:", updateError.message);
-      return { ok: false, reason: "error" };
-    }
-    if (updated) return { ok: true, balance: Number(updated.balance) };
+  if (typeof username !== "string" || username.length === 0 || !Number.isFinite(amt) || amt <= 0) {
+    return { ok: false, reason: "invalid" };
   }
+
+  const { data, error } = await supabaseAdmin.rpc("jprime_wallet_credit", {
+    p_username: username,
+    p_amount: amt,
+  });
+  if (error) {
+    console.error("WALLET CREDIT ERROR:", error.message);
+    return { ok: false, reason: "error" };
+  }
+
+  const result = data as WalletRpcResult | null;
+  if (result?.ok === true) return { ok: true, balance: round2(Number(result.balance ?? 0)) };
+  if (result?.reason === "invalid") return { ok: false, reason: "invalid" };
+  console.error("WALLET CREDIT RPC returned an unexpected response.");
   return { ok: false, reason: "error" };
 }
 
@@ -150,7 +108,7 @@ export async function logWalletTransaction(entry: {
   }
 }
 
-/* Per-user in-flight guard (best effort on serverless; the CAS above is the real protection). */
+/* Per-user in-flight guard (best effort on serverless; DB lock is authoritative). */
 const inflight = new Set<string>();
 export function acquire(key: string): boolean {
   if (inflight.has(key)) return false;

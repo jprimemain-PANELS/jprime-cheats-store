@@ -1,14 +1,56 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Play, ChevronRight } from "lucide-react";
+/* ====================================================================
+ *  JPRIME STORE - LOGIN PAGE  (v3 - new card layout)
+ *
+ *  LAYOUT
+ *  ------------------------------------------------------------------
+ *  One wide glass card split into two panels:
+ *
+ *   +-----------------------------+-----------------------------+
+ *   |  SHOWCASE PANEL             |  FORM PANEL                 |
+ *   |  - JPRIME GLOBAL pill       |  - JPRIME STORE brand       |
+ *   |  - big headline             |  - [ LOG IN | SIGN UP ] tabs |
+ *   |  - both mascots sitting on  |  - floating-label inputs    |
+ *   |  - the VIDEO GUIDE player   |  - submit button            |
+ *   +-----------------------------+-----------------------------+
+ *
+ *  On phones the form comes first and the showcase stacks below it.
+ *
+ *  FILE STRUCTURE
+ *  1. CONFIG   2. SHADER LAYER   3. MASCOT LAYER   4. UI KIT
+ *  5. AUTH LAYER (hook)   6. PAGE   7. STYLES
+ * ==================================================================== */
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import type { LucideIcon } from "lucide-react";
+import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Play, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 
-const MAX_COLORS = 8;
+/* ------------------------------------------------------------------ */
+/*  1. CONFIG                                                          */
+/* ------------------------------------------------------------------ */
 
-// IMPORTANT: put girl.png inside your /public folder  ->  /public/girl.png
+// IMPORTANT: put girl.png and boy-character.png inside /public
 const GIRL_IMAGE = "/girl.png";
+const BOY_IMAGE = "/boy-character.png";
 const TUTORIAL_URL = "https://youtu.be/F0UKQlnyXE4?si=n6qZtG91u6nddqSa";
+
+// Change these two numbers to make the characters bigger / smaller.
+const MASCOT_SIZE = {
+  boyHeight: 170, // px
+  girlWidth: 92, // px
+};
+
+const SHADER_COLORS = ["#c026d3", "#7c3aed", "#e879f9"];
+
+type FocusField = "idle" | "username" | "password";
+
+/* ------------------------------------------------------------------ */
+/*  2. SHADER LAYER                                                    */
+/* ------------------------------------------------------------------ */
+
+const MAX_COLORS = 8;
 
 const hexToRGB = (hex: string) => {
   const c = hex.replace("#", "").padEnd(6, "0");
@@ -401,90 +443,97 @@ const Ferrofluid = ({
   );
 };
 
-/* ------------------------------------------------------------------ */
-/*  OPEN MOUTH (shared by egg character)                               */
-/* ------------------------------------------------------------------ */
-const OpenMouth = () => (
-  <g>
-    <path d="M68,72 Q80,70 92,72 Q90,86 80,87 Q70,86 68,72 Z" fill="#4a0f1a" />
-    <path d="M70,72.4 Q80,71 90,72.4 L89,76 Q80,77.4 71,76 Z" fill="#fdfcf8" />
-    <path d="M75,72 L75,76.4 M80,71.6 L80,77 M85,72 L85,76.4" stroke="#d9d2c4" strokeWidth="0.4" />
-    <ellipse cx="80" cy="83" rx="6" ry="3" fill="#d9697a" />
-    <path d="M66,72 Q73,68 80,70 Q87,68 94,72 Q87,73 80,72.4 Q73,73 66,72 Z" fill="url(#lips)" />
-    <path d="M68,73 Q80,90 92,73 Q80,88 68,73 Z" fill="url(#lips)" />
-  </g>
+const BackgroundLayer = () => (
+  <>
+    <div className="pointer-events-none absolute -top-32 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-violet-600/30 blur-[120px]" />
+    <div className="pointer-events-none absolute top-40 -right-24 h-[260px] w-[260px] rounded-full bg-fuchsia-500/20 blur-[100px]" />
+    <div className="absolute inset-0 pointer-events-none z-0">
+      <Ferrofluid
+        colors={SHADER_COLORS}
+        speed={0.5}
+        scale={1.8}
+        turbulence={1.1}
+        fluidity={0.15}
+        rimWidth={0.25}
+        sharpness={2.5}
+        shimmer={1.5}
+        glow={2.2}
+        flowDirection="down"
+        opacity={0.85}
+        mouseInteraction={true}
+        mouseStrength={0.9}
+        mouseRadius={0.4}
+      />
+    </div>
+  </>
 );
 
 /* ------------------------------------------------------------------ */
-/*  BOY IMAGE ASSET - reference-inspired seated character              */
+/*  3. MASCOT LAYER                                                    */
 /* ------------------------------------------------------------------ */
-const BOY_IMAGE = "/boy-character.png";
 
-/* ------------------------------------------------------------------ */
-/*  BOY CHARACTER - image based on the user's reference, seated on     */
-/*  the card edge with his legs hanging over the front of the card.   */
-/* ------------------------------------------------------------------ */
-const BoyCharacter = () => (
-  <div className="boy-seat relative h-[250px] w-full overflow-visible" aria-hidden="true">
-    {/* Original reference artwork preserved; shift the boy slightly right so his hand
-        reaches the card edge without crowding the girl. */}
-    {/* eslint-disable-next-line @next/next/no-img-element */}
-    <img
-      src={BOY_IMAGE}
-      alt=""
-      draggable={false}
-      className="boy-character-float absolute top-[24px] h-[300px] w-auto max-w-none object-contain object-top select-none"
-    />
-    {/* Subtle animated eyelids and smile over the original face. */}
-    <svg
-      viewBox="0 0 642 1536"
-      preserveAspectRatio="xMidYMin meet"
-      className="boy-face-overlay boy-character-float pointer-events-none absolute top-[24px] h-[300px] w-auto max-w-none overflow-visible"
-    >
-      <g className="boy-eye-blink boy-eye-left">
-        <path d="M218 286 Q266 247 318 281 Q307 318 268 321 Q234 315 218 286Z" fill="#f7c9ad" />
-        <path d="M220 285 Q267 252 316 281" fill="none" stroke="#54352f" strokeWidth="8" strokeLinecap="round" />
-        <path d="M237 303 Q267 315 298 301" fill="none" stroke="#d89583" strokeWidth="3" strokeLinecap="round" />
-      </g>
-      <g className="boy-eye-blink boy-eye-right">
-        <path d="M376 263 Q420 222 466 260 Q456 296 420 300 Q390 294 376 263Z" fill="#f7c9ad" />
-        <path d="M378 262 Q420 228 464 260" fill="none" stroke="#54352f" strokeWidth="8" strokeLinecap="round" />
-        <path d="M393 282 Q420 294 449 280" fill="none" stroke="#d89583" strokeWidth="3" strokeLinecap="round" />
-      </g>
-      <path className="boy-smile-glint" d="M336 355 Q359 366 383 352" fill="none" stroke="#9e4e4b" strokeWidth="4" strokeLinecap="round" />
-      <path className="boy-smile-highlight" d="M342 354 Q359 359 376 352" fill="none" stroke="#fff0e6" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  </div>
-);
+const BoyCharacter = () => {
+  const h = MASCOT_SIZE.boyHeight;
+  const seatH = Math.round(h * 0.83);
+  const top = Math.round(h * 0.08);
 
-const GirlCharacter = ({ currentField }: { currentField: string }) => {
-  const shy = currentField === "password"; // closes eyes while typing password
-  const excited = currentField === "username"; // talks faster while typing username
+  return (
+    <div className="boy-seat relative w-full overflow-visible" style={{ height: seatH }} aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={BOY_IMAGE}
+        alt=""
+        draggable={false}
+        className="boy-character-float absolute w-auto max-w-none object-contain object-top select-none"
+        style={{ height: h, top }}
+      />
+      <svg
+        viewBox="0 0 642 1536"
+        preserveAspectRatio="xMidYMin meet"
+        className="boy-face-overlay boy-character-float pointer-events-none absolute w-auto max-w-none overflow-visible"
+        style={{ height: h, top }}
+      >
+        <g className="boy-eye-blink boy-eye-left">
+          <path d="M218 286 Q266 247 318 281 Q307 318 268 321 Q234 315 218 286Z" fill="#f7c9ad" />
+          <path d="M220 285 Q267 252 316 281" fill="none" stroke="#54352f" strokeWidth="8" strokeLinecap="round" />
+          <path d="M237 303 Q267 315 298 301" fill="none" stroke="#d89583" strokeWidth="3" strokeLinecap="round" />
+        </g>
+        <g className="boy-eye-blink boy-eye-right">
+          <path d="M376 263 Q420 222 466 260 Q456 296 420 300 Q390 294 376 263Z" fill="#f7c9ad" />
+          <path d="M378 262 Q420 228 464 260" fill="none" stroke="#54352f" strokeWidth="8" strokeLinecap="round" />
+          <path d="M393 282 Q420 294 449 280" fill="none" stroke="#d89583" strokeWidth="3" strokeLinecap="round" />
+        </g>
+        <path className="boy-smile-glint" d="M336 355 Q359 366 383 352" fill="none" stroke="#9e4e4b" strokeWidth="4" strokeLinecap="round" />
+        <path className="boy-smile-highlight" d="M342 354 Q359 359 376 352" fill="none" stroke="#fff0e6" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    </div>
+  );
+};
+
+const GirlCharacter = ({ focus }: { focus: FocusField }) => {
+  const shy = focus === "password";
+  const excited = focus === "username";
 
   return (
     <div className="relative w-full aspect-[338/497]">
-      {/* floating hearts */}
       <span className="girl-heart" style={{ left: "78%", top: "8%", animationDelay: "0s" }}>
         ♥
       </span>
-      <span className="girl-heart" style={{ left: "88%", top: "20%", animationDelay: "1.1s", fontSize: 10 }}>
+      <span className="girl-heart" style={{ left: "88%", top: "20%", animationDelay: "1.1s", fontSize: 9 }}>
         ♥
       </span>
-      <span className="girl-heart" style={{ left: "70%", top: "14%", animationDelay: "2.1s", fontSize: 9 }}>
+      <span className="girl-heart" style={{ left: "70%", top: "14%", animationDelay: "2.1s", fontSize: 8 }}>
         ✦
       </span>
 
-      {/* soft contact shadow on the card edge (she sits ON the card) */}
       <div className="absolute -bottom-1.5 left-[4%] right-[4%] h-3 rounded-full bg-black/70 blur-md" />
 
       <div className="girl-wrap absolute inset-0">
-        {/* BODY (below the neck) */}
         <div className="absolute inset-0" style={{ clipPath: "inset(34% 0 0 0)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={GIRL_IMAGE} alt="" draggable={false} className="absolute inset-0 w-full h-full object-contain" />
         </div>
 
-        {/* steam from the cup */}
         <svg viewBox="0 0 338 497" className="absolute inset-0 w-full h-full pointer-events-none">
           <defs>
             <filter id="steamBlur">
@@ -506,7 +555,6 @@ const GirlCharacter = ({ currentField }: { currentField: string }) => {
           ))}
         </svg>
 
-        {/* HEAD (sways, blinks, talks) */}
         <div className="girl-head absolute inset-0" style={{ clipPath: "inset(0 0 64% 0)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={GIRL_IMAGE} alt="" draggable={false} className="absolute inset-0 w-full h-full object-contain" />
@@ -519,7 +567,6 @@ const GirlCharacter = ({ currentField }: { currentField: string }) => {
               </linearGradient>
             </defs>
 
-            {/* left eye eyelid */}
             <g transform="rotate(-14 140 116)">
               <g className={`girl-lid ${shy ? "is-shut" : ""}`}>
                 <ellipse cx="140" cy="116" rx="16.5" ry="14.5" fill="url(#lidSkin)" />
@@ -528,7 +575,6 @@ const GirlCharacter = ({ currentField }: { currentField: string }) => {
               </g>
             </g>
 
-            {/* right eye eyelid */}
             <g transform="rotate(-6 183 100)">
               <g className={`girl-lid late ${shy ? "is-shut" : ""}`}>
                 <ellipse cx="183" cy="100.5" rx="16.5" ry="14.5" fill="url(#lidSkin)" />
@@ -537,7 +583,6 @@ const GirlCharacter = ({ currentField }: { currentField: string }) => {
               </g>
             </g>
 
-            {/* talking mouth */}
             <g transform="rotate(-14 165 146)">
               <g className={`girl-mouth ${excited ? "fast" : ""}`}>
                 <path d="M152.5,144 Q165,140.5 178.5,142.2 Q174.5,155.5 165,155 Q156,153.5 152.5,144 Z" fill="#6e1d2a" />
@@ -553,489 +598,527 @@ const GirlCharacter = ({ currentField }: { currentField: string }) => {
   );
 };
 
-/* ------------------------------------------------------------------ */
-/*  ROW: reference boy (left) + original girl (right) on the card edge */
-/* ------------------------------------------------------------------ */
-const MascotRow = ({ currentField }: { currentField: string }) => (
-  <div className="mascot-row relative z-30 -mb-6 flex items-end justify-between gap-2 px-1 sm:px-3 pointer-events-none select-none">
-    <div className="w-[50%] max-w-[200px]">
+/* Both characters sit on the top edge of the video player */
+const MascotRow = ({ focus }: { focus: FocusField }) => (
+  <div className="mascot-row relative z-30 -mb-4 flex items-end justify-between px-3 sm:px-6 pointer-events-none select-none">
+    <div style={{ width: Math.round(MASCOT_SIZE.boyHeight * 0.62) }}>
       <BoyCharacter />
     </div>
-    {/* Keep the exact original girl artwork; position her lower so she rests on the card edge. */}
-    <div className="girl-seat w-[40%] max-w-[170px] translate-y-4">
-      <GirlCharacter currentField={currentField} />
+    <div className="girl-seat translate-y-2" style={{ width: MASCOT_SIZE.girlWidth }}>
+      <GirlCharacter focus={focus} />
     </div>
   </div>
 );
 
-export default function LoginPage() {
+/* ------------------------------------------------------------------ */
+/*  4. UI KIT                                                          */
+/* ------------------------------------------------------------------ */
+
+/* Floating-label input: label sits inside, then floats up when focused
+   or filled. A gradient underline grows from the centre on focus. */
+type FieldProps = {
+  icon: LucideIcon;
+  type: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onFocusField: () => void;
+  onBlurField: () => void;
+};
+
+const Field = ({ icon: Icon, type, label, value, onChange, onFocusField, onBlurField }: FieldProps) => {
+  const [reveal, setReveal] = useState(false);
+  const isPassword = type === "password";
+
+  return (
+    <div className="group/input relative rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
+      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-fuchsia-400/70 transition-colors duration-200 group-focus-within/input:text-fuchsia-300">
+        <Icon className="h-4 w-4 stroke-[1.8]" />
+      </span>
+
+      <input
+        type={isPassword && reveal ? "text" : type}
+        placeholder=" "
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocusField}
+        onBlur={onBlurField}
+        className="peer w-full bg-transparent pl-12 pr-12 pt-6 pb-2.5 text-sm font-medium tracking-wide text-white outline-none transition-all duration-300"
+      />
+
+      <label
+        className="pointer-events-none absolute left-12 top-1/2 -translate-y-1/2 text-sm font-medium tracking-wide text-white/35 transition-all duration-200
+          peer-focus:top-3.5 peer-focus:text-[9px] peer-focus:font-bold peer-focus:uppercase peer-focus:tracking-[0.2em] peer-focus:text-fuchsia-300
+          peer-[:not(:placeholder-shown)]:top-3.5 peer-[:not(:placeholder-shown)]:text-[9px] peer-[:not(:placeholder-shown)]:font-bold peer-[:not(:placeholder-shown)]:uppercase peer-[:not(:placeholder-shown)]:tracking-[0.2em] peer-[:not(:placeholder-shown)]:text-fuchsia-300"
+      >
+        {label}
+      </label>
+
+      {isPassword && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={reveal ? "Hide password" : "Show password"}
+          onMouseDown={(e) => e.preventDefault()} // keep the input focused
+          onClick={() => setReveal((v) => !v)}
+          className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-white/40 transition-colors duration-200 hover:bg-white/10 hover:text-fuchsia-300 cursor-pointer"
+        >
+          {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      )}
+
+      <span className="pointer-events-none absolute bottom-0 left-4 right-4 h-[2px] origin-center scale-x-0 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-300 transition-transform duration-500 group-focus-within/input:scale-x-100" />
+    </div>
+  );
+};
+
+/* Brand block at the top of the form panel */
+const BrandHeader = ({ isLogin }: { isLogin: boolean }) => (
+  <div className="text-center md:text-left select-none">
+    <h1 className="text-3xl font-extrabold tracking-tight uppercase leading-none text-white">
+      JPRIME{" "}
+      <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">STORE</span>
+    </h1>
+    <p className="text-white/40 text-[10px] font-semibold uppercase tracking-[0.2em] mt-2.5">
+      {isLogin ? "Authentication Protocol" : "Registration Protocol"}
+    </p>
+  </div>
+);
+
+/* Sliding two-way switch: LOG IN | SIGN UP (replaces the old OR + pill) */
+const ModeTabs = ({ isLogin, onChange }: { isLogin: boolean; onChange: (login: boolean) => void }) => (
+  <div
+    role="tablist"
+    aria-label="Authentication mode"
+    className="relative grid grid-cols-2 rounded-2xl border border-white/10 bg-white/[0.04] p-1 backdrop-blur-md"
+  >
+    <span
+      className="pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 shadow-[0_8px_24px_-6px_rgba(192,38,211,0.65)] transition-transform duration-300 ease-[cubic-bezier(0.34,1.3,0.64,1)]"
+      style={{ transform: isLogin ? "translateX(0)" : "translateX(100%)" }}
+    />
+    {[
+      { key: true, label: "Log in", Icon: LogIn },
+      { key: false, label: "Sign up", Icon: UserPlus },
+    ].map(({ key, label, Icon }) => {
+      const active = isLogin === key;
+      return (
+        <button
+          key={label}
+          type="button"
+          role="tab"
+          aria-selected={active}
+          onClick={() => onChange(key)}
+          className={`relative z-10 flex items-center justify-center gap-2 rounded-xl py-2.5 text-[11px] font-bold uppercase tracking-[0.2em] transition-colors duration-300 cursor-pointer ${
+            active ? "text-white" : "text-white/45 hover:text-white/80"
+          }`}
+        >
+          <Icon className="h-3.5 w-3.5" />
+          {label}
+        </button>
+      );
+    })}
+  </div>
+);
+
+const SubmitButton = ({ isLogin, onClick }: { isLogin: boolean; onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white py-3.5 rounded-2xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_30px_-6px_rgba(192,38,211,0.6)] cursor-pointer"
+  >
+    <span>{isLogin ? "LOG IN" : "SIGN UP"}</span>
+    <ArrowRight className="h-3.5 w-3.5 stroke-[2.5]" />
+  </button>
+);
+
+/* Video-player style tutorial card (16:9 stage + control bar) */
+const VideoGuide = () => (
+  <a
+    href={TUTORIAL_URL}
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label="Watch the How to Use the Site YouTube tutorial"
+    className="group/video relative z-20 block overflow-hidden rounded-2xl border border-white/10 bg-[#07040f]/80 shadow-[0_12px_35px_rgba(0,0,0,0.45)] transition-all duration-300 hover:-translate-y-0.5 hover:border-fuchsia-400/50 hover:shadow-[0_14px_40px_rgba(168,85,247,0.25)] active:scale-[0.99]"
+  >
+    {/* stage */}
+    <div className="relative aspect-[16/8] w-full overflow-hidden bg-gradient-to-br from-violet-700/60 via-fuchsia-600/40 to-[#1a0b3a]">
+      <div className="video-grid pointer-events-none absolute inset-0 opacity-40" />
+      <span className="pointer-events-none absolute -left-6 -top-8 h-28 w-28 rounded-full bg-fuchsia-400/30 blur-2xl" />
+      <span className="pointer-events-none absolute -bottom-10 right-4 h-24 w-24 rounded-full bg-violet-400/30 blur-2xl" />
+
+      <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-white/90 backdrop-blur-md">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
+        Video Guide
+      </span>
+
+      <span className="absolute inset-0 flex items-center justify-center">
+        <span className="relative flex h-14 w-14 items-center justify-center">
+          <span className="video-ping absolute inset-0 rounded-full bg-white/30" />
+          <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-white text-fuchsia-600 shadow-[0_8px_30px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover/video:scale-110">
+            <Play className="ml-0.5 h-6 w-6 fill-current" />
+          </span>
+        </span>
+      </span>
+    </div>
+
+    {/* control bar */}
+    <div className="flex items-center gap-3 border-t border-white/10 bg-black/30 px-4 py-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-[0_0_16px_rgba(217,70,239,0.5)]">
+        <Play className="ml-0.5 h-3 w-3 fill-white text-white" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <span className="block truncate text-[11px] font-extrabold uppercase tracking-[0.16em] text-white">How to use the site</span>
+        <span className="relative mt-1.5 block h-[3px] overflow-hidden rounded-full bg-white/15">
+          <span className="video-progress absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300" />
+        </span>
+      </div>
+      <span className="shrink-0 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white/90">YouTube</span>
+    </div>
+  </a>
+);
+
+/* Left panel: pill, headline, mascots seated on the video player */
+const ShowcasePanel = ({ isLogin, focus }: { isLogin: boolean; focus: FocusField }) => (
+  <aside className="relative order-2 md:order-1 flex flex-col justify-between gap-6 overflow-hidden border-t border-white/10 md:border-t-0 md:border-r bg-gradient-to-br from-violet-700/25 via-fuchsia-600/10 to-transparent p-6 md:p-8">
+    <div className="video-grid pointer-events-none absolute inset-0 opacity-[0.07]" />
+    <span className="pointer-events-none absolute -left-16 top-10 h-48 w-48 rounded-full bg-violet-500/25 blur-3xl" />
+
+    {/* top: pill + status */}
+    <div className="relative z-20 flex flex-wrap items-center gap-2">
+      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
+        <Sparkles className="h-3 w-3 text-fuchsia-400" />
+        <span className="text-[10px] font-medium tracking-wider text-white/60 uppercase">JPRIME GLOBAL</span>
+      </div>
+      <div className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+        <span className="text-[10px] font-medium tracking-wider text-white/60 uppercase">Secure</span>
+      </div>
+    </div>
+
+    {/* middle: headline (desktop only, keeps phones compact) */}
+    <div className="relative z-20 hidden md:block select-none">
+      <h2 className="text-4xl font-extrabold uppercase leading-[1.05] tracking-tight text-white">
+        {isLogin ? "Welcome" : "Join the"}
+        <br />
+        <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
+          {isLogin ? "back" : "store"}
+        </span>
+      </h2>
+      <p className="mt-3 max-w-[16rem] text-xs font-medium leading-relaxed text-white/45">
+        {isLogin ? "Sign in to your JPRIME account to continue." : "Create your free JPRIME account in seconds."}
+      </p>
+    </div>
+
+    {/* bottom: mascots sitting on the video player */}
+    <div className="relative">
+      <p className="relative z-20 mb-1 px-1 text-[9px] font-bold uppercase tracking-[0.22em] text-fuchsia-300/80">New here? Watch first</p>
+      <MascotRow focus={focus} />
+      <VideoGuide />
+    </div>
+  </aside>
+);
+
+/* ------------------------------------------------------------------ */
+/*  5. AUTH LAYER  (all state + API calls live here, no JSX)           */
+/* ------------------------------------------------------------------ */
+
+const useAuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [email, setEmail] = useState("");
-  const [mobileNumber, setMobileNumber] = useState("");
+  const [focus, setFocus] = useState<FocusField>("idle");
+  const [form, setForm] = useState({ username: "", password: "", email: "", mobileNumber: "" });
 
-  const [currentField, setCurrentField] = useState("idle");
+  const setField = useCallback(
+    (key: keyof typeof form) => (value: string) => setForm((prev) => ({ ...prev, [key]: value })),
+    []
+  );
 
-  async function handleAuth() {
+  const login = async () => {
+    // The server verifies the password and sets an HttpOnly session cookie.
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: form.username, password: form.password }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || !result?.success || !result?.user) {
+      alert(result?.error || "Invalid username or password");
+      return;
+    }
+
+    // Display-only hint for the UI. It is NOT used for authentication.
+    localStorage.setItem("jprime:lastActivityAt", String(Date.now()));
+    localStorage.setItem(
+      "user",
+      JSON.stringify({
+        username: result.user.username,
+        email: result.user.email,
+        role: result.user.role,
+      })
+    );
+    window.location.href = "/";
+  };
+
+  const signup = async () => {
+    if (!form.mobileNumber.trim() || form.mobileNumber.length < 10) {
+      alert("Enter valid mobile number");
+      return;
+    }
+
+    const response = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: form.username,
+        password: form.password,
+        email: form.email,
+        mobile_number: form.mobileNumber,
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || !result?.success) {
+      alert(result?.error || "Could not create account.");
+    } else {
+      alert("Signup Success");
+      setIsLogin(true);
+    }
+  };
+
+  const submit = async () => {
     try {
-      if (isLogin) {
-        // The server verifies the password and sets an HttpOnly session cookie.
-        const response = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
-        });
-
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok || !result?.success || !result?.user) {
-          alert(result?.error || "Invalid username or password");
-          return;
-        }
-
-        // Display-only hint for the UI. It is NOT used for authentication.
-        localStorage.setItem("jprime:lastActivityAt", String(Date.now()));
-        localStorage.setItem(
-          "user",
-          JSON.stringify({
-            username: result.user.username,
-            email: result.user.email,
-            role: result.user.role,
-          })
-        );
-        window.location.href = "/";
-      } else {
-        if (!mobileNumber.trim() || mobileNumber.length < 10) {
-          alert("Enter valid mobile number");
-          return;
-        }
-
-        const response = await fetch("/api/auth/signup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username,
-            password,
-            email,
-            mobile_number: mobileNumber,
-          }),
-        });
-
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok || !result?.success) {
-          alert(result?.error || "Could not create account.");
-        } else {
-          alert("Signup Success");
-          setIsLogin(true);
-        }
-      }
+      if (isLogin) await login();
+      else await signup();
     } catch {
       alert("Network error. Please try again.");
     }
-  }
+  };
+
+  return { isLogin, setIsLogin, focus, setFocus, form, setField, submit };
+};
+
+/* ------------------------------------------------------------------ */
+/*  6. PAGE                                                            */
+/* ------------------------------------------------------------------ */
+
+export default function LoginPage() {
+  const { isLogin, setIsLogin, focus, setFocus, form, setField, submit } = useAuthForm();
+
+  const asUsername = { onFocusField: () => setFocus("username"), onBlurField: () => setFocus("idle") };
+  const asPassword = { onFocusField: () => setFocus("password"), onBlurField: () => setFocus("idle") };
 
   return (
     <div className="min-h-screen bg-[#07040f] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans antialiased selection:bg-fuchsia-500 selection:text-white">
-      {/* Background Glow Blobs */}
-      <div className="pointer-events-none absolute -top-32 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-violet-600/30 blur-[120px]" />
-      <div className="pointer-events-none absolute top-40 -right-24 h-[260px] w-[260px] rounded-full bg-fuchsia-500/20 blur-[100px]" />
+      <BackgroundLayer />
 
-      {/* SHADER BACKGROUND */}
-      <div className="absolute inset-0 pointer-events-none z-0">
-        <Ferrofluid
-          colors={["#c026d3", "#7c3aed", "#e879f9"]}
-          speed={0.5}
-          scale={1.8}
-          turbulence={1.1}
-          fluidity={0.15}
-          rimWidth={0.25}
-          sharpness={2.5}
-          shimmer={1.5}
-          glow={2.2}
-          flowDirection="down"
-          opacity={0.85}
-          mouseInteraction={true}
-          mouseStrength={0.9}
-          mouseRadius={0.4}
-        />
-      </div>
+      <main className="relative z-10 w-full max-w-4xl">
+        <div className="relative grid overflow-hidden rounded-[28px] border border-white/10 bg-[#07040f]/85 shadow-[0_40px_100px_rgba(0,0,0,0.9)] backdrop-blur-2xl transition-all duration-500 hover:border-fuchsia-500/30 md:grid-cols-[1fr_1.05fr]">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-1 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-violet-500" />
 
-      {/* MAIN CONTENT WRAPPER */}
-      <div className="relative z-10 w-full max-w-md flex flex-col mt-2">
-        {/* EGG + GIRL SITTING ON THE TOP EDGE OF THE CARD */}
-        <MascotRow currentField={currentField} />
+          {/* LEFT: showcase (shown below the form on phones) */}
+          <ShowcasePanel isLogin={isLogin} focus={focus} />
 
-        {/* CARD CONTAINER */}
-        <div className="bg-[#07040f]/85 backdrop-blur-2xl border border-white/10 rounded-3xl px-7 pb-7 pt-12 md:px-9 md:pb-9 md:pt-14 shadow-[0_40px_100px_rgba(0,0,0,0.9)] relative overflow-hidden group/card transition-all duration-500 hover:border-fuchsia-500/30">
-          {/* Top Border Accent Line */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-violet-500" />
+          {/* RIGHT: form */}
+          <section className="relative order-1 md:order-2 flex flex-col justify-center gap-6 p-7 pt-9 md:p-10">
+            <BrandHeader isLogin={isLogin} />
 
-          {/* BRAND TYPOGRAPHY */}
-          <div className="text-center mb-6 relative z-20 select-none">
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
-              <Sparkles className="h-3 w-3 text-fuchsia-400" />
-              <span className="text-[10px] font-medium tracking-wider text-white/60 uppercase">JPRIME GLOBAL</span>
-            </div>
+            <ModeTabs isLogin={isLogin} onChange={setIsLogin} />
 
-            <h1 className="text-3xl font-extrabold tracking-tight uppercase leading-none text-white">
-              JPRIME{" "}
-              <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
-                STORE
-              </span>
-            </h1>
+            <div className="space-y-3.5">
+              <Field icon={User} type="text" label="Username" value={form.username} onChange={setField("username")} {...asUsername} />
 
-            <p className="text-white/40 text-[10px] font-semibold uppercase tracking-[0.2em] mt-2.5">
-              {isLogin ? "Authentication Protocol" : "Registration Protocol"}
-            </p>
-          </div>
-
-          {/* FORM INPUTS */}
-          <div className="space-y-3 relative z-20">
-            {/* USERNAME */}
-            <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
-              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
-              <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
-                <User className="h-4 w-4 stroke-[1.8]" />
-              </span>
-              <input
-                type="text"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onFocus={() => setCurrentField("username")}
-                onBlur={() => setCurrentField("idle")}
-                className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
-              />
-            </div>
-
-            {/* CONDITIONAL SIGNUP FIELDS */}
-            {!isLogin && (
-              <div className="space-y-3 animate-form-reveal">
-                {/* EMAIL */}
-                <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
-                    <Mail className="h-4 w-4 stroke-[1.8]" />
-                  </span>
-                  <input
+              {!isLogin && (
+                <div className="space-y-3.5 animate-form-reveal">
+                  <Field
+                    icon={Mail}
                     type="email"
-                    placeholder="Email Address (optional)"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onFocus={() => setCurrentField("username")}
-                    onBlur={() => setCurrentField("idle")}
-                    className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
+                    label="Email Address (optional)"
+                    value={form.email}
+                    onChange={setField("email")}
+                    {...asUsername}
                   />
-                </div>
-
-                {/* MOBILE */}
-                <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
-                    <Phone className="h-4 w-4 stroke-[1.8]" />
-                  </span>
-                  <input
+                  <Field
+                    icon={Phone}
                     type="text"
-                    placeholder="Mobile Number"
-                    value={mobileNumber}
-                    onChange={(e) => setMobileNumber(e.target.value)}
-                    onFocus={() => setCurrentField("username")}
-                    onBlur={() => setCurrentField("idle")}
-                    className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
+                    label="Mobile Number"
+                    value={form.mobileNumber}
+                    onChange={setField("mobileNumber")}
+                    {...asUsername}
                   />
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* PASSWORD */}
-            <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
-              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
-              <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
-                <Lock className="h-4 w-4 stroke-[1.8]" />
-              </span>
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onFocus={() => setCurrentField("password")}
-                onBlur={() => setCurrentField("idle")}
-                className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
-              />
-            </div>
-          </div>
-
-          {/* SUBMIT BUTTON */}
-          <div className="mt-6 relative z-20">
-            <button
-              onClick={handleAuth}
-              className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white py-3.5 rounded-xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_30px_-6px_rgba(192,38,211,0.6)] cursor-pointer"
-            >
-              <span>{isLogin ? "LOG IN" : "SIGN UP"}</span>
-              <ArrowRight className="h-3.5 w-3.5 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* ------------------------------------------------------ */}
-          {/*  NEW STYLE: "OR" divider + glowing switch-mode pill     */}
-          {/* ------------------------------------------------------ */}
-          <div className="mt-6 relative z-20">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="h-px flex-1 bg-gradient-to-r from-transparent via-white/15 to-white/5" />
-              <span className="text-[9px] font-bold tracking-[0.3em] text-white/35">OR</span>
-              <span className="h-px flex-1 bg-gradient-to-l from-transparent via-white/15 to-white/5" />
+              <Field icon={Lock} type="password" label="Password" value={form.password} onChange={setField("password")} {...asPassword} />
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsLogin(!isLogin)}
-              className="switch-pill group/switch relative w-full cursor-pointer rounded-2xl p-[1.5px] text-left transition-transform duration-300 active:scale-[0.985]"
-            >
-              <span className="switch-pill-inner relative flex items-center gap-3.5 rounded-[15px] bg-[#0d0820] px-4 py-3.5 overflow-hidden transition-colors duration-300 group-hover/switch:bg-[#140b2e]">
-                <span className="switch-shine pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 skew-x-[-20deg] bg-white/10 blur-md" />
-                <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-[0_0_20px_rgba(217,70,239,0.55)] transition-transform duration-300 group-hover/switch:rotate-[-8deg] group-hover/switch:scale-110">
-                  {isLogin ? <UserPlus className="h-[18px] w-[18px] text-white" /> : <LogIn className="h-[18px] w-[18px] text-white" />}
-                </span>
-                <span className="relative min-w-0 flex-1">
-                  <span className="block text-[9px] font-bold uppercase tracking-[0.22em] text-fuchsia-300/80">
-                    {isLogin ? "New here?" : "Welcome back"}
-                  </span>
-                  <span className="mt-0.5 block text-sm font-extrabold tracking-wide text-white">
-                    {isLogin ? "Create your free account" : "Log in to your account"}
-                  </span>
-                </span>
-                <ChevronRight className="relative h-5 w-5 shrink-0 text-fuchsia-300 transition-transform duration-300 group-hover/switch:translate-x-1" />
-              </span>
-            </button>
-          </div>
+            <div>
+              <SubmitButton isLogin={isLogin} onClick={submit} />
+              <p className="mt-4 flex items-center justify-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.22em] text-white/30">
+                <ShieldCheck className="h-3 w-3 text-fuchsia-400/70" />
+                Encrypted session
+              </p>
+            </div>
+          </section>
         </div>
+      </main>
 
-        {/* ------------------------------------------------------ */}
-        {/*  NEW STYLE: HOW TO USE THE SITE - video thumbnail card  */}
-        {/* ------------------------------------------------------ */}
-        <a
-          href={TUTORIAL_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Watch the How to Use the Site YouTube tutorial"
-          className="tutorial-card group/tutorial relative mt-4 z-20 block overflow-hidden rounded-2xl border border-white/10 bg-[#07040f]/80 backdrop-blur-xl shadow-[0_12px_35px_rgba(0,0,0,0.45)] transition-all duration-300 hover:-translate-y-0.5 hover:border-fuchsia-400/50 hover:shadow-[0_14px_40px_rgba(168,85,247,0.25)] active:scale-[0.99]"
-        >
-          {/* video-style banner */}
-          <div className="relative flex h-24 items-center justify-center overflow-hidden bg-gradient-to-br from-violet-700/60 via-fuchsia-600/40 to-[#1a0b3a]">
-            <div className="tutorial-grid pointer-events-none absolute inset-0 opacity-40" />
-            <span className="pointer-events-none absolute -left-6 -top-8 h-28 w-28 rounded-full bg-fuchsia-400/30 blur-2xl" />
-            <span className="pointer-events-none absolute -bottom-10 right-4 h-24 w-24 rounded-full bg-violet-400/30 blur-2xl" />
-
-            {/* pulsing play button */}
-            <span className="relative flex h-14 w-14 items-center justify-center">
-              <span className="tutorial-ping absolute inset-0 rounded-full bg-white/30" />
-              <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-white text-fuchsia-600 shadow-[0_8px_30px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover/tutorial:scale-110">
-                <Play className="ml-0.5 h-6 w-6 fill-current" />
-              </span>
-            </span>
-
-            <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-white/90 backdrop-blur-md">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
-              Video Guide
-            </span>
-            <span className="absolute bottom-3 right-3 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white/90">
-              YouTube
-            </span>
-          </div>
-
-          {/* caption */}
-          <div className="flex items-center gap-3 px-4 py-3.5">
-            <div className="min-w-0 flex-1">
-              <span className="block text-xs font-extrabold tracking-[0.14em] text-white">HOW TO USE THE SITE</span>
-              <span className="mt-0.5 block text-[11px] text-white/50">Learn everything in a quick step-by-step tutorial</span>
-            </div>
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/5 text-fuchsia-300 transition-all duration-300 group-hover/tutorial:border-fuchsia-400/60 group-hover/tutorial:bg-fuchsia-500/20">
-              <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover/tutorial:translate-x-0.5" />
-            </span>
-          </div>
-        </a>
-      </div>
-
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        @keyframes formReveal {
-          from { opacity: 0; transform: translateY(-4px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-form-reveal {
-          animation: formReveal 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        /* ---- switch (create account / log in) pill ---- */
-        @keyframes pillBorder {
-          0% { background-position: 0% 50%; }
-          100% { background-position: 200% 50%; }
-        }
-        .switch-pill {
-          background: linear-gradient(90deg, #7c3aed, #d946ef, #fb923c, #d946ef, #7c3aed);
-          background-size: 200% 100%;
-          animation: pillBorder 4s linear infinite;
-          box-shadow: 0 10px 30px -10px rgba(217, 70, 239, 0.55);
-        }
-        @keyframes pillShine {
-          0% { transform: translateX(0) skewX(-20deg); opacity: 0; }
-          20% { opacity: 1; }
-          60%, 100% { transform: translateX(420%) skewX(-20deg); opacity: 0; }
-        }
-        .switch-shine { animation: pillShine 3.6s ease-in-out infinite; }
-
-        /* ---- tutorial card ---- */
-        @keyframes tutorialPing {
-          0% { transform: scale(1); opacity: 0.6; }
-          80%, 100% { transform: scale(1.9); opacity: 0; }
-        }
-        .tutorial-ping { animation: tutorialPing 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
-        .tutorial-grid {
-          background-image:
-            linear-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.12) 1px, transparent 1px);
-          background-size: 22px 22px;
-          mask-image: radial-gradient(circle at center, black 20%, transparent 75%);
-          -webkit-mask-image: radial-gradient(circle at center, black 20%, transparent 75%);
-        }
-
-        /* ---- reference boy: subtle idle movement ---- */
-        @keyframes boyFloat {
-          0%, 100% { transform: translateX(calc(-50% + 12px)) translateY(0) rotate(0deg); }
-          50% { transform: translateX(calc(-50% + 12px)) translateY(-2px) rotate(0.25deg); }
-        }
-        .boy-character-float { left: 50%; animation: boyFloat 4.2s ease-in-out infinite; transform-origin: 50% 65%; }
-
-        /* Cute, natural blinks and a soft recurring smile animation. */
-        @keyframes boyBlink {
-          0%, 42%, 48%, 87%, 93%, 100% { transform: scaleY(0.02); opacity: 0.98; }
-          44%, 46%, 89%, 91% { transform: scaleY(1); opacity: 1; }
-        }
-        .boy-eye-blink {
-          transform-box: fill-box;
-          transform-origin: center;
-          transform: scaleY(0.02);
-          animation: boyBlink 5.2s ease-in-out infinite;
-        }
-        .boy-eye-right { animation-delay: 0.045s; }
-        @keyframes boySmile {
-          0%, 35%, 100% { opacity: 0.25; transform: scale(0.96); }
-          45%, 68% { opacity: 0.9; transform: scale(1.04); }
-        }
-        .boy-smile-glint, .boy-smile-highlight {
-          transform-box: fill-box;
-          transform-origin: center;
-          animation: boySmile 3.6s ease-in-out infinite;
-        }
-        .boy-smile-highlight { animation-delay: 0.08s; opacity: 0.45; }
-
-        /* ---- egg blink ---- */
-        @keyframes humptyBlink {
-          0%, 92%, 100% { transform: scaleY(1); }
-          95% { transform: scaleY(0.08); }
-        }
-        .humpty-blink {
-          transform-box: fill-box;
-          transform-origin: center;
-          animation: humptyBlink 4.5s infinite;
-        }
-
-        /* ---- girl: seated on the login card edge (original artwork/face preserved) ---- */
-        .mascot-row { isolation: isolate; }
-        .girl-seat { position: relative; z-index: 2; }
-        .girl-seat::after {
-          content: "";
-          position: absolute;
-          left: 8%; right: 8%; bottom: 1px;
-          height: 8px;
-          border-radius: 999px;
-          background: rgba(0,0,0,0.48);
-          filter: blur(7px);
-          z-index: -1;
-        }
-
-        /* ---- girl: breathing + head sway ---- */
-        @keyframes girlBreathe {
-          0%, 100% { transform: scaleY(1); }
-          50% { transform: scaleY(1.012); }
-        }
-        .girl-wrap {
-          transform-origin: 50% 100%;
-          animation: girlBreathe 4s ease-in-out infinite;
-        }
-        @keyframes girlHead {
-          0%, 100% { transform: rotate(-1.4deg) translateY(0); }
-          50% { transform: rotate(1.6deg) translateY(-1px); }
-        }
-        .girl-head {
-          transform-origin: 49% 37%;
-          animation: girlHead 5s ease-in-out infinite;
-        }
-
-        /* ---- girl: blink (eyelid slides down) ---- */
-        @keyframes girlBlink {
-          0%, 90%, 100% { transform: scaleY(0); }
-          93% { transform: scaleY(1); }
-          96% { transform: scaleY(0); }
-        }
-        .girl-lid {
-          transform-box: fill-box;
-          transform-origin: 50% 0%;
-          transform: scaleY(0);
-          transition: transform 0.2s ease;
-          animation: girlBlink 4.2s infinite;
-        }
-        .girl-lid.late { animation-delay: 0.05s; }
-        .girl-lid.is-shut { animation: none; transform: scaleY(1); }
-
-        /* ---- girl: talking mouth ---- */
-        @keyframes girlTalk {
-          0%, 40%, 100% { opacity: 0; transform: scaleY(0.2); }
-          46% { opacity: 1; transform: scaleY(1); }
-          52% { opacity: 1; transform: scaleY(0.45); }
-          58% { opacity: 1; transform: scaleY(0.95); }
-          64% { opacity: 1; transform: scaleY(0.4); }
-          70% { opacity: 1; transform: scaleY(0.85); }
-          76% { opacity: 0; transform: scaleY(0.2); }
-        }
-        .girl-mouth {
-          transform-box: fill-box;
-          transform-origin: 50% 15%;
-          opacity: 0;
-          animation: girlTalk 6s infinite;
-        }
-        .girl-mouth.fast { animation-duration: 2.4s; }
-
-        /* ---- girl: coffee steam ---- */
-        @keyframes girlSteam {
-          0% { opacity: 0; transform: translateY(8px); }
-          35% { opacity: 0.55; }
-          100% { opacity: 0; transform: translateY(-16px); }
-        }
-        .girl-steam { opacity: 0; animation: girlSteam 3s ease-in-out infinite; }
-
-        /* ---- girl: floating hearts ---- */
-        @keyframes girlHeart {
-          0% { opacity: 0; transform: translateY(8px) scale(0.6); }
-          25% { opacity: 0.95; }
-          100% { opacity: 0; transform: translateY(-34px) scale(1.15); }
-        }
-        .girl-heart {
-          position: absolute;
-          font-size: 13px;
-          line-height: 1;
-          color: #f0abfc;
-          text-shadow: 0 0 8px rgba(217, 70, 239, 0.9);
-          opacity: 0;
-          z-index: 5;
-          animation: girlHeart 3.4s ease-in-out infinite;
-        }
-      `,
-        }}
-      />
+      <LoginStyles />
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  7. STYLES                                                          */
+/* ------------------------------------------------------------------ */
+
+const LoginStyles = () => (
+  <style
+    dangerouslySetInnerHTML={{
+      __html: `
+    @keyframes formReveal {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-form-reveal {
+      animation: formReveal 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* ---- video guide ---- */
+    @keyframes videoPing {
+      0% { transform: scale(1); opacity: 0.6; }
+      80%, 100% { transform: scale(1.9); opacity: 0; }
+    }
+    .video-ping { animation: videoPing 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
+    .video-grid {
+      background-image:
+        linear-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.12) 1px, transparent 1px);
+      background-size: 22px 22px;
+      mask-image: radial-gradient(circle at center, black 20%, transparent 75%);
+      -webkit-mask-image: radial-gradient(circle at center, black 20%, transparent 75%);
+    }
+    @keyframes videoProgress {
+      0% { width: 6%; }
+      100% { width: 100%; }
+    }
+    .video-progress { width: 6%; animation: videoProgress 9s linear infinite; }
+
+    /* ---- boy ---- */
+    @keyframes boyFloat {
+      0%, 100% { transform: translateX(calc(-50% + 6px)) translateY(0) rotate(0deg); }
+      50% { transform: translateX(calc(-50% + 6px)) translateY(-2px) rotate(0.25deg); }
+    }
+    .boy-character-float { left: 50%; animation: boyFloat 4.2s ease-in-out infinite; transform-origin: 50% 65%; }
+
+    @keyframes boyBlink {
+      0%, 42%, 48%, 87%, 93%, 100% { transform: scaleY(0.02); opacity: 0.98; }
+      44%, 46%, 89%, 91% { transform: scaleY(1); opacity: 1; }
+    }
+    .boy-eye-blink {
+      transform-box: fill-box;
+      transform-origin: center;
+      transform: scaleY(0.02);
+      animation: boyBlink 5.2s ease-in-out infinite;
+    }
+    .boy-eye-right { animation-delay: 0.045s; }
+    @keyframes boySmile {
+      0%, 35%, 100% { opacity: 0.25; transform: scale(0.96); }
+      45%, 68% { opacity: 0.9; transform: scale(1.04); }
+    }
+    .boy-smile-glint, .boy-smile-highlight {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: boySmile 3.6s ease-in-out infinite;
+    }
+    .boy-smile-highlight { animation-delay: 0.08s; opacity: 0.45; }
+
+    /* ---- girl ---- */
+    .mascot-row { isolation: isolate; }
+    .girl-seat { position: relative; z-index: 2; }
+    .girl-seat::after {
+      content: "";
+      position: absolute;
+      left: 8%; right: 8%; bottom: 1px;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.48);
+      filter: blur(6px);
+      z-index: -1;
+    }
+
+    @keyframes girlBreathe {
+      0%, 100% { transform: scaleY(1); }
+      50% { transform: scaleY(1.012); }
+    }
+    .girl-wrap {
+      transform-origin: 50% 100%;
+      animation: girlBreathe 4s ease-in-out infinite;
+    }
+    @keyframes girlHead {
+      0%, 100% { transform: rotate(-1.4deg) translateY(0); }
+      50% { transform: rotate(1.6deg) translateY(-1px); }
+    }
+    .girl-head {
+      transform-origin: 49% 37%;
+      animation: girlHead 5s ease-in-out infinite;
+    }
+
+    @keyframes girlBlink {
+      0%, 90%, 100% { transform: scaleY(0); }
+      93% { transform: scaleY(1); }
+      96% { transform: scaleY(0); }
+    }
+    .girl-lid {
+      transform-box: fill-box;
+      transform-origin: 50% 0%;
+      transform: scaleY(0);
+      transition: transform 0.2s ease;
+      animation: girlBlink 4.2s infinite;
+    }
+    .girl-lid.late { animation-delay: 0.05s; }
+    .girl-lid.is-shut { animation: none; transform: scaleY(1); }
+
+    @keyframes girlTalk {
+      0%, 40%, 100% { opacity: 0; transform: scaleY(0.2); }
+      46% { opacity: 1; transform: scaleY(1); }
+      52% { opacity: 1; transform: scaleY(0.45); }
+      58% { opacity: 1; transform: scaleY(0.95); }
+      64% { opacity: 1; transform: scaleY(0.4); }
+      70% { opacity: 1; transform: scaleY(0.85); }
+      76% { opacity: 0; transform: scaleY(0.2); }
+    }
+    .girl-mouth {
+      transform-box: fill-box;
+      transform-origin: 50% 15%;
+      opacity: 0;
+      animation: girlTalk 6s infinite;
+    }
+    .girl-mouth.fast { animation-duration: 2.4s; }
+
+    @keyframes girlSteam {
+      0% { opacity: 0; transform: translateY(8px); }
+      35% { opacity: 0.55; }
+      100% { opacity: 0; transform: translateY(-16px); }
+    }
+    .girl-steam { opacity: 0; animation: girlSteam 3s ease-in-out infinite; }
+
+    @keyframes girlHeart {
+      0% { opacity: 0; transform: translateY(8px) scale(0.6); }
+      25% { opacity: 0.95; }
+      100% { opacity: 0; transform: translateY(-26px) scale(1.15); }
+    }
+    .girl-heart {
+      position: absolute;
+      font-size: 11px;
+      line-height: 1;
+      color: #f0abfc;
+      text-shadow: 0 0 8px rgba(217, 70, 239, 0.9);
+      opacity: 0;
+      z-index: 5;
+      animation: girlHeart 3.4s ease-in-out infinite;
+    }
+  `,
+    }}
+  />
+);
