@@ -100,7 +100,7 @@ function TickerCard({ event, now }: { event: ActivityEvent; now: number }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  The slow left-to-right ticker                                      */
+/*  The slow right-to-left ticker                                      */
 /* ------------------------------------------------------------------ */
 function Ticker({ events, now }: { events: ActivityEvent[]; now: number }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -335,10 +335,10 @@ export function RecentActivity() {
         dangerouslySetInnerHTML={{
           __html: `
             @keyframes ra-marquee {
-              from { transform: translate3d(-50%, 0, 0); }
-              to   { transform: translate3d(0, 0, 0); }
+              from { transform: translate3d(0, 0, 0); }
+              to   { transform: translate3d(-50%, 0, 0); }
             }
-            /* left -> right, constant speed, seamless loop */
+            /* right -> left, constant speed, seamless loop */
             .ra-moving { animation: ra-marquee linear infinite; will-change: transform; }
             /* hover (desktop) pauses it so a card can be read */
             .ra-viewport:hover .ra-moving { animation-play-state: paused; }
