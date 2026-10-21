@@ -14,6 +14,7 @@ import {
 
 import { Navbar } from "@/components/navbar";
 import { Hero } from "@/components/hero";
+import { RecentActivity } from "@/components/recent-activity";
 import { ProductCard } from "@/components/product-card";
 import { ComingSoon } from "@/components/coming-soon";
 import { FloatingSupport } from "@/components/floating-support";
@@ -210,6 +211,8 @@ export default function Home() {
             activeCategory={activeCategory}
             onCategoryChange={handleCategoryChange}
           />
+        {/* Live Recent Activity */}
+<RecentActivity />
 
           <Hero onScrollToProducts={scrollToProducts} />
 
