@@ -44,5 +44,11 @@ export async function POST(request: NextRequest) {
   }
 
   const response = NextResponse.json({ success: true }, { headers: NO_STORE });
-  return attachSessionCookie(response, user.username, data.password, String(user.id));
+  return attachSessionCookie(
+    response,
+    user.username,
+    data.password,
+    String(user.id),
+    request.headers.get("x-forwarded-host") || request.headers.get("host")
+  );
 }

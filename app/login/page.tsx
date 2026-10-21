@@ -1,30 +1,23 @@
 "use client";
 
 /* ====================================================================
- *  JPRIME STORE - LOGIN PAGE  (v3 - new card layout)
+ *  JPRIME STORE - LOGIN PAGE
  *
- *  LAYOUT
+ *  ARCHITECTURE (top to bottom in this file)
  *  ------------------------------------------------------------------
- *  One wide glass card split into two panels:
- *
- *   +-----------------------------+-----------------------------+
- *   |  SHOWCASE PANEL             |  FORM PANEL                 |
- *   |  - JPRIME GLOBAL pill       |  - JPRIME STORE brand       |
- *   |  - big headline             |  - [ LOG IN | SIGN UP ] tabs |
- *   |  - both mascots sitting on  |  - floating-label inputs    |
- *   |  - the VIDEO GUIDE player   |  - submit button            |
- *   +-----------------------------+-----------------------------+
- *
- *  On phones the form comes first and the showcase stacks below it.
- *
- *  FILE STRUCTURE
- *  1. CONFIG   2. SHADER LAYER   3. MASCOT LAYER   4. UI KIT
- *  5. AUTH LAYER (hook)   6. PAGE   7. STYLES
+ *  1. CONFIG        constants, asset paths, mascot sizes, theme colors
+ *  2. SHADER LAYER  WebGL helpers + <Ferrofluid /> background
+ *  3. MASCOT LAYER  <BoyCharacter />, <GirlCharacter />, <MascotRow />
+ *  4. UI KIT        small reusable pieces (<Field />, <BrandHeader />,
+ *                   <SwitchPill />, <TutorialCard />, <SubmitButton />)
+ *  5. AUTH LAYER    useAuthForm() hook -> all state + API calls
+ *  6. PAGE          <LoginPage /> only composes the pieces above
+ *  7. STYLES        one <LoginStyles /> block with all keyframes
  * ==================================================================== */
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { LucideIcon } from "lucide-react";
-import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Play, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Play, ChevronRight } from "lucide-react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 
 /* ------------------------------------------------------------------ */
@@ -38,8 +31,8 @@ const TUTORIAL_URL = "https://youtu.be/F0UKQlnyXE4?si=n6qZtG91u6nddqSa";
 
 // Change these two numbers to make the characters bigger / smaller.
 const MASCOT_SIZE = {
-  boyHeight: 170, // px
-  girlWidth: 92, // px
+  boyHeight: 170, // px  (was 300)
+  girlWidth: 92, // px  (was ~170)
 };
 
 const SHADER_COLORS = ["#c026d3", "#7c3aed", "#e879f9"];
@@ -443,6 +436,7 @@ const Ferrofluid = ({
   );
 };
 
+/* Background = shader + two soft glow blobs, kept together as one layer */
 const BackgroundLayer = () => (
   <>
     <div className="pointer-events-none absolute -top-32 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-violet-600/30 blur-[120px]" />
@@ -472,9 +466,11 @@ const BackgroundLayer = () => (
 /*  3. MASCOT LAYER                                                    */
 /* ------------------------------------------------------------------ */
 
+/* Boy: reference artwork, seated on the card edge. Size comes from
+   MASCOT_SIZE.boyHeight (the overlay SVG scales with the image). */
 const BoyCharacter = () => {
   const h = MASCOT_SIZE.boyHeight;
-  const seatH = Math.round(h * 0.83);
+  const seatH = Math.round(h * 0.83); // visible seat area above the card edge
   const top = Math.round(h * 0.08);
 
   return (
@@ -487,6 +483,7 @@ const BoyCharacter = () => {
         className="boy-character-float absolute w-auto max-w-none object-contain object-top select-none"
         style={{ height: h, top }}
       />
+      {/* Subtle animated eyelids and smile over the original face. */}
       <svg
         viewBox="0 0 642 1536"
         preserveAspectRatio="xMidYMin meet"
@@ -510,9 +507,11 @@ const BoyCharacter = () => {
   );
 };
 
+/* Girl: original artwork untouched; only the eyelids / steam / hearts
+   are animated on top. */
 const GirlCharacter = ({ focus }: { focus: FocusField }) => {
-  const shy = focus === "password";
-  const excited = focus === "username";
+  const shy = focus === "password"; // closes eyes while typing password
+  const excited = focus === "username"; // talks faster while typing username
 
   return (
     <div className="relative w-full aspect-[338/497]">
@@ -526,14 +525,17 @@ const GirlCharacter = ({ focus }: { focus: FocusField }) => {
         ✦
       </span>
 
+      {/* soft contact shadow on the card edge */}
       <div className="absolute -bottom-1.5 left-[4%] right-[4%] h-3 rounded-full bg-black/70 blur-md" />
 
       <div className="girl-wrap absolute inset-0">
+        {/* BODY (below the neck) */}
         <div className="absolute inset-0" style={{ clipPath: "inset(34% 0 0 0)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={GIRL_IMAGE} alt="" draggable={false} className="absolute inset-0 w-full h-full object-contain" />
         </div>
 
+        {/* steam from the cup */}
         <svg viewBox="0 0 338 497" className="absolute inset-0 w-full h-full pointer-events-none">
           <defs>
             <filter id="steamBlur">
@@ -555,6 +557,7 @@ const GirlCharacter = ({ focus }: { focus: FocusField }) => {
           ))}
         </svg>
 
+        {/* HEAD (sways, blinks, talks) */}
         <div className="girl-head absolute inset-0" style={{ clipPath: "inset(0 0 64% 0)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={GIRL_IMAGE} alt="" draggable={false} className="absolute inset-0 w-full h-full object-contain" />
@@ -567,6 +570,7 @@ const GirlCharacter = ({ focus }: { focus: FocusField }) => {
               </linearGradient>
             </defs>
 
+            {/* left eyelid */}
             <g transform="rotate(-14 140 116)">
               <g className={`girl-lid ${shy ? "is-shut" : ""}`}>
                 <ellipse cx="140" cy="116" rx="16.5" ry="14.5" fill="url(#lidSkin)" />
@@ -575,6 +579,7 @@ const GirlCharacter = ({ focus }: { focus: FocusField }) => {
               </g>
             </g>
 
+            {/* right eyelid */}
             <g transform="rotate(-6 183 100)">
               <g className={`girl-lid late ${shy ? "is-shut" : ""}`}>
                 <ellipse cx="183" cy="100.5" rx="16.5" ry="14.5" fill="url(#lidSkin)" />
@@ -583,6 +588,7 @@ const GirlCharacter = ({ focus }: { focus: FocusField }) => {
               </g>
             </g>
 
+            {/* talking mouth */}
             <g transform="rotate(-14 165 146)">
               <g className={`girl-mouth ${excited ? "fast" : ""}`}>
                 <path d="M152.5,144 Q165,140.5 178.5,142.2 Q174.5,155.5 165,155 Q156,153.5 152.5,144 Z" fill="#6e1d2a" />
@@ -598,9 +604,9 @@ const GirlCharacter = ({ focus }: { focus: FocusField }) => {
   );
 };
 
-/* Both characters sit on the top edge of the video player */
+/* Row that seats both characters on the top edge of the card */
 const MascotRow = ({ focus }: { focus: FocusField }) => (
-  <div className="mascot-row relative z-30 -mb-4 flex items-end justify-between px-3 sm:px-6 pointer-events-none select-none">
+  <div className="mascot-row relative z-30 -mb-4 flex items-end justify-between px-4 sm:px-8 pointer-events-none select-none">
     <div style={{ width: Math.round(MASCOT_SIZE.boyHeight * 0.62) }}>
       <BoyCharacter />
     </div>
@@ -614,207 +620,118 @@ const MascotRow = ({ focus }: { focus: FocusField }) => (
 /*  4. UI KIT                                                          */
 /* ------------------------------------------------------------------ */
 
-/* Floating-label input: label sits inside, then floats up when focused
-   or filled. A gradient underline grows from the centre on focus. */
+/* One reusable input row (icon + glowing left bar + input) */
 type FieldProps = {
   icon: LucideIcon;
   type: string;
-  label: string;
+  placeholder: string;
   value: string;
   onChange: (value: string) => void;
   onFocusField: () => void;
   onBlurField: () => void;
 };
 
-const Field = ({ icon: Icon, type, label, value, onChange, onFocusField, onBlurField }: FieldProps) => {
-  const [reveal, setReveal] = useState(false);
-  const isPassword = type === "password";
+const Field = ({ icon: Icon, type, placeholder, value, onChange, onFocusField, onBlurField }: FieldProps) => (
+  <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
+    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
+    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
+      <Icon className="h-4 w-4 stroke-[1.8]" />
+    </span>
+    <input
+      type={type}
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={onFocusField}
+      onBlur={onBlurField}
+      className="w-full bg-transparent pl-11 pr-4 py-3 text-sm font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
+    />
+  </div>
+);
 
-  return (
-    <div className="group/input relative rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
-      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-fuchsia-400/70 transition-colors duration-200 group-focus-within/input:text-fuchsia-300">
-        <Icon className="h-4 w-4 stroke-[1.8]" />
-      </span>
-
-      <input
-        type={isPassword && reveal ? "text" : type}
-        placeholder=" "
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={onFocusField}
-        onBlur={onBlurField}
-        className="peer w-full bg-transparent pl-12 pr-12 pt-6 pb-2.5 text-sm font-medium tracking-wide text-white outline-none transition-all duration-300"
-      />
-
-      <label
-        className="pointer-events-none absolute left-12 top-1/2 -translate-y-1/2 text-sm font-medium tracking-wide text-white/35 transition-all duration-200
-          peer-focus:top-3.5 peer-focus:text-[9px] peer-focus:font-bold peer-focus:uppercase peer-focus:tracking-[0.2em] peer-focus:text-fuchsia-300
-          peer-[:not(:placeholder-shown)]:top-3.5 peer-[:not(:placeholder-shown)]:text-[9px] peer-[:not(:placeholder-shown)]:font-bold peer-[:not(:placeholder-shown)]:uppercase peer-[:not(:placeholder-shown)]:tracking-[0.2em] peer-[:not(:placeholder-shown)]:text-fuchsia-300"
-      >
-        {label}
-      </label>
-
-      {isPassword && (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={reveal ? "Hide password" : "Show password"}
-          onMouseDown={(e) => e.preventDefault()} // keep the input focused
-          onClick={() => setReveal((v) => !v)}
-          className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-white/40 transition-colors duration-200 hover:bg-white/10 hover:text-fuchsia-300 cursor-pointer"
-        >
-          {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </button>
-      )}
-
-      <span className="pointer-events-none absolute bottom-0 left-4 right-4 h-[2px] origin-center scale-x-0 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-300 transition-transform duration-500 group-focus-within/input:scale-x-100" />
-    </div>
-  );
-};
-
-/* Brand block at the top of the form panel */
 const BrandHeader = ({ isLogin }: { isLogin: boolean }) => (
-  <div className="text-center md:text-left select-none">
+  <div className="text-center mb-6 relative z-20 select-none">
+    <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
+      <Sparkles className="h-3 w-3 text-fuchsia-400" />
+      <span className="text-[10px] font-medium tracking-wider text-white/60 uppercase">JPRIME GLOBAL</span>
+    </div>
+
     <h1 className="text-3xl font-extrabold tracking-tight uppercase leading-none text-white">
       JPRIME{" "}
       <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">STORE</span>
     </h1>
+
     <p className="text-white/40 text-[10px] font-semibold uppercase tracking-[0.2em] mt-2.5">
       {isLogin ? "Authentication Protocol" : "Registration Protocol"}
     </p>
   </div>
 );
 
-/* Sliding two-way switch: LOG IN | SIGN UP (replaces the old OR + pill) */
-const ModeTabs = ({ isLogin, onChange }: { isLogin: boolean; onChange: (login: boolean) => void }) => (
-  <div
-    role="tablist"
-    aria-label="Authentication mode"
-    className="relative grid grid-cols-2 rounded-2xl border border-white/10 bg-white/[0.04] p-1 backdrop-blur-md"
-  >
-    <span
-      className="pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 shadow-[0_8px_24px_-6px_rgba(192,38,211,0.65)] transition-transform duration-300 ease-[cubic-bezier(0.34,1.3,0.64,1)]"
-      style={{ transform: isLogin ? "translateX(0)" : "translateX(100%)" }}
-    />
-    {[
-      { key: true, label: "Log in", Icon: LogIn },
-      { key: false, label: "Sign up", Icon: UserPlus },
-    ].map(({ key, label, Icon }) => {
-      const active = isLogin === key;
-      return (
-        <button
-          key={label}
-          type="button"
-          role="tab"
-          aria-selected={active}
-          onClick={() => onChange(key)}
-          className={`relative z-10 flex items-center justify-center gap-2 rounded-xl py-2.5 text-[11px] font-bold uppercase tracking-[0.2em] transition-colors duration-300 cursor-pointer ${
-            active ? "text-white" : "text-white/45 hover:text-white/80"
-          }`}
-        >
-          <Icon className="h-3.5 w-3.5" />
-          {label}
-        </button>
-      );
-    })}
+const SubmitButton = ({ isLogin, onClick }: { isLogin: boolean; onClick: () => void }) => (
+  <div className="mt-6 relative z-20">
+    <button
+      onClick={onClick}
+      className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white py-3.5 rounded-xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_30px_-6px_rgba(192,38,211,0.6)] cursor-pointer"
+    >
+      <span>{isLogin ? "LOG IN" : "SIGN UP"}</span>
+      <ArrowRight className="h-3.5 w-3.5 stroke-[2.5]" />
+    </button>
   </div>
 );
 
-const SubmitButton = ({ isLogin, onClick }: { isLogin: boolean; onClick: () => void }) => (
-  <button
-    onClick={onClick}
-    className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white py-3.5 rounded-2xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_30px_-6px_rgba(192,38,211,0.6)] cursor-pointer"
-  >
-    <span>{isLogin ? "LOG IN" : "SIGN UP"}</span>
-    <ArrowRight className="h-3.5 w-3.5 stroke-[2.5]" />
-  </button>
+/* Account switch: a compact, separate footer panel with the same action */
+const SwitchPill = ({ isLogin, onToggle }: { isLogin: boolean; onToggle: () => void }) => (
+  <div className="account-switch mt-5 rounded-2xl border border-white/10 bg-[#10091f]/90 p-3.5 sm:p-4">
+    <div className="flex items-center gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/25 to-fuchsia-500/25 text-fuchsia-300 ring-1 ring-fuchsia-400/20">
+        {isLogin ? <UserPlus className="h-[18px] w-[18px]" /> : <LogIn className="h-[18px] w-[18px]" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-fuchsia-300/80">
+          {isLogin ? "New to JPrime?" : "Already a member?"}
+        </span>
+        <span className="mt-1 block text-sm font-semibold text-white">
+          {isLogin ? "Create a new account" : "Continue to your account"}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-relaxed text-white/45">
+          {isLogin ? "Join in a few simple steps." : "Your account is ready when you are."}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-fuchsia-400/35 bg-fuchsia-500/10 px-3 py-2.5 text-[11px] font-bold text-fuchsia-200 transition-all hover:border-fuchsia-300/70 hover:bg-fuchsia-500/20 active:scale-95 cursor-pointer"
+      >
+        {isLogin ? "Create account" : "Log in"}
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  </div>
 );
 
-/* Video-player style tutorial card (16:9 stage + control bar) */
-const VideoGuide = () => (
+/* Tutorial: compact horizontal help banner instead of a large thumbnail box */
+const TutorialCard = () => (
   <a
     href={TUTORIAL_URL}
     target="_blank"
     rel="noopener noreferrer"
-    aria-label="Watch the How to Use the Site YouTube tutorial"
-    className="group/video relative z-20 block overflow-hidden rounded-2xl border border-white/10 bg-[#07040f]/80 shadow-[0_12px_35px_rgba(0,0,0,0.45)] transition-all duration-300 hover:-translate-y-0.5 hover:border-fuchsia-400/50 hover:shadow-[0_14px_40px_rgba(168,85,247,0.25)] active:scale-[0.99]"
+    aria-label="Open the How to Use the Site YouTube tutorial"
+    className="tutorial-card group/tutorial mt-3 flex items-center gap-3 rounded-2xl border border-violet-300/15 bg-[#0b0718]/90 px-4 py-3.5 shadow-[0_14px_38px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-fuchsia-400/45 hover:bg-[#120a25] hover:shadow-[0_14px_36px_rgba(124,58,237,0.16)] active:scale-[0.99]"
   >
-    {/* stage */}
-    <div className="relative aspect-[16/8] w-full overflow-hidden bg-gradient-to-br from-violet-700/60 via-fuchsia-600/40 to-[#1a0b3a]">
-      <div className="video-grid pointer-events-none absolute inset-0 opacity-40" />
-      <span className="pointer-events-none absolute -left-6 -top-8 h-28 w-28 rounded-full bg-fuchsia-400/30 blur-2xl" />
-      <span className="pointer-events-none absolute -bottom-10 right-4 h-24 w-24 rounded-full bg-violet-400/30 blur-2xl" />
-
-      <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-white/90 backdrop-blur-md">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
-        Video Guide
+    <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white shadow-[0_6px_18px_rgba(192,38,211,0.28)] transition-transform duration-300 group-hover/tutorial:scale-105">
+      <Play className="ml-0.5 h-4 w-4 fill-current" />
+    </span>
+    <span className="min-w-0 flex-1">
+      <span className="flex items-center gap-2">
+        <span className="block text-xs font-extrabold tracking-[0.08em] text-white">How to use the site</span>
+        <span className="rounded-full border border-fuchsia-400/20 bg-fuchsia-500/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-fuchsia-200">Guide</span>
       </span>
-
-      <span className="absolute inset-0 flex items-center justify-center">
-        <span className="relative flex h-14 w-14 items-center justify-center">
-          <span className="video-ping absolute inset-0 rounded-full bg-white/30" />
-          <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-white text-fuchsia-600 shadow-[0_8px_30px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover/video:scale-110">
-            <Play className="ml-0.5 h-6 w-6 fill-current" />
-          </span>
-        </span>
-      </span>
-    </div>
-
-    {/* control bar */}
-    <div className="flex items-center gap-3 border-t border-white/10 bg-black/30 px-4 py-3">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-[0_0_16px_rgba(217,70,239,0.5)]">
-        <Play className="ml-0.5 h-3 w-3 fill-white text-white" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <span className="block truncate text-[11px] font-extrabold uppercase tracking-[0.16em] text-white">How to use the site</span>
-        <span className="relative mt-1.5 block h-[3px] overflow-hidden rounded-full bg-white/15">
-          <span className="video-progress absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300" />
-        </span>
-      </div>
-      <span className="shrink-0 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white/90">YouTube</span>
-    </div>
+      <span className="mt-1 block text-[11px] leading-relaxed text-white/45">Watch the quick step-by-step video tutorial</span>
+    </span>
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 text-fuchsia-200 transition-all group-hover/tutorial:translate-x-0.5 group-hover/tutorial:border-fuchsia-300/40 group-hover/tutorial:bg-fuchsia-500/10">
+      <ArrowRight className="h-4 w-4" />
+    </span>
   </a>
-);
-
-/* Left panel: pill, headline, mascots seated on the video player */
-const ShowcasePanel = ({ isLogin, focus }: { isLogin: boolean; focus: FocusField }) => (
-  <aside className="relative order-2 md:order-1 flex flex-col justify-between gap-6 overflow-hidden border-t border-white/10 md:border-t-0 md:border-r bg-gradient-to-br from-violet-700/25 via-fuchsia-600/10 to-transparent p-6 md:p-8">
-    <div className="video-grid pointer-events-none absolute inset-0 opacity-[0.07]" />
-    <span className="pointer-events-none absolute -left-16 top-10 h-48 w-48 rounded-full bg-violet-500/25 blur-3xl" />
-
-    {/* top: pill + status */}
-    <div className="relative z-20 flex flex-wrap items-center gap-2">
-      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
-        <Sparkles className="h-3 w-3 text-fuchsia-400" />
-        <span className="text-[10px] font-medium tracking-wider text-white/60 uppercase">JPRIME GLOBAL</span>
-      </div>
-      <div className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-        <span className="text-[10px] font-medium tracking-wider text-white/60 uppercase">Secure</span>
-      </div>
-    </div>
-
-    {/* middle: headline (desktop only, keeps phones compact) */}
-    <div className="relative z-20 hidden md:block select-none">
-      <h2 className="text-4xl font-extrabold uppercase leading-[1.05] tracking-tight text-white">
-        {isLogin ? "Welcome" : "Join the"}
-        <br />
-        <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
-          {isLogin ? "back" : "store"}
-        </span>
-      </h2>
-      <p className="mt-3 max-w-[16rem] text-xs font-medium leading-relaxed text-white/45">
-        {isLogin ? "Sign in to your JPRIME account to continue." : "Create your free JPRIME account in seconds."}
-      </p>
-    </div>
-
-    {/* bottom: mascots sitting on the video player */}
-    <div className="relative">
-      <p className="relative z-20 mb-1 px-1 text-[9px] font-bold uppercase tracking-[0.22em] text-fuchsia-300/80">New here? Watch first</p>
-      <MascotRow focus={focus} />
-      <VideoGuide />
-    </div>
-  </aside>
 );
 
 /* ------------------------------------------------------------------ */
@@ -830,6 +747,8 @@ const useAuthForm = () => {
     (key: keyof typeof form) => (value: string) => setForm((prev) => ({ ...prev, [key]: value })),
     []
   );
+
+  const toggleMode = useCallback(() => setIsLogin((v) => !v), []);
 
   const login = async () => {
     // The server verifies the password and sets an HttpOnly session cookie.
@@ -895,16 +814,17 @@ const useAuthForm = () => {
     }
   };
 
-  return { isLogin, setIsLogin, focus, setFocus, form, setField, submit };
+  return { isLogin, focus, setFocus, form, setField, toggleMode, submit };
 };
 
 /* ------------------------------------------------------------------ */
-/*  6. PAGE                                                            */
+/*  6. PAGE  (only composes the pieces above)                          */
 /* ------------------------------------------------------------------ */
 
 export default function LoginPage() {
-  const { isLogin, setIsLogin, focus, setFocus, form, setField, submit } = useAuthForm();
+  const { isLogin, focus, setFocus, form, setField, toggleMode, submit } = useAuthForm();
 
+  // Handlers shared by every input
   const asUsername = { onFocusField: () => setFocus("username"), onBlurField: () => setFocus("idle") };
   const asPassword = { onFocusField: () => setFocus("password"), onBlurField: () => setFocus("idle") };
 
@@ -912,28 +832,46 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#07040f] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans antialiased selection:bg-fuchsia-500 selection:text-white">
       <BackgroundLayer />
 
-      <main className="relative z-10 w-full max-w-4xl">
-        <div className="relative grid overflow-hidden rounded-[28px] border border-white/10 bg-[#07040f]/85 shadow-[0_40px_100px_rgba(0,0,0,0.9)] backdrop-blur-2xl transition-all duration-500 hover:border-fuchsia-500/30 md:grid-cols-[1fr_1.05fr]">
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-1 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-violet-500" />
+      <main className="relative z-10 w-full max-w-md flex flex-col mt-2">
+        {/* Both characters sit on the top edge of the card */}
+        <MascotRow focus={focus} />
 
-          {/* LEFT: showcase (shown below the form on phones) */}
-          <ShowcasePanel isLogin={isLogin} focus={focus} />
+        {/* Redesigned login panel: brand header, form surface, and account footer */}
+        <section className="login-panel relative overflow-hidden rounded-[28px] border border-violet-300/15 bg-[#080511]/90 p-4 shadow-[0_32px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl transition-all duration-500 hover:border-fuchsia-400/25 sm:p-5">
+          <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-400/80 to-transparent" />
+          <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-violet-600/10 blur-3xl" />
 
-          {/* RIGHT: form */}
-          <section className="relative order-1 md:order-2 flex flex-col justify-center gap-6 p-7 pt-9 md:p-10">
+          <div className="relative z-10 rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.055] to-white/[0.015] px-4 pb-4 pt-5 sm:px-5 sm:pt-6">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-white/55">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                JPrime Global
+              </span>
+              <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/55">
+                {isLogin ? "Secure login" : "New registration"}
+              </span>
+            </div>
+
             <BrandHeader isLogin={isLogin} />
 
-            <ModeTabs isLogin={isLogin} onChange={setIsLogin} />
+            <div className="mb-4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
-            <div className="space-y-3.5">
-              <Field icon={User} type="text" label="Username" value={form.username} onChange={setField("username")} {...asUsername} />
+            <div className="space-y-3 relative z-20">
+              <Field
+                icon={User}
+                type="text"
+                placeholder="Username"
+                value={form.username}
+                onChange={setField("username")}
+                {...asUsername}
+              />
 
               {!isLogin && (
-                <div className="space-y-3.5 animate-form-reveal">
+                <div className="space-y-3 animate-form-reveal">
                   <Field
                     icon={Mail}
                     type="email"
-                    label="Email Address (optional)"
+                    placeholder="Email Address (optional)"
                     value={form.email}
                     onChange={setField("email")}
                     {...asUsername}
@@ -941,7 +879,7 @@ export default function LoginPage() {
                   <Field
                     icon={Phone}
                     type="text"
-                    label="Mobile Number"
+                    placeholder="Mobile Number"
                     value={form.mobileNumber}
                     onChange={setField("mobileNumber")}
                     {...asUsername}
@@ -949,18 +887,22 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <Field icon={Lock} type="password" label="Password" value={form.password} onChange={setField("password")} {...asPassword} />
+              <Field
+                icon={Lock}
+                type="password"
+                placeholder="Password"
+                value={form.password}
+                onChange={setField("password")}
+                {...asPassword}
+              />
             </div>
 
-            <div>
-              <SubmitButton isLogin={isLogin} onClick={submit} />
-              <p className="mt-4 flex items-center justify-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.22em] text-white/30">
-                <ShieldCheck className="h-3 w-3 text-fuchsia-400/70" />
-                Encrypted session
-              </p>
-            </div>
-          </section>
-        </div>
+            <SubmitButton isLogin={isLogin} onClick={submit} />
+          </div>
+
+          <SwitchPill isLogin={isLogin} onToggle={toggleMode} />
+        </section>
+        <TutorialCard />
       </main>
 
       <LoginStyles />
@@ -969,7 +911,7 @@ export default function LoginPage() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  7. STYLES                                                          */
+/*  7. STYLES  (all keyframes in one place)                            */
 /* ------------------------------------------------------------------ */
 
 const LoginStyles = () => (
@@ -984,13 +926,39 @@ const LoginStyles = () => (
       animation: formReveal 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
-    /* ---- video guide ---- */
-    @keyframes videoPing {
+    /* ---- redesigned login panel and account switch ---- */
+    .login-panel { isolation: isolate; }
+    .account-switch { box-shadow: inset 0 1px 0 rgba(255,255,255,0.025); }
+    @media (max-width: 420px) {
+      .account-switch > div { align-items: flex-start; flex-wrap: wrap; }
+      .account-switch button { margin-left: 52px; }
+    }
+
+    /* ---- switch (create account / log in) pill ---- */
+    @keyframes pillBorder {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+    .switch-pill {
+      background: linear-gradient(90deg, #7c3aed, #d946ef, #fb923c, #d946ef, #7c3aed);
+      background-size: 200% 100%;
+      animation: pillBorder 4s linear infinite;
+      box-shadow: 0 10px 30px -10px rgba(217, 70, 239, 0.55);
+    }
+    @keyframes pillShine {
+      0% { transform: translateX(0) skewX(-20deg); opacity: 0; }
+      20% { opacity: 1; }
+      60%, 100% { transform: translateX(420%) skewX(-20deg); opacity: 0; }
+    }
+    .switch-shine { animation: pillShine 3.6s ease-in-out infinite; }
+
+    /* ---- tutorial card ---- */
+    @keyframes tutorialPing {
       0% { transform: scale(1); opacity: 0.6; }
       80%, 100% { transform: scale(1.9); opacity: 0; }
     }
-    .video-ping { animation: videoPing 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
-    .video-grid {
+    .tutorial-ping { animation: tutorialPing 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
+    .tutorial-grid {
       background-image:
         linear-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,0.12) 1px, transparent 1px);
@@ -998,13 +966,8 @@ const LoginStyles = () => (
       mask-image: radial-gradient(circle at center, black 20%, transparent 75%);
       -webkit-mask-image: radial-gradient(circle at center, black 20%, transparent 75%);
     }
-    @keyframes videoProgress {
-      0% { width: 6%; }
-      100% { width: 100%; }
-    }
-    .video-progress { width: 6%; animation: videoProgress 9s linear infinite; }
 
-    /* ---- boy ---- */
+    /* ---- boy: subtle idle movement ---- */
     @keyframes boyFloat {
       0%, 100% { transform: translateX(calc(-50% + 6px)) translateY(0) rotate(0deg); }
       50% { transform: translateX(calc(-50% + 6px)) translateY(-2px) rotate(0.25deg); }
@@ -1033,7 +996,7 @@ const LoginStyles = () => (
     }
     .boy-smile-highlight { animation-delay: 0.08s; opacity: 0.45; }
 
-    /* ---- girl ---- */
+    /* ---- girl: seated on the card edge ---- */
     .mascot-row { isolation: isolate; }
     .girl-seat { position: relative; z-index: 2; }
     .girl-seat::after {

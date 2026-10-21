@@ -16,6 +16,24 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const SESSION_COOKIE = "jp_session";
 const SESSION_TTL_SECONDS = 15 * 60; // 15 minutes; refreshed by the activity heartbeat
 
+/** Share production sessions between jprimecheats.store and www.jprimecheats.store. */
+function sessionCookieDomain(hostHeader?: string | null): string | undefined {
+  const host = String(hostHeader || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, "");
+
+  if (
+    host === "jprimecheats.store" ||
+    host === "www.jprimecheats.store" ||
+    host.endsWith(".jprimecheats.store")
+  ) {
+    return ".jprimecheats.store";
+  }
+  return undefined;
+}
+
 export type SessionUser = {
   id: string | number | null;
   username: string;
@@ -23,6 +41,7 @@ export type SessionUser = {
   role: string;
 };
 
+/** Normalize role casing/whitespace for consistent authorization checks. */
 export function normalizeRole(role: unknown): string {
   return String(role ?? "user").trim().toLowerCase();
 }
@@ -153,26 +172,56 @@ export function attachSessionCookie(
   response: NextResponse,
   username: string,
   storedPassword: string,
-  userId: string | number
+  userId: string | number,
+  hostHeader?: string | null
 ): NextResponse {
-  response.cookies.set(SESSION_COOKIE, createSessionToken(username, storedPassword, userId), {
+  const domain = sessionCookieDomain(hostHeader);
+  const secure = process.env.NODE_ENV === "production";
+  const token = createSessionToken(username, storedPassword, userId);
+
+  response.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
+    ...(domain ? { domain } : {}),
   });
+
+  // Expire any legacy host-only cookie on the current host. The shared cookie
+  // above then works across both apex and www versions of the site.
+  if (domain) {
+    response.headers.append(
+      "Set-Cookie",
+      `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`
+    );
+  }
   return response;
 }
 
-export function clearSessionCookie(response: NextResponse): NextResponse {
+export function clearSessionCookie(
+  response: NextResponse,
+  hostHeader?: string | null
+): NextResponse {
+  const domain = sessionCookieDomain(hostHeader);
+  const secure = process.env.NODE_ENV === "production";
+
   response.cookies.set(SESSION_COOKIE, "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "lax",
     path: "/",
     maxAge: 0,
+    ...(domain ? { domain } : {}),
   });
+
+  // Clear older host-only cookies too, so logout works after the domain change.
+  if (domain) {
+    response.headers.append(
+      "Set-Cookie",
+      `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`
+    );
+  }
   return response;
 }
 
