@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { Navbar } from "@/components/navbar";
+import { RecentActivity } from "@/components/recent-activity";
 import { Hero } from "@/components/hero";
 import { ProductCard } from "@/components/product-card";
 import { FloatingSupport } from "@/components/floating-support";
@@ -31,9 +32,6 @@ export default function Home() {
   const [purchaseHistory, setPurchaseHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Products now come from products_catalog through /api/catalog.
-  // If the catalog is empty or unavailable, useCatalogProducts falls
-  // back to the existing lib/products.ts list.
   const {
     products: catalogProducts,
     loading: catalogLoading,
@@ -57,7 +55,6 @@ export default function Home() {
     let cancelled = false;
 
     async function verifySession() {
-      // The server session cookie is the only source of truth for "logged in".
       try {
         const res = await fetch("/api/auth/me", { cache: "no-store" });
         const json = await res.json();
@@ -72,7 +69,6 @@ export default function Home() {
           return;
         }
 
-        // Keep the display hint (used by the navbar / wallet modal) in sync with the server.
         try {
           localStorage.setItem("user", JSON.stringify(json.user));
         } catch {}
@@ -91,9 +87,7 @@ export default function Home() {
 
         try {
           navigator.clipboard.writeText(copiedKey);
-        } catch {
-          // Clipboard access may be unavailable.
-        }
+        } catch {}
 
         localStorage.removeItem("latest_key");
       }
@@ -138,12 +132,8 @@ export default function Home() {
           dangerouslySetInnerHTML={{
             __html: `
               @keyframes jprimeSpin {
-                from {
-                  transform: rotate(0deg);
-                }
-                to {
-                  transform: rotate(360deg);
-                }
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
               }
 
               .jprime-spin {
@@ -164,9 +154,7 @@ export default function Home() {
         aria-hidden="true"
       >
         <div className="jprime-glow absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[360px] bg-violet-600/[0.10] rounded-full blur-[130px]" />
-
         <div className="jprime-glow-slow absolute top-[45%] right-[-8%] w-[420px] h-[420px] bg-fuchsia-500/[0.07] rounded-full blur-[110px]" />
-
         <div className="jprime-glow-slow absolute top-[75%] left-[-10%] w-[380px] h-[380px] bg-violet-500/[0.06] rounded-full blur-[110px]" />
       </div>
 
@@ -177,7 +165,6 @@ export default function Home() {
             <div className="text-center mb-6">
               <div className="relative w-12 h-12 mx-auto mb-4">
                 <span className="jprime-ping absolute inset-0 rounded-full bg-fuchsia-500/20" />
-
                 <div className="relative w-12 h-12 bg-fuchsia-500/10 text-fuchsia-400 rounded-full flex items-center justify-center border border-fuchsia-500/25">
                   <ClipboardCheck className="h-5 w-5" />
                 </div>
@@ -209,14 +196,17 @@ export default function Home() {
       {/* Page content */}
       <div className="relative z-10 flex flex-col justify-between min-h-screen">
         <div>
+          {/* Header Navigation */}
           <Navbar
             activeCategory={activeCategory}
             onCategoryChange={handleCategoryChange}
           />
 
-          <Hero onScrollToProducts={scrollToProducts} />
+          {/* RECENT ACTIVITY STRIP AT TOP BELOW NAVBAR */}
+          <RecentActivity />
 
-          <div className="max-w-7xl mx-auto px-4 py-6" />
+          {/* Hero Banner Section */}
+          <Hero onScrollToProducts={scrollToProducts} />
 
           {/* Product catalog */}
           <section
@@ -261,7 +251,6 @@ export default function Home() {
                           isSelected ? "text-fuchsia-400" : ""
                         }`}
                       />
-
                       <span>{cat.label}</span>
                     </button>
                   );
@@ -282,10 +271,8 @@ export default function Home() {
                 <p className="text-zinc-400 text-sm mt-3 max-w-2xl mx-auto">
                   {activeCategory === "mobile" &&
                     "Premium rooted and non-rooted mobile panels"}
-
                   {activeCategory === "pc" &&
                     "High-performance, safe desktop PC panels"}
-
                   {activeCategory === "ios" &&
                     "A dedicated iOS panel, built for safety"}
                 </p>
@@ -296,7 +283,6 @@ export default function Home() {
                 <div className="py-16 flex justify-center">
                   <div className="relative w-8 h-8">
                     <div className="absolute inset-0 border-2 border-zinc-800 rounded-full" />
-
                     <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-fuchsia-500 border-r-violet-500 rounded-full" />
                   </div>
                 </div>
@@ -313,10 +299,7 @@ export default function Home() {
                         animationDelay: `${Math.min(index, 8) * 0.06}s`,
                       }}
                     >
-                      <ProductCard
-                        product={product}
-                        index={index}
-                      />
+                      <ProductCard product={product} index={index} />
                     </div>
                   ))}
                 </div>
@@ -333,16 +316,13 @@ export default function Home() {
                         animationDelay: `${Math.min(index, 8) * 0.06}s`,
                       }}
                     >
-                      <ProductCard
-                        product={product}
-                        index={index}
-                      />
+                      <ProductCard product={product} index={index} />
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* iOS products from the same admin-managed catalog */}
+              {/* iOS products */}
               {!catalogLoading && activeCategory === "ios" && (
                 iosProducts.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
@@ -403,7 +383,6 @@ export default function Home() {
         title="View Profile"
       >
         <span className="jprime-ping absolute inset-0 rounded-full bg-fuchsia-500/30" />
-
         <User className="h-4.5 w-4.5 sm:h-5 sm:w-5 relative" />
       </button>
 
@@ -416,10 +395,7 @@ export default function Home() {
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-fuchsia-500/25 flex items-center justify-center text-fuchsia-300">
                   <User className="h-4 w-4" />
                 </div>
-
-                <h2 className="text-lg font-semibold text-white">
-                  Profile
-                </h2>
+                <h2 className="text-lg font-semibold text-white">Profile</h2>
               </div>
 
               <button
@@ -436,7 +412,6 @@ export default function Home() {
                 style={{ animationDelay: "0.05s" }}
               >
                 <p className="text-xs text-zinc-500">Username</p>
-
                 <p className="text-sm font-semibold text-white mt-1 truncate">
                   {userData?.username}
                 </p>
@@ -447,7 +422,6 @@ export default function Home() {
                 style={{ animationDelay: "0.1s" }}
               >
                 <p className="text-xs text-zinc-500">Account type</p>
-
                 <p className="text-sm font-semibold text-fuchsia-300 mt-1 truncate">
                   {userData?.role || "User"}
                 </p>
@@ -458,7 +432,6 @@ export default function Home() {
                 style={{ animationDelay: "0.15s" }}
               >
                 <p className="text-xs text-zinc-500">Email</p>
-
                 <p className="text-sm font-medium text-zinc-300 mt-1 truncate">
                   {userData?.email || "No email on file"}
                 </p>
@@ -467,7 +440,6 @@ export default function Home() {
 
             <div className="flex items-center gap-2 mb-4">
               <ShoppingBag className="h-4 w-4 text-fuchsia-400" />
-
               <h3 className="text-sm font-medium text-zinc-300">
                 Purchase history ({purchaseHistory.length})
               </h3>
@@ -478,10 +450,8 @@ export default function Home() {
                 <div className="py-12 flex flex-col items-center justify-center text-zinc-600 gap-3">
                   <div className="relative w-5 h-5">
                     <div className="absolute inset-0 border-2 border-zinc-800 rounded-full" />
-
                     <div className="jprime-spin absolute inset-0 border-2 border-transparent border-t-fuchsia-500 rounded-full" />
                   </div>
-
                   <p className="text-xs">Loading history…</p>
                 </div>
               ) : purchaseHistory.length === 0 ? (
@@ -540,21 +510,13 @@ export default function Home() {
         dangerouslySetInnerHTML={{
           __html: `
             @keyframes jprimeSpin {
-              from {
-                transform: rotate(0deg);
-              }
-              to {
-                transform: rotate(360deg);
-              }
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
             }
 
             @keyframes jprimeFadeIn {
-              from {
-                opacity: 0;
-              }
-              to {
-                opacity: 1;
-              }
+              from { opacity: 0; }
+              to { opacity: 1; }
             }
 
             @keyframes jprimeScaleIn {
@@ -580,12 +542,10 @@ export default function Home() {
             }
 
             @keyframes jprimeGlow {
-              0%,
-              100% {
+              0%, 100% {
                 opacity: 0.4;
                 transform: translate(-50%, 0) scale(1);
               }
-
               50% {
                 opacity: 0.75;
                 transform: translate(-50%, 0) scale(1.05);
@@ -593,14 +553,8 @@ export default function Home() {
             }
 
             @keyframes jprimeGlowSlow {
-              0%,
-              100% {
-                opacity: 0.3;
-              }
-
-              50% {
-                opacity: 0.6;
-              }
+              0%, 100% { opacity: 0.3; }
+              50% { opacity: 0.6; }
             }
 
             @keyframes jprimePing {
@@ -608,55 +562,26 @@ export default function Home() {
                 transform: scale(1);
                 opacity: 0.6;
               }
-
-              75%,
-              100% {
+              75%, 100% {
                 transform: scale(1.6);
                 opacity: 0;
               }
             }
 
-            .jprime-spin {
-              animation: jprimeSpin 0.9s linear infinite;
-            }
+            .jprime-spin { animation: jprimeSpin 0.9s linear infinite; }
+            .jprime-fade-in { animation: jprimeFadeIn 0.2s ease-out both; }
+            .jprime-scale-in { animation: jprimeScaleIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+            .jprime-fade-up { animation: jprimeFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+            .jprime-glow { animation: jprimeGlow 6s ease-in-out infinite; }
+            .jprime-glow-slow { animation: jprimeGlowSlow 8s ease-in-out infinite; }
+            .jprime-ping { animation: jprimePing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite; }
 
-            .jprime-fade-in {
-              animation: jprimeFadeIn 0.2s ease-out both;
-            }
-
-            .jprime-scale-in {
-              animation: jprimeScaleIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
-            }
-
-            .jprime-fade-up {
-              animation: jprimeFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
-            }
-
-            .jprime-glow {
-              animation: jprimeGlow 6s ease-in-out infinite;
-            }
-
-            .jprime-glow-slow {
-              animation: jprimeGlowSlow 8s ease-in-out infinite;
-            }
-
-            .jprime-ping {
-              animation: jprimePing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
-            }
-
-            .custom-scrollbar::-webkit-scrollbar {
-              width: 4px;
-            }
-
-            .custom-scrollbar::-webkit-scrollbar-track {
-              background: transparent;
-            }
-
+            .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+            .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
             .custom-scrollbar::-webkit-scrollbar-thumb {
               background: rgba(192, 38, 211, 0.3);
               border-radius: 99px;
             }
-
             .custom-scrollbar::-webkit-scrollbar-thumb:hover {
               background: rgba(192, 38, 211, 0.5);
             }

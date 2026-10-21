@@ -100,7 +100,7 @@ function TickerCard({ event, now }: { event: ActivityEvent; now: number }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  The slow right-to-left ticker                                      */
+/*  The slow left-to-right ticker                                      */
 /* ------------------------------------------------------------------ */
 function Ticker({ events, now }: { events: ActivityEvent[]; now: number }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -108,8 +108,6 @@ function Ticker({ events, now }: { events: ActivityEvent[]; now: number }) {
   const [animate, setAnimate] = useState(false);
   const [setWidth, setSetWidth] = useState(0);
 
-  // Only scroll when the cards really overflow the available width.
-  // If they all fit, stay still and show each event exactly once (no repeats).
   useEffect(() => {
     const viewport = viewportRef.current;
     const set = setRef.current;
@@ -128,7 +126,6 @@ function Ticker({ events, now }: { events: ActivityEvent[]; now: number }) {
     return () => ro.disconnect();
   }, [events]);
 
-  // Restart from the first (newest-of-the-rest) card whenever the feed changes.
   const signature = events.map((e) => e.key).join(",");
   const seconds = Math.max(12, setWidth / MARQUEE_PX_PER_SEC);
 
@@ -148,7 +145,7 @@ function Ticker({ events, now }: { events: ActivityEvent[]; now: number }) {
         {animate && (
           <ul data-ra="copy" aria-hidden="true" className="ra-copy flex shrink-0">
             {events.map((event) => (
-              <TickerCard key={event.key} event={event} now={now} />
+              <TickerCard key={`copy-${event.key}`} event={event} now={now} />
             ))}
           </ul>
         )}
@@ -201,11 +198,7 @@ function MessageRow({ title, text }: { title: string; text: string }) {
 }
 
 /**
- * Live Recent Activity strip. Render it only for a logged-in user
- * (app/page.tsx already does that after /api/auth/me succeeds).
- * Polls GET /api/recent-activity; the server masks every username.
- *
- * Layout:  [ LATEST (pinned, never moves) ] | [ older events scroll right -> left ]
+ * Live Recent Activity strip.
  */
 export function RecentActivity() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
@@ -213,26 +206,26 @@ export function RecentActivity() {
   const [freshKeys, setFreshKeys] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
 
-  const abortRef = useRef<AbortController | null>(null);
   const inflightRef = useRef(false);
   const lastFetchRef = useRef(0);
   const stoppedRef = useRef(false);
-  const knownKeysRef = useRef<Set<string> | null>(null); // null until the first successful load
+  const knownKeysRef = useRef<Set<string> | null>(null);
   const shownKeysRef = useRef("");
+  const isMountedRef = useRef(true);
 
   const load = useCallback(async () => {
-    if (inflightRef.current || stoppedRef.current) return;
+    if (inflightRef.current || stoppedRef.current || !isMountedRef.current) return;
 
-    const controller = new AbortController();
-    abortRef.current = controller;
     inflightRef.current = true;
     lastFetchRef.current = Date.now();
 
     try {
-      const res = await fetch("/api/recent-activity", { cache: "no-store", signal: controller.signal });
+      const res = await fetch("/api/recent-activity", { cache: "no-store" });
+
+      if (!isMountedRef.current) return;
 
       if (res.status === 401) {
-        stoppedRef.current = true; // session ended; the page's own auth check handles the redirect
+        stoppedRef.current = true;
         setStatus("error");
         return;
       }
@@ -243,7 +236,6 @@ export function RecentActivity() {
       const next: ActivityEvent[] = json.events.filter(isActivityEvent);
       const signature = next.map((e) => e.key).join(",");
 
-      // Only touch React state when the feed really changed (no pointless re-renders).
       if (signature !== shownKeysRef.current) {
         const known = knownKeysRef.current;
         setFreshKeys(known ? new Set(next.filter((e) => !known.has(e.key)).map((e) => e.key)) : new Set());
@@ -255,19 +247,15 @@ export function RecentActivity() {
       setNow(Date.now());
       setStatus("ready");
     } catch {
-      if (controller.signal.aborted) return;
-      // Keep whatever we were already showing; only show the error state if we have nothing.
+      if (!isMountedRef.current) return;
       setStatus((prev) => (shownKeysRef.current ? prev : "error"));
     } finally {
-      if (abortRef.current === controller) {
-        inflightRef.current = false;
-        abortRef.current = null;
-      }
+      inflightRef.current = false;
     }
   }, []);
 
-  // Poll every ACTIVITY_POLL_MS (paused while the tab is hidden) + refresh when the tab returns.
   useEffect(() => {
+    isMountedRef.current = true;
     stoppedRef.current = false;
     void load();
 
@@ -281,15 +269,12 @@ export function RecentActivity() {
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
+      isMountedRef.current = false;
       clearInterval(poll);
       document.removeEventListener("visibilitychange", onVisible);
-      abortRef.current?.abort();
-      abortRef.current = null;
-      inflightRef.current = false;
     };
   }, [load]);
 
-  // Keep "2 minutes ago" fresh between polls.
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(tick);
@@ -350,10 +335,10 @@ export function RecentActivity() {
         dangerouslySetInnerHTML={{
           __html: `
             @keyframes ra-marquee {
-              from { transform: translate3d(0, 0, 0); }
-              to   { transform: translate3d(-50%, 0, 0); }
+              from { transform: translate3d(-50%, 0, 0); }
+              to   { transform: translate3d(0, 0, 0); }
             }
-            /* right -> left, constant speed, seamless loop (two identical copies, shift by exactly one) */
+            /* left -> right, constant speed, seamless loop */
             .ra-moving { animation: ra-marquee linear infinite; will-change: transform; }
             /* hover (desktop) pauses it so a card can be read */
             .ra-viewport:hover .ra-moving { animation-play-state: paused; }
