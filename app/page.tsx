@@ -14,9 +14,7 @@ import {
 
 import { Navbar } from "@/components/navbar";
 import { Hero } from "@/components/hero";
-import { RecentActivity } from "@/components/recent-activity";
 import { ProductCard } from "@/components/product-card";
-import { ComingSoon } from "@/components/coming-soon";
 import { FloatingSupport } from "@/components/floating-support";
 import { Footer } from "@/components/footer";
 import { useCatalogProducts } from "@/lib/useCatalogProducts";
@@ -47,6 +45,10 @@ export default function Home() {
 
   const pcProducts = catalogProducts.filter(
     (product) => product.category === "pc"
+  );
+
+  const iosProducts = catalogProducts.filter(
+    (product) => product.category === "ios"
   );
 
   const productsRef = useRef<HTMLDivElement>(null);
@@ -211,8 +213,6 @@ export default function Home() {
             activeCategory={activeCategory}
             onCategoryChange={handleCategoryChange}
           />
-        {/* Live Recent Activity */}
-<RecentActivity />
 
           <Hero onScrollToProducts={scrollToProducts} />
 
@@ -292,7 +292,7 @@ export default function Home() {
               </div>
 
               {/* Catalog loading indicator */}
-              {catalogLoading && activeCategory !== "ios" && (
+              {catalogLoading && (
                 <div className="py-16 flex justify-center">
                   <div className="relative w-8 h-8">
                     <div className="absolute inset-0 border-2 border-zinc-800 rounded-full" />
@@ -342,11 +342,29 @@ export default function Home() {
                 </div>
               )}
 
-              {/* iOS */}
-              {activeCategory === "ios" && (
-                <div className="max-w-2xl mx-auto jprime-fade-up">
-                  <ComingSoon />
-                </div>
+              {/* iOS products from the same admin-managed catalog */}
+              {!catalogLoading && activeCategory === "ios" && (
+                iosProducts.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                    {iosProducts.map((product, index) => (
+                      <div
+                        key={product.id}
+                        className="jprime-fade-up"
+                        style={{
+                          animationDelay: `${Math.min(index, 8) * 0.06}s`,
+                        }}
+                      >
+                        <ProductCard product={product} index={index} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mx-auto max-w-xl rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 text-center">
+                    <Apple className="mx-auto mb-3 h-8 w-8 text-fuchsia-400" />
+                    <h3 className="text-lg font-semibold text-white">No iOS products available yet</h3>
+                    <p className="mt-2 text-sm text-zinc-400">Add a product with category iOS in the admin Product Manager, then refresh this page.</p>
+                  </div>
+                )
               )}
             </div>
           </section>
