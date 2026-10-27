@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireUser, rateLimit } from "@/lib/auth";
+import {
+  gatewayNeedsUtr,
+  getGatewayConfig,
+  resolveGatewayId,
+  verifyGatewayPayment,
+} from "@/lib/payment-gateway";
 
 export const dynamic = "force-dynamic";
 
-const FP_VERIFY_URL = "https://xyzcheats.com/gateway/verify.php";
 const NO_STORE = { "Cache-Control": "no-store" };
 
 function reply(status: number, payload: Record<string, unknown>) {
@@ -27,18 +32,10 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const gatewayOrderId = String(body?.order_id || body?.gateway_order_id || "").trim();
-    const utr = String(body?.utr ?? "").replace(/\D/g, "");
+    const utrInput = String(body?.utr ?? "").replace(/\D/g, "");
 
     if (!gatewayOrderId) {
       return reply(400, { success: false, status: "invalid_request", message: "Missing order reference." });
-    }
-    if (!utr || utr.length < 10 || utr.length > 30) {
-      return reply(400, { success: false, status: "invalid_utr", message: "Invalid UTR format. Must be at least 10 digits." });
-    }
-
-    const apiKey = process.env.FP_API_KEY;
-    if (!apiKey) {
-      return reply(500, { success: false, status: "gateway_failed", message: "Gateway not configured properly." });
     }
 
     const { data: deposit, error: depositError } = await supabaseAdmin
@@ -54,6 +51,15 @@ export async function POST(request: NextRequest) {
     if (!deposit || deposit.username !== username) {
       return reply(404, { success: false, status: "not_found", message: "Payment order record not found." });
     }
+
+    // The gateway that created this deposit decides how it is verified.
+    const gatewayId = resolveGatewayId((deposit as any).gateway);
+    const needsUtr = gatewayNeedsUtr(gatewayId);
+
+    if (needsUtr && (!utrInput || utrInput.length < 10 || utrInput.length > 30)) {
+      return reply(400, { success: false, status: "invalid_utr", message: "Invalid UTR format. Must be at least 10 digits." });
+    }
+
     if (deposit.status === "success") {
       return reply(409, { success: false, status: "already_verified", message: "This deposit has already been credited. Refresh your wallet balance." });
     }
@@ -61,36 +67,45 @@ export async function POST(request: NextRequest) {
       return reply(409, { success: false, status: "error", message: "This deposit can no longer be verified." });
     }
 
-    // Ask the payment gateway to independently confirm this exact order + UTR.
-    const verifyUrl = new URL(FP_VERIFY_URL);
-    verifyUrl.searchParams.set("order_id", gatewayOrderId);
-    verifyUrl.searchParams.set("api_key", apiKey);
-    verifyUrl.searchParams.set("utr", utr);
-
-    const gatewayResponse = await fetch(verifyUrl.toString(), { method: "GET", cache: "no-store" });
-    let gatewayData: any;
-    try {
-      gatewayData = JSON.parse(await gatewayResponse.text());
-    } catch {
-      return reply(502, { success: false, status: "gateway_failed", message: "Invalid data returned from payment gateway." });
+    const cfg = await getGatewayConfig(gatewayId);
+    if (!cfg.apiKey) {
+      console.error(`${gatewayId} gateway API key is missing`);
+      return reply(500, { success: false, status: "gateway_failed", message: "Gateway not configured properly." });
     }
 
-    if (gatewayData?.status === "pending") {
+    // Ask the payment gateway to independently confirm this exact order (+ UTR for xyz).
+    const verification = await verifyGatewayPayment(cfg, { orderId: gatewayOrderId, utr: utrInput });
+
+    if (verification.state === "pending") {
       return reply(202, {
         success: false,
         status: "pending",
-        message: "Payment is still processing. Wait a moment and retry this same order.",
+        message: needsUtr
+          ? "Payment is still processing. Wait a moment and retry this same order."
+          : "Waiting for your payment. This page updates automatically once it arrives.",
       });
     }
-    if (!gatewayResponse.ok || gatewayData?.status !== "success" || !gatewayData?.data) {
-      return reply(400, {
+    if (verification.state === "expired") {
+      return reply(410, {
         success: false,
-        status: "invalid_utr",
-        message: gatewayData?.message || "The payment gateway could not verify this UTR.",
+        status: "expired",
+        message: "This payment session expired. Please start a new deposit.",
+      });
+    }
+    if (verification.state === "failed") {
+      if (verification.gatewayDown) {
+        return reply(502, { success: false, status: "gateway_failed", message: verification.message });
+      }
+      return reply(needsUtr ? 400 : verification.httpStatus, {
+        success: false,
+        status: needsUtr ? "invalid_utr" : "failed",
+        message: needsUtr
+          ? verification.message || "The payment gateway could not verify this UTR."
+          : verification.message,
       });
     }
 
-    const payment = gatewayData.data;
+    const payment = verification;
     const expectedAmount = Number(deposit.amount);
     const paidAmount = Number(payment.amount);
     if (
@@ -102,7 +117,21 @@ export async function POST(request: NextRequest) {
       return reply(409, { success: false, status: "amount_mismatch", message: "Payment amount does not match the order." });
     }
 
-    const verifiedUtr = String(payment.utr || utr).replace(/\D/g, "") || utr;
+    // Bank reference used by the database function for replay protection.
+    let verifiedUtr = "";
+    if (needsUtr) {
+      verifiedUtr = String(payment.utr || utrInput).replace(/\D/g, "") || utrInput;
+    } else {
+      verifiedUtr = String(payment.utr || "").replace(/\D/g, "");
+      if (verifiedUtr.length < 10 || verifiedUtr.length > 30) {
+        console.error("GATEWAY PAID WITHOUT A USABLE BANK REFERENCE:", { gatewayOrderId, gateway: gatewayId });
+        return reply(409, {
+          success: false,
+          status: "manual_review",
+          message: "Payment was received but needs a manual check. Do not pay again; contact support with this order reference.",
+        });
+      }
+    }
 
     // Database RPC finalizes status + wallet credit + ledger entry in ONE transaction.
     // If it errors, PostgreSQL rolls the transaction back; retrying the same order is safe.
@@ -121,7 +150,7 @@ export async function POST(request: NextRequest) {
       return reply(500, {
         success: false,
         status: "credit_retry",
-        message: "Your payment was verified, but wallet credit could not be confirmed. Do not create another payment. Retry verification using this same order and UTR, or contact support.",
+        message: "Your payment was verified, but wallet credit could not be confirmed. Do not create another payment. Retry verification using this same order, or contact support.",
       });
     }
 

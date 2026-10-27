@@ -30,11 +30,13 @@ import {
   Info,
   Power,
   Crown,
+  CreditCard,
 } from "lucide-react";
 
 import type { Product, PriceTier } from "@/lib/products";
 import ProductManager from "@/components/admin/ProductManager";
 import VipPriceManager from "@/components/admin/VipPriceManager";
+import GatewayManager from "@/components/admin/GatewayManager";
 
 interface ManagedUser {
   id?: string | number;
@@ -55,6 +57,7 @@ type Tab =
   | "status"
   | "products"
   | "vip"
+  | "gateway"
   | "purchases"
   | "users";
 
@@ -605,6 +608,7 @@ export default function AdminPage() {
     { id: "status", label: "Status", icon: Power, count: allProducts.length },
     { id: "products", label: "Products", icon: Package },
     { id: "vip", label: "VIP Prices", icon: Crown },
+    { id: "gateway", label: "Payments", icon: CreditCard },
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -1057,6 +1061,9 @@ export default function AdminPage() {
 
         {/* VIP PRICES (per-reseller custom prices — reseller_price_overrides) */}
         {activeTab === "vip" && <VipPriceManager resellers={resellerOptions} />}
+
+        {/* PAYMENT GATEWAY (switch xyz / anuj, URLs and API keys) */}
+        {activeTab === "gateway" && <GatewayManager />}
 
         {/* PURCHASES */}
         {activeTab === "purchases" && (

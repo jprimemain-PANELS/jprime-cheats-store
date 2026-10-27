@@ -21,6 +21,8 @@ type PaymentOrder = {
   qr_url: string | null;
   upi_link: string | null;
   expires_at: string | null;
+  gateway?: string;
+  needs_utr?: boolean;
 };
 
 function UpiPaymentContent() {
@@ -43,6 +45,10 @@ function UpiPaymentContent() {
 
   const [utr, setUtr] = useState("");
   const [verifying, setVerifying] = useState(false);
+
+  // xyz gateway: customer types the UTR. anuj gateway: no UTR, payment is detected automatically.
+  const needsUtr = order?.needs_utr !== false;
+  const recoverTriedRef = useRef(false);
 
   // ─────────────────────────────────────
   // LOAD EXACT PAYMENT ORDER
@@ -108,78 +114,165 @@ function UpiPaymentContent() {
   // ─────────────────────────────────────
   // VERIFY PAYMENT WITH OUR SERVER
   // ─────────────────────────────────────
-  const verifyPayment = useCallback(async () => {
-    if (
-      !orderId ||
-      verifyingRef.current ||
-      successHandledRef.current ||
-      paymentStatus === "expired"
-    ) {
+  const verifyPayment = useCallback(
+    async (auto = false) => {
+      if (
+        !orderId ||
+        verifyingRef.current ||
+        successHandledRef.current ||
+        paymentStatus === "expired"
+      ) {
+        return;
+      }
+
+      verifyingRef.current = true;
+
+      // Automatic checks run silently so the QR code stays on screen.
+      if (!auto) {
+        setVerifying(true);
+        setErrorMessage(""); // Clear previous error layout states
+      }
+
+      try {
+        const response = await fetch("/api/verify-payment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(
+            needsUtr ? { gateway_order_id: orderId, utr: utr } : { gateway_order_id: orderId }
+          ),
+          cache: "no-store",
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (result.status === "pending") {
+          if (!auto) {
+            setErrorMessage(
+              needsUtr
+                ? "⏳ Payment validation processing. Please wait a brief moment and verify again."
+                : "⏳ Payment not received yet. This page checks automatically every few seconds."
+            );
+          }
+          return;
+        }
+
+        if (result.status === "success" || result.success === true) {
+          successHandledRef.current = true;
+          setPaymentStatus("success");
+          if (result.key) {
+            setReleasedKey(result.key);
+          }
+          return;
+        }
+
+        if (result.status === "expired") {
+          setPaymentStatus("expired");
+          return;
+        }
+
+        if (result.status === "out_of_stock") {
+          setErrorMessage(
+            "Payment received successfully, but the selected product is currently out of stock. Please contact support."
+          );
+          setPaymentStatus("error");
+          return;
+        }
+
+        if (result.status === "amount_mismatch") {
+          setErrorMessage(
+            "Payment verification failed because the paid amount does not match the order."
+          );
+          setPaymentStatus("error");
+          return;
+        }
+
+        if (result.status === "delivery_failed") {
+          setErrorMessage(
+            result.error ||
+              "Payment received, but key delivery failed. Please contact support. Do not pay again."
+          );
+          setPaymentStatus("error");
+          return;
+        }
+
+        if (result.status === "processing") {
+          if (!auto) {
+            setErrorMessage(
+              result.error || "This order is already being processed. Please check again shortly."
+            );
+          }
+          return;
+        }
+
+        // Temporary problems during automatic checks are simply retried on the next check.
+        if (auto) return;
+
+        // Handling direct user failures / invalid UTR mismatch errors
+        if (!response.ok || result.success === false || result.status === "failed") {
+          setErrorMessage(
+            needsUtr
+              ? "❌ Invalid UTR. Please check your UTR number and try again."
+              : `❌ ${result.error || "Could not verify the payment. Please try again."}`
+          );
+          return;
+        }
+      } catch (error) {
+        console.error("VERIFY PAYMENT ERROR:", error);
+        if (!auto) {
+          setErrorMessage("❌ System connection error. Failed to reach verification gateway.");
+        }
+      } finally {
+        verifyingRef.current = false;
+        if (!auto) setVerifying(false);
+      }
+    },
+    [orderId, paymentStatus, utr, needsUtr]
+  );
+
+  // ─────────────────────────────────────
+  // AUTO-DETECT PAYMENT (gateways without UTR)
+  // ─────────────────────────────────────
+  useEffect(() => {
+    if (needsUtr || !order || paymentStatus !== "pending") return;
+
+    let cancelled = false;
+    let timer = 0;
+
+    const tick = async () => {
+      if (cancelled) return;
+      await verifyPayment(true);
+      if (!cancelled) timer = window.setTimeout(tick, 5000);
+    };
+
+    timer = window.setTimeout(tick, 4000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [needsUtr, order, paymentStatus, verifyPayment]);
+
+  // Page reopened after payment: fetch the recorded key again (gateways without UTR).
+  useEffect(() => {
+    if (needsUtr || !order || paymentStatus !== "success" || releasedKey || recoverTriedRef.current) {
       return;
     }
+    recoverTriedRef.current = true;
 
-    verifyingRef.current = true;
-    setVerifying(true);
-    setErrorMessage(""); // Clear previous error layout states
-
-    try {
-      const response = await fetch("/api/verify-payment", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          gateway_order_id: orderId,
-          utr: utr,
-        }),
-        cache: "no-store",
-      });
-
-      const result = await response.json();
-
-      if (result.status === "pending") {
-        setErrorMessage("⏳ Payment validation processing. Please wait a brief moment and verify again.");
-        return;
-      }
-
-      if (result.status === "success" || result.success === true) {
-        successHandledRef.current = true;
-        setPaymentStatus("success");
-        if (result.key) {
-          setReleasedKey(result.key);
-        }
-        return;
-      }
-
-      if (result.status === "out_of_stock") {
-        setErrorMessage(
-          "Payment received successfully, but the selected product is currently out of stock. Please contact support."
-        );
-        setPaymentStatus("error");
-        return;
-      }
-
-      if (result.status === "amount_mismatch") {
-        setErrorMessage(
-          "Payment verification failed because the paid amount does not match the order."
-        );
-        setPaymentStatus("error");
-        return;
-      }
-
-      // Handling direct user failures / invalid UTR mismatch errors
-      if (!response.ok || result.success === false || result.status === "failed") {
-        setErrorMessage("❌ Invalid UTR. Please check your UTR number and try again.");
-        return;
-      }
-    } catch (error) {
-      console.error("VERIFY PAYMENT ERROR:", error);
-      setErrorMessage("❌ System connection error. Failed to reach verification gateway.");
-    } finally {
-      verifyingRef.current = false;
-      setVerifying(false);
-    }
-  }, [orderId, paymentStatus, utr]);
+    fetch("/api/verify-payment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gateway_order_id: orderId }),
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.key) setReleasedKey(d.key);
+      })
+      .catch(() => {});
+  }, [needsUtr, order, paymentStatus, releasedKey, orderId]);
 
   // ─────────────────────────────────────
   // REAL EXPIRY COUNTDOWN
@@ -543,7 +636,7 @@ function UpiPaymentContent() {
                   )}
 
                   <div className="mt-6">
-                    {!verifying && (
+                    {needsUtr && !verifying && (
                       <>
                         <p className="text-xs text-neutral-400 mb-2">
                           Enter 12-digit UTR after payment
@@ -567,10 +660,21 @@ function UpiPaymentContent() {
                       </>
                     )}
 
+                    {!needsUtr && !verifying && (
+                      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/[0.04] p-3 text-center">
+                        <p className="text-xs text-neutral-300">
+                          No UTR needed. Pay the exact amount shown and we detect it automatically.
+                        </p>
+                        <p className="mt-1 text-[10px] font-mono uppercase tracking-wider text-cyan-400/80">
+                          Checking payment every few seconds…
+                        </p>
+                      </div>
+                    )}
+
                     <button
                       type="button"
-                      disabled={utr.length !== 12 || verifying}
-                      onClick={verifyPayment}
+                      disabled={(needsUtr && utr.length !== 12) || verifying}
+                      onClick={() => verifyPayment(false)}
                       className="mt-4 w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-30 disabled:cursor-not-allowed text-black font-bold py-3 rounded-xl transition-all uppercase tracking-wider text-xs flex items-center justify-center gap-2 active:scale-[0.98]"
                     >
                       {verifying ? (
@@ -579,7 +683,7 @@ function UpiPaymentContent() {
                           Verifying Transaction...
                         </>
                       ) : (
-                        "Verify Payment"
+                        needsUtr ? "Verify Payment" : "Check Payment Status"
                       )}
                     </button>
                   </div>
@@ -679,15 +783,15 @@ function UpiPaymentContent() {
               </button>
             </div>
           )}
-        </div>
 
-        {/* FOOTER */}
-        <div className="mt-6 flex items-center justify-between text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-mono px-3">
-          <span>Secure Payment Verification</span>
-          <div className="flex items-center gap-2">
-            <span>SSL</span>
-            <span>•</span>
-            <span>UPI</span>
+          {/* FOOTER */}
+          <div className="mt-6 flex items-center justify-between text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-mono px-3">
+            <span>Secure Payment Verification</span>
+            <div className="flex items-center gap-2">
+              <span>SSL</span>
+              <span>•</span>
+              <span>UPI</span>
+            </div>
           </div>
         </div>
       </div>

@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireUser, rateLimit } from "@/lib/auth";
+import {
+  createGatewayOrder,
+  gatewayNeedsUtr,
+  getActiveGatewayId,
+  getGatewayConfig,
+  isAmountAcceptable,
+} from "@/lib/payment-gateway";
 
 export const dynamic = "force-dynamic";
 
-const FP_CREATE_ORDER_URL = "https://xyzcheats.com/gateway/create_order.php";
 const NO_STORE = { "Cache-Control": "no-store" };
 const MIN_TOPUP = 1;
 const MAX_TOPUP = 50000;
@@ -13,9 +19,14 @@ function fail(error: string, status: number) {
   return NextResponse.json({ success: false, error }, { status, headers: NO_STORE });
 }
 
+function isMissingColumn(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return error.code === "42703" || error.code === "PGRST204" || /column .*gateway|gateway.* column/i.test(error.message || "");
+}
+
 /**
- * Wallet top-up order. The deposit is always tied to the logged-in user;
- * any username sent by the browser is ignored.
+ * Wallet top-up order on the ACTIVE gateway (Admin -> Payments). The deposit is always
+ * tied to the logged-in user; any username sent by the browser is ignored.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -37,55 +48,39 @@ export async function POST(request: NextRequest) {
     }
     if (!mobile) return fail("Missing required order information", 400);
 
-    const apiKey = process.env.FP_API_KEY;
-    if (!apiKey) {
-      console.error("FP_API_KEY is missing");
+    const gatewayId = await getActiveGatewayId();
+    const cfg = await getGatewayConfig(gatewayId);
+    if (!cfg.apiKey) {
+      console.error(`${gatewayId} gateway API key is missing`);
       return fail("Payment gateway is not configured", 500);
     }
 
-    const gatewayUrl = new URL(FP_CREATE_ORDER_URL);
-    gatewayUrl.searchParams.set("amount", String(amount));
-    gatewayUrl.searchParams.set("api_key", apiKey);
+    const created = await createGatewayOrder(cfg, amount);
+    if (!created.ok) return fail(created.error, created.httpStatus);
+    const gatewayOrder = created.order;
 
-    const gatewayResponse = await fetch(gatewayUrl.toString(), {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    let gatewayData: any;
-    try {
-      gatewayData = JSON.parse(await gatewayResponse.text());
-    } catch {
-      return fail("Payment gateway returned an invalid response", 502);
-    }
-
-    if (
-      !gatewayResponse.ok ||
-      gatewayData?.status !== "success" ||
-      !gatewayData?.data?.order_id ||
-      !gatewayData?.data?.qr_url
-    ) {
-      console.error("Gateway wallet order failed, HTTP", gatewayResponse.status);
-      return fail("Failed to create payment order", 502);
-    }
-
-    const gatewayOrder = gatewayData.data;
-    const gatewayAmount = Number(gatewayOrder.amount);
-
-    if (!Number.isFinite(gatewayAmount) || gatewayAmount < amount - 0.001 || gatewayAmount >= amount + 1) {
-      console.error("Gateway wallet amount out of range", { amount, gatewayAmount });
+    if (!isAmountAcceptable(amount, gatewayOrder.amount)) {
+      console.error("Gateway wallet amount out of range", { amount, gatewayAmount: gatewayOrder.amount });
       return fail("Payment gateway returned an unexpected amount", 502);
     }
 
-    const { error: insertError } = await supabaseAdmin.from("deposit_history").insert([
-      {
-        username,
-        amount: String(gatewayOrder.amount),
-        gateway_order_id: String(gatewayOrder.order_id),
-        mobile_number: mobile,
-        status: "pending",
-      },
-    ]);
+    const row = {
+      username,
+      amount: gatewayOrder.amountText,
+      gateway_order_id: gatewayOrder.order_id,
+      mobile_number: mobile,
+      status: "pending",
+    };
+
+    let { error: insertError } = await supabaseAdmin.from("deposit_history").insert([{ ...row, gateway: gatewayId }]);
+
+    if (insertError && isMissingColumn(insertError)) {
+      if (gatewayId !== "xyz") {
+        console.error("deposit_history.gateway column missing; run supabase/PAYMENT_GATEWAY_SWITCH.sql");
+        return fail("Payment database needs the gateway update. Contact the store admin.", 500);
+      }
+      ({ error: insertError } = await supabaseAdmin.from("deposit_history").insert([row]));
+    }
 
     if (insertError) {
       console.error("DEPOSIT ORDER INSERT ERROR:", insertError.message);
@@ -100,9 +95,11 @@ export async function POST(request: NextRequest) {
           qr_url: gatewayOrder.qr_url,
           upi_link: gatewayOrder.upi_link,
           upi_id: gatewayOrder.upi_id,
-          amount: gatewayOrder.amount,
+          amount: gatewayOrder.amountText,
           created_at: gatewayOrder.created_at,
           expires_at: gatewayOrder.expires_at,
+          gateway: gatewayId,
+          needs_utr: gatewayNeedsUtr(gatewayId),
         },
       },
       { headers: NO_STORE }

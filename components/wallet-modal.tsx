@@ -23,7 +23,7 @@ import {
   CheckCircle2,
   X,
 } from "lucide-react";
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 interface WalletModalProps {
   open: boolean;
@@ -46,6 +46,9 @@ interface PaymentData {
   amount: number;
   upi_id: string;
   qr_url: string;
+  gateway?: string;
+  // false => no UTR needed; payment is detected automatically (anuj gateway)
+  needs_utr?: boolean;
 }
 
 const MIN_DEPOSIT_AMOUNT = 1;
@@ -85,6 +88,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
   const [copied, setCopied] = useState(false);
   const [qrLoaded, setQrLoaded] = useState(false);
   const [verified, setVerified] = useState(false);
+  const verifyingRef = useRef(false);
 
   const step = showQR ? 2 : showDeposit || showHistory ? 1 : 0;
 
@@ -136,6 +140,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
       setAmount("");
       setMobileNumber("");
       setUtr("");
+      verifyingRef.current = false;
     }
   }, [open]);
 
@@ -222,28 +227,39 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
     }
   }
 
-  async function verifyWalletPayment() {
-    try {
+  /**
+   * Verifies the current deposit.
+   * Returns true while automatic checking should keep going (gateways without UTR).
+   */
+  async function verifyWalletPayment(auto = false): Promise<boolean> {
+    const needsUtr = paymentData?.needs_utr !== false;
+    if (verifyingRef.current) return true;
+
+    const cleanedUtr = utr.trim();
+    if (needsUtr && (!cleanedUtr || cleanedUtr.length < 10)) {
+      setNotice({ type: "error", message: "Please enter a valid 10+ digit UTR number." });
+      return false;
+    }
+
+    verifyingRef.current = true;
+    // Automatic checks stay silent so the QR code and buttons don't flicker.
+    if (!auto) {
       setLoading(true);
       setNotice(null);
+    }
 
-      const cleanedUtr = utr.trim();
-      if (!cleanedUtr || cleanedUtr.length < 10) {
-        setNotice({ type: "error", message: "Please enter a valid 10+ digit UTR number." });
-        setLoading(false);
-        return;
-      }
-
+    try {
       const response = await fetch("/api/verify-wallet-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gateway_order_id: paymentData?.order_id,
-          utr: cleanedUtr,
-        }),
+        body: JSON.stringify(
+          needsUtr
+            ? { gateway_order_id: paymentData?.order_id, utr: cleanedUtr }
+            : { gateway_order_id: paymentData?.order_id }
+        ),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.success === true && data.status === "success") {
         setVerified(true);
@@ -256,34 +272,79 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
         setTimeout(() => {
           resetFormAndCloseFields();
         }, 2500);
-      } else {
-        switch (data.status) {
-          case "invalid_utr":
-            setNotice({ type: "error", message: data.message || "Invalid UTR input verified by bank network." });
-            break;
-          case "pending":
-            setNotice({ type: "warning", message: data.message || "Payment remains inside processing state." });
-            break;
-          case "already_verified":
-            setNotice({ type: "info", message: data.message || "This deposit has already been credited." });
-            break;
-          case "amount_mismatch":
-            setNotice({ type: "error", message: data.message || "Deposited amount value discrepancy." });
-            break;
-          case "duplicate_utr":
-            setNotice({ type: "error", message: data.message || "This UTR was already applied to another payment." });
-            break;
-          default:
-            setNotice({ type: "error", message: data.message || "Payment verification failed." });
-        }
+        return false;
       }
+
+      const status = String(data.status || "");
+
+      if (status === "pending") {
+        if (!auto) {
+          setNotice({ type: "warning", message: data.message || "Payment remains inside processing state." });
+        }
+        return true;
+      }
+
+      switch (status) {
+        case "invalid_utr":
+          setNotice({ type: "error", message: data.message || "Invalid UTR input verified by bank network." });
+          break;
+        case "already_verified":
+          setNotice({ type: "info", message: data.message || "This deposit has already been credited." });
+          break;
+        case "amount_mismatch":
+          setNotice({ type: "error", message: data.message || "Deposited amount value discrepancy." });
+          break;
+        case "duplicate_utr":
+          setNotice({ type: "error", message: data.message || "This UTR was already applied to another payment." });
+          break;
+        case "expired":
+          setNotice({ type: "warning", message: data.message || "This payment session expired. Please start a new deposit." });
+          break;
+        case "manual_review":
+          setNotice({ type: "warning", message: data.message || "This payment needs a manual check. Contact support." });
+          break;
+        default:
+          // Temporary problems during automatic checks are retried silently.
+          if (!auto) {
+            setNotice({ type: "error", message: data.message || "Payment verification failed." });
+          }
+      }
+
+      const stop = ["already_verified", "amount_mismatch", "duplicate_utr", "manual_review", "expired", "not_found", "invalid_request"].includes(status);
+      return !stop;
     } catch (err) {
       console.error(err);
-      setNotice({ type: "error", message: "Critical error connecting to verification server." });
+      if (!auto) {
+        setNotice({ type: "error", message: "Critical error connecting to verification server." });
+      }
+      return true;
     } finally {
-      setLoading(false);
+      verifyingRef.current = false;
+      if (!auto) setLoading(false);
     }
   }
+
+  // Gateways without UTR: check for the payment automatically while the QR screen is open.
+  useEffect(() => {
+    if (!open || !showQR || verified || !paymentData || paymentData.needs_utr !== false) return;
+
+    let cancelled = false;
+    let timer = 0;
+
+    const tick = async () => {
+      if (cancelled) return;
+      const keepGoing = await verifyWalletPayment(true);
+      if (!cancelled && keepGoing) timer = window.setTimeout(tick, 5000);
+    };
+
+    timer = window.setTimeout(tick, 4000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, showQR, verified, paymentData]);
 
   function handleCopyUpi() {
     if (!paymentData?.upi_id) return;
@@ -600,6 +661,9 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                         <span className="text-sm text-neutral-400">Amount</span>
                         <span className="font-mono font-bold text-white">₹{paymentData?.amount}</span>
                       </div>
+                      <p className="px-1 text-[11px] text-amber-300/90">
+                        Pay this exact amount (including paise) so the payment can be matched.
+                      </p>
 
                       <div className="rounded-lg bg-black/25 p-2.5">
                         <p className="text-xs text-neutral-400">UPI ID</p>
@@ -625,18 +689,29 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                     </div>
                   </div>
 
-                  <div>
-                    <label className="mb-1.5 block text-xs text-neutral-400">Enter UTR / Ref Number</label>
-                    <input
-                      value={utr}
-                      onChange={(e) => {
-                        setNotice(null);
-                        setUtr(e.target.value.replace(/\D/g, "").slice(0, 12));
-                      }}
-                      placeholder="Enter 12-digit UTR"
-                      className="w-full rounded-lg border border-white/10 bg-[#120c1f] px-4 py-2.5 text-sm font-mono text-white outline-none transition-all duration-200 focus:border-fuchsia-500"
-                    />
-                  </div>
+                  {paymentData?.needs_utr !== false ? (
+                    <div>
+                      <label className="mb-1.5 block text-xs text-neutral-400">Enter UTR / Ref Number</label>
+                      <input
+                        value={utr}
+                        onChange={(e) => {
+                          setNotice(null);
+                          setUtr(e.target.value.replace(/\D/g, "").slice(0, 12));
+                        }}
+                        placeholder="Enter 12-digit UTR"
+                        className="w-full rounded-lg border border-white/10 bg-[#120c1f] px-4 py-2.5 text-sm font-mono text-white outline-none transition-all duration-200 focus:border-fuchsia-500"
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/[0.05] px-3.5 py-3 text-center">
+                      <p className="text-xs text-neutral-300">
+                        No UTR needed. Pay the exact amount and your wallet is credited automatically.
+                      </p>
+                      <p className="mt-1 text-[10px] font-mono uppercase tracking-wider text-fuchsia-300/80">
+                        Checking payment every few seconds…
+                      </p>
+                    </div>
+                  )}
 
                   {notice && (
                     <div
@@ -656,13 +731,13 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                   )}
 
                   <button
-                    onClick={verifyWalletPayment}
+                    onClick={() => verifyWalletPayment(false)}
                     disabled={loading}
                     className="relative w-full overflow-hidden rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3 text-sm font-bold text-white shadow-[0_8px_30px_-8px_rgba(192,38,211,0.7)] transition-all duration-300 ease-out hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
                   >
                     <span className="relative z-10 flex items-center justify-center gap-2">
                       {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {loading ? "Verifying..." : "Verify Payment"}
+                      {loading ? "Verifying..." : paymentData?.needs_utr === false ? "Check Payment Status" : "Verify Payment"}
                     </span>
                   </button>
                 </>

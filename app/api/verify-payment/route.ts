@@ -3,8 +3,12 @@ import { supabaseAdmin as supabase } from "@/lib/supabase-admin";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { releaseProduct } from "@/lib/release-product";
 import { sendTelegramPurchase } from "@/lib/telegram";
-
-const FP_VERIFY_URL = "https://xyzcheats.com/gateway/verify.php";
+import {
+  gatewayNeedsUtr,
+  getGatewayConfig,
+  resolveGatewayId,
+  verifyGatewayPayment,
+} from "@/lib/payment-gateway";
 
 /**
  * Mark a processing order as failed when key delivery fails.
@@ -32,6 +36,25 @@ async function markDeliveryFailed(gatewayOrderId: string) {
   }
 }
 
+/** Replay protection: a UTR that already settled any other order is rejected. */
+async function utrAlreadyUsed(utr: string, gatewayOrderId: string): Promise<boolean> {
+  for (const table of ["payment_orders", "deposit_history"] as const) {
+    const { data: dup, error: dupError } = await supabase
+      .from(table)
+      .select("gateway_order_id")
+      .eq("utr", utr)
+      .neq("gateway_order_id", gatewayOrderId)
+      .limit(1);
+
+    if (!dupError && dup && dup.length > 0) return true;
+  }
+  return false;
+}
+
+function digitsOnly(value: unknown): string {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
@@ -50,33 +73,13 @@ export async function POST(request: NextRequest) {
     // 1. Read and validate the request.
     const body = await request.json().catch(() => ({}));
 
-    const gatewayOrderId = String(
-      body?.gateway_order_id ?? ""
-    ).trim();
+    const gatewayOrderId = String(body?.gateway_order_id ?? "").trim();
+    const utrInput = digitsOnly(body?.utr);
 
-    const utr = String(body?.utr ?? "").replace(/\D/g, "");
-
-    if (!gatewayOrderId || !utr) {
+    if (!gatewayOrderId) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Missing gateway order ID or UTR",
-        },
+        { success: false, error: "Missing gateway order ID or UTR" },
         { status: 400 }
-      );
-    }
-
-    const apiKey = process.env.FP_API_KEY;
-
-    if (!apiKey) {
-      console.error("FP_API_KEY is missing");
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Payment gateway is not configured",
-        },
-        { status: 500 }
       );
     }
 
@@ -91,20 +94,14 @@ export async function POST(request: NextRequest) {
       console.error("ORDER LOOKUP ERROR:", orderError);
 
       return NextResponse.json(
-        {
-          success: false,
-          error: "Could not load payment order",
-        },
+        { success: false, error: "Could not load payment order" },
         { status: 500 }
       );
     }
 
     if (!order) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Payment order not found",
-        },
+        { success: false, error: "Payment order not found" },
         { status: 404 }
       );
     }
@@ -114,6 +111,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Payment order not found" },
         { status: 404 }
+      );
+    }
+
+    // Which gateway created this order decides how it is verified.
+    const gatewayId = resolveGatewayId((order as any).gateway);
+    const needsUtr = gatewayNeedsUtr(gatewayId);
+
+    if (needsUtr && !utrInput) {
+      return NextResponse.json(
+        { success: false, error: "Missing gateway order ID or UTR" },
+        { status: 400 }
       );
     }
 
@@ -128,16 +136,10 @@ export async function POST(request: NextRequest) {
 
       // Avoid returning a key from an older purchase of the same product.
       if (order.created_at) {
-        historyQuery = historyQuery.gte(
-          "created_at",
-          String(order.created_at)
-        );
+        historyQuery = historyQuery.gte("created_at", String(order.created_at));
       }
 
-      const {
-        data: existingPurchase,
-        error: historyLookupError,
-      } = await historyQuery
+      const { data: existingPurchase, error: historyLookupError } = await historyQuery
         .order("id", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -200,92 +202,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Replay protection: a UTR that already settled any other order is rejected.
-    // (Columns are checked defensively: works before and after the optional SQL migration.)
-    for (const table of ["payment_orders", "deposit_history"] as const) {
-      const { data: dup, error: dupError } = await supabase
-        .from(table)
-        .select("gateway_order_id")
-        .eq("utr", utr)
-        .neq("gateway_order_id", gatewayOrderId)
-        .limit(1);
-
-      if (!dupError && dup && dup.length > 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            status: "duplicate_utr",
-            error: "This UTR was already used for another payment.",
-          },
-          { status: 409 }
-        );
-      }
-    }
-
-    // 4. Verify the actual payment with the gateway.
-    const verifyUrl = new URL(FP_VERIFY_URL);
-    verifyUrl.searchParams.set("order_id", gatewayOrderId);
-    verifyUrl.searchParams.set("api_key", apiKey);
-    verifyUrl.searchParams.set("utr", utr);
-
-    const gatewayResponse = await fetch(verifyUrl.toString(), {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    const responseText = await gatewayResponse.text();
-
-    let gatewayData: any;
-
-    try {
-      gatewayData = JSON.parse(responseText);
-    } catch {
-      // Avoid logging raw response data that might contain sensitive details.
-      console.error("PAYMENT GATEWAY RETURNED INVALID JSON:", {
-        gatewayOrderId,
-        httpStatus: gatewayResponse.status,
-      });
+    // 4. Gateway credentials for the gateway that created this order.
+    const cfg = await getGatewayConfig(gatewayId);
+    if (!cfg.apiKey) {
+      console.error(`${gatewayId} gateway API key is missing`);
 
       return NextResponse.json(
-        {
-          success: false,
-          error: "Payment gateway returned invalid data",
-        },
-        { status: 502 }
+        { success: false, error: "Payment gateway is not configured" },
+        { status: 500 }
       );
     }
 
-    if (gatewayData?.status === "pending") {
-      return NextResponse.json({
-        success: true,
-        status: "pending",
-      });
-    }
-
-    if (
-      !gatewayResponse.ok ||
-      gatewayData?.status !== "success" ||
-      !gatewayData?.data
-    ) {
-      console.error("PAYMENT VERIFICATION FAILED:", {
-        gatewayOrderId,
-        httpStatus: gatewayResponse.status,
-        gatewayStatus: gatewayData?.status,
-      });
-
+    // xyz: the UTR typed by the customer must not have settled another order.
+    if (needsUtr && (await utrAlreadyUsed(utrInput, gatewayOrderId))) {
       return NextResponse.json(
         {
           success: false,
-          status: "failed",
-          error: gatewayData?.message || "Unable to verify payment",
+          status: "duplicate_utr",
+          error: "This UTR was already used for another payment.",
         },
-        { status: 502 }
+        { status: 409 }
       );
     }
 
-    const payment = gatewayData.data;
+    // 5. Verify the actual payment with the gateway.
+    const verification = await verifyGatewayPayment(cfg, { orderId: gatewayOrderId, utr: utrInput });
 
-    // 5. Confirm the paid amount matches the order.
+    if (verification.state === "pending") {
+      return NextResponse.json({ success: true, status: "pending" });
+    }
+
+    if (verification.state === "expired") {
+      return NextResponse.json(
+        {
+          success: false,
+          status: "expired",
+          error: "This payment session expired. Please create a new order.",
+        },
+        { status: 410 }
+      );
+    }
+
+    if (verification.state === "failed") {
+      return NextResponse.json(
+        {
+          success: false,
+          status: verification.gatewayDown ? "gateway_failed" : "failed",
+          error: verification.message,
+        },
+        { status: verification.httpStatus }
+      );
+    }
+
+    // verification.state === "paid"
+    const payment = verification;
+
+    // 6. Confirm the paid amount matches the order.
     const expectedAmount = Number(order.amount);
     const paidAmount = Number(payment.amount);
 
@@ -310,23 +282,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Atomically claim the order before calling either supplier.
-    // Only one concurrent request can change the original status to processing.
-    const originalStatus = String(order.status ?? "");
+    // The bank reference stored on the order.
+    // xyz: what the customer typed (already verified by the gateway).
+    // anuj: the reference the gateway reports for this exact order.
+    let claimUtr = "";
+    if (needsUtr) {
+      claimUtr = utrInput;
+    } else {
+      const reported = digitsOnly(payment.utr);
+      if (reported.length >= 10 && reported.length <= 30) claimUtr = reported;
+    }
 
-    if (!originalStatus) {
+    if (!needsUtr && claimUtr && (await utrAlreadyUsed(claimUtr, gatewayOrderId))) {
+      console.error("DUPLICATE GATEWAY UTR:", { gatewayOrderId });
       return NextResponse.json(
         {
           success: false,
-          error: "Payment order has no valid status",
+          status: "duplicate_utr",
+          error: "This payment reference was already used for another payment. Contact support.",
         },
         { status: 409 }
       );
     }
 
+    // 7. Atomically claim the order before calling either supplier.
+    // Only one concurrent request can change the original status to processing.
+    const originalStatus = String(order.status ?? "");
+
+    if (!originalStatus) {
+      return NextResponse.json(
+        { success: false, error: "Payment order has no valid status" },
+        { status: 409 }
+      );
+    }
+
+    const claimFields: Record<string, string> = { status: "processing" };
+    if (claimUtr) claimFields.utr = claimUtr;
+
     let claim = await supabase
       .from("payment_orders")
-      .update({ status: "processing", utr })
+      .update(claimFields)
       .eq("gateway_order_id", gatewayOrderId)
       .eq("status", originalStatus)
       .select("gateway_order_id")
@@ -385,7 +380,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. Release the key from Seller 1, Seller 2, or local stock.
+    // 8. Release the key from Seller 1, Seller 2, or local stock.
     type DeliveryResult = Awaited<ReturnType<typeof releaseProduct>>;
     let delivery: DeliveryResult;
 
@@ -397,14 +392,9 @@ export async function POST(request: NextRequest) {
       });
     } catch (releaseError: unknown) {
       const message =
-        releaseError instanceof Error
-          ? releaseError.message
-          : "Unknown key delivery error";
+        releaseError instanceof Error ? releaseError.message : "Unknown key delivery error";
 
-      console.error("KEY RELEASE EXCEPTION:", {
-        gatewayOrderId,
-        message,
-      });
+      console.error("KEY RELEASE EXCEPTION:", { gatewayOrderId, message });
 
       await markDeliveryFailed(gatewayOrderId);
 
@@ -418,13 +408,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (
-      !delivery.success ||
-      typeof delivery.key !== "string" ||
-      !delivery.key.trim()
-    ) {
-      const deliveryError =
-        "error" in delivery ? delivery.error : undefined;
+    if (!delivery.success || typeof delivery.key !== "string" || !delivery.key.trim()) {
+      const deliveryError = "error" in delivery ? delivery.error : undefined;
 
       console.error("KEY RELEASE FAILED:", {
         gatewayOrderId,
@@ -445,24 +430,20 @@ export async function POST(request: NextRequest) {
 
     const generatedKey = delivery.key.trim();
 
-    // 8. Record the exact generated key before finalizing the order.
-
+    // 9. Record the exact generated key before finalizing the order.
     const purchasedAt = new Date().toISOString();
 
-    const { error: historyError } = await supabase
-      .from("purchase_history")
-      .insert([
-        {
-          username: order.username,
-          product_name: order.product_name,
-          duration: order.duration,
-          key_code: generatedKey,
-          price_paid: String(order.amount),
-          purchased_at: purchasedAt,
-          created_at: purchasedAt,
-        },
-      ]);
-    
+    const { error: historyError } = await supabase.from("purchase_history").insert([
+      {
+        username: order.username,
+        product_name: order.product_name,
+        duration: order.duration,
+        key_code: generatedKey,
+        price_paid: String(order.amount),
+        purchased_at: purchasedAt,
+        created_at: purchasedAt,
+      },
+    ]);
 
     if (historyError) {
       // Keep the order in "processing" to block automatic re-purchasing.
@@ -472,16 +453,10 @@ export async function POST(request: NextRequest) {
         error: historyError,
       });
     } else {
-      // 9. Finalize the order only after the key has been recorded.
-      const {
-        data: finalizedOrder,
-        error: finalizeError,
-      } = await supabase
+      // 10. Finalize the order only after the key has been recorded.
+      const { data: finalizedOrder, error: finalizeError } = await supabase
         .from("payment_orders")
-        .update({
-          status: "success",
-          used: true,
-        })
+        .update({ status: "success", used: true })
         .eq("gateway_order_id", gatewayOrderId)
         .eq("status", "processing")
         .select("gateway_order_id")
@@ -496,7 +471,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 10. Send Telegram notification. Notification failure must not lose the key.
+    // 11. Send Telegram notification. Notification failure must not lose the key.
     try {
       await sendTelegramPurchase({
         username: order.username,
@@ -509,15 +484,15 @@ export async function POST(request: NextRequest) {
       console.error("TELEGRAM NOTIFICATION ERROR:", telegramError);
     }
 
-    // 11. Return the generated key to the customer.
+    // 12. Return the generated key to the customer.
     return NextResponse.json({
       success: true,
       status: "success",
       key: generatedKey,
       order_id: gatewayOrderId,
       utr: payment.utr || null,
-      sender_name: payment.sender_name || null,
-      payment_time: payment.payment_time || null,
+      sender_name: payment.payer || null,
+      payment_time: payment.paymentTime || null,
     });
   } catch (error: unknown) {
     console.error("VERIFY PAYMENT ERROR:", error);
