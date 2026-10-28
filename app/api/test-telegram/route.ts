@@ -1,25 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { testAllTelegram } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
-// Admin-only Telegram connectivity test (previously public).
+// Admin-only: sends a test message to every enabled Telegram destination.
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
 
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-
-  if (!token || !chatId) {
+  const results = await testAllTelegram();
+  if (results.length === 0) {
     return NextResponse.json({ success: false, error: "Telegram is not configured." }, { status: 500 });
   }
-
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: "✅ Telegram Test from JPrimeCheats" }),
-  });
-
-  return NextResponse.json({ success: response.ok, status: response.status });
+  return NextResponse.json({ success: results.every((r) => r.ok), results });
 }

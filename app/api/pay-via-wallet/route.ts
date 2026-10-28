@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
         duration,
         amount: quote.price,
         method: "Wallet",
+        key,
       });
     } catch (e) {
       console.error("TELEGRAM NOTIFICATION ERROR");

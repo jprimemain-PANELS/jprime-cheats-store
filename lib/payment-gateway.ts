@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /**
@@ -281,6 +282,33 @@ export async function createGatewayOrder(cfg: GatewayConfig, amount: number): Pr
   };
 }
 
+/**
+ * Turns whatever bank reference a gateway reports into the 10-30 digit number the wallet
+ * database function requires.
+ *  - A normal numeric UTR (10-30 digits) is used as is.
+ *  - Any other reference (letters, short, or missing) becomes a stable 19-digit number
+ *    derived from it (or from the order id when `fallbackToOrder` is set). Same input always
+ *    gives the same number, so retries and replay checks keep working.
+ * Returns "" when there is nothing to derive from and `fallbackToOrder` is false.
+ */
+export function normalizeBankReference(
+  orderId: string,
+  rawRef: string | null | undefined,
+  opts: { fallbackToOrder: boolean }
+): string {
+  const raw = String(rawRef ?? "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length >= 10 && digits.length <= 30) return digits;
+
+  const seed = raw ? `ref:${raw.toLowerCase()}` : opts.fallbackToOrder ? `order:${orderId}` : "";
+  if (!seed) return "";
+
+  const hash = createHash("sha256").update(seed).digest();
+  return Array.from(hash.subarray(0, 19))
+    .map((b) => String(b % 10))
+    .join("");
+}
+
 /** The gateway may add paise to make the amount unique; it must never be below the price. */
 export function isAmountAcceptable(expected: number, got: number): boolean {
   return Number.isFinite(got) && got >= expected - 0.001 && got < expected + 1;
@@ -334,7 +362,7 @@ export async function verifyGatewayPayment(
       return {
         state: "paid",
         amount: Number(data.amount),
-        utr: data.utr ? String(data.utr) : null,
+        utr: data.utr ? String(data.utr) : data.transaction_id ? String(data.transaction_id) : null,
         payer: data.payer ? String(data.payer) : null,
         paymentTime: data.payment_time ? String(data.payment_time) : null,
       };

@@ -31,12 +31,14 @@ import {
   Power,
   Crown,
   CreditCard,
+  Bell,
 } from "lucide-react";
 
 import type { Product, PriceTier } from "@/lib/products";
 import ProductManager from "@/components/admin/ProductManager";
 import VipPriceManager from "@/components/admin/VipPriceManager";
 import GatewayManager from "@/components/admin/GatewayManager";
+import TelegramManager from "@/components/admin/TelegramManager";
 
 interface ManagedUser {
   id?: string | number;
@@ -58,6 +60,7 @@ type Tab =
   | "products"
   | "vip"
   | "gateway"
+  | "telegram"
   | "purchases"
   | "users";
 
@@ -609,6 +612,7 @@ export default function AdminPage() {
     { id: "products", label: "Products", icon: Package },
     { id: "vip", label: "VIP Prices", icon: Crown },
     { id: "gateway", label: "Payments", icon: CreditCard },
+    { id: "telegram", label: "Telegram", icon: Bell },
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -1064,6 +1068,9 @@ export default function AdminPage() {
 
         {/* PAYMENT GATEWAY (switch xyz / anuj, URLs and API keys) */}
         {activeTab === "gateway" && <GatewayManager />}
+
+        {/* TELEGRAM NOTIFICATIONS (bots, channels, key visibility) */}
+        {activeTab === "telegram" && <TelegramManager />}
 
         {/* PURCHASES */}
         {activeTab === "purchases" && (

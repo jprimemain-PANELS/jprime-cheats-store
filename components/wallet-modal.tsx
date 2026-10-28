@@ -23,7 +23,7 @@ import {
   CheckCircle2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 
 interface WalletModalProps {
   open: boolean;
@@ -54,6 +54,22 @@ interface PaymentData {
 const MIN_DEPOSIT_AMOUNT = 1;
 const PRESET_AMOUNTS = [100, 500, 1000, 2000, 5000];
 const STEPS = ["Wallet", "Deposit", "Confirm"] as const;
+
+// Confetti pieces for the "payment received" celebration (fixed values: no randomness).
+const CONFETTI_COLORS = ["#d946ef", "#8b5cf6", "#34d399", "#fbbf24", "#f472b6", "#60a5fa"];
+const CONFETTI = Array.from({ length: 22 }, (_, i) => {
+  const angle = (i / 22) * Math.PI * 2 + (i % 2 ? 0.2 : 0);
+  const dist = 78 + (i % 4) * 20;
+  return {
+    dx: Math.round(Math.cos(angle) * dist),
+    dy: Math.round(Math.sin(angle) * dist) - 18,
+    color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+    delay: (i % 7) * 0.035,
+    w: 5 + (i % 3) * 2,
+    h: 8 + (i % 2) * 4,
+    rot: 180 + (i % 5) * 90,
+  };
+});
 
 type Notice = { type: "error" | "success" | "warning" | "info"; message: string } | null;
 
@@ -89,6 +105,8 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
   const [qrLoaded, setQrLoaded] = useState(false);
   const [verified, setVerified] = useState(false);
   const verifyingRef = useRef(false);
+  const [credited, setCredited] = useState<{ amount: string; from: number; to: number | null } | null>(null);
+  const [creditedShown, setCreditedShown] = useState(0);
 
   const step = showQR ? 2 : showDeposit || showHistory ? 1 : 0;
 
@@ -126,6 +144,27 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
     return () => cancelAnimationFrame(frame);
   }, [open, balance]);
 
+  // New-balance count-up on the success screen
+  useEffect(() => {
+    if (!credited || credited.to === null) return;
+
+    let frame = 0;
+    const start = performance.now() + 450; // wait for the check animation
+    const duration = 900;
+    const { from, to } = credited;
+    setCreditedShown(from);
+
+    function tick(now: number) {
+      const progress = Math.min(Math.max((now - start) / duration, 0), 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCreditedShown(from + (to - from) * eased);
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    }
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [credited]);
+
   // Reset states when dialog closes
   useEffect(() => {
     if (!open) {
@@ -141,6 +180,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
       setMobileNumber("");
       setUtr("");
       verifyingRef.current = false;
+      setCredited(null);
     }
   }, [open]);
 
@@ -153,6 +193,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
     setMobileNumber("");
     setUtr("");
     setVerified(false);
+    setCredited(null);
     setNotice(null);
   };
 
@@ -262,6 +303,11 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.success === true && data.status === "success") {
+        setCredited({
+          amount: String(paymentData?.amount ?? ""),
+          from: Number(balance) || 0,
+          to: typeof data.balance !== "undefined" ? Number(data.balance) : null,
+        });
         setVerified(true);
         setNotice({ type: "success", message: data.message || "Wallet balance credited successfully!" });
 
@@ -271,7 +317,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
 
         setTimeout(() => {
           resetFormAndCloseFields();
-        }, 2500);
+        }, 5000);
         return false;
       }
 
@@ -628,12 +674,87 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
               </div>
 
               {verified ? (
-                <div className="wallet-panel-in flex flex-col items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-10 text-center">
-                  <span className="wallet-check-pop flex h-16 w-16 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-500/15">
-                    <CheckCircle2 className="h-8 w-8 text-emerald-400" />
-                  </span>
-                  <p className="text-sm font-semibold text-white">Wallet credited successfully</p>
-                  <p className="text-xs text-neutral-400">Taking you back to your wallet…</p>
+                <div className="wallet-panel-in wallet-success relative flex flex-col items-center gap-3 overflow-hidden rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-9 text-center">
+                  {/* soft glow behind the check */}
+                  <span aria-hidden className="wallet-success-glow pointer-events-none absolute left-1/2 top-[78px] h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400/25 blur-3xl" />
+
+                  {/* confetti burst */}
+                  <div aria-hidden className="pointer-events-none absolute left-1/2 top-[78px]">
+                    {CONFETTI.map((c, i) => (
+                      <span
+                        key={i}
+                        className="wallet-confetti absolute block rounded-[2px]"
+                        style={
+                          {
+                            width: c.w,
+                            height: c.h,
+                            background: c.color,
+                            animationDelay: `${0.35 + c.delay}s`,
+                            ["--dx" as string]: `${c.dx}px`,
+                            ["--dy" as string]: `${c.dy}px`,
+                            ["--rot" as string]: `${c.rot}deg`,
+                          } as CSSProperties
+                        }
+                      />
+                    ))}
+                  </div>
+
+                  {/* animated check */}
+                  <div className="relative flex h-[84px] w-[84px] items-center justify-center">
+                    <span aria-hidden className="wallet-success-ripple absolute inset-0 rounded-full border border-emerald-400/50" />
+                    <span aria-hidden className="wallet-success-ripple absolute inset-0 rounded-full border border-emerald-400/40" style={{ animationDelay: "0.5s" }} />
+                    <svg viewBox="0 0 84 84" className="relative h-[84px] w-[84px]">
+                      <circle cx="42" cy="42" r="37" fill="rgba(16,185,129,0.12)" />
+                      <circle
+                        cx="42"
+                        cy="42"
+                        r="37"
+                        fill="none"
+                        stroke="#34d399"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        className="wallet-success-ring"
+                        transform="rotate(-90 42 42)"
+                      />
+                      <path
+                        d="M26 43.5 L37.5 55 L58 31"
+                        fill="none"
+                        stroke="#6ee7b7"
+                        strokeWidth="5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="wallet-success-tick"
+                      />
+                    </svg>
+                  </div>
+
+                  <div className="wallet-success-rise" style={{ animationDelay: "0.55s" }}>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-300/90">
+                      Payment received
+                    </p>
+                    {credited?.amount ? (
+                      <p className="mt-1 font-mono text-3xl font-bold text-white">
+                        +₹{Number(credited.amount).toFixed(2)}
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-sm font-semibold text-white">Wallet credited automatically</p>
+                  </div>
+
+                  {credited && credited.to !== null && (
+                    <div
+                      className="wallet-success-rise mt-1 w-full max-w-[240px] rounded-xl border border-white/10 bg-black/25 px-4 py-2.5"
+                      style={{ animationDelay: "0.8s" }}
+                    >
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-neutral-400">New balance</p>
+                      <p className="font-mono text-lg font-bold tabular-nums text-emerald-300">
+                        ₹{creditedShown.toFixed(2)}
+                      </p>
+                    </div>
+                  )}
+
+                  <p className="wallet-success-rise mt-1 text-xs text-neutral-400" style={{ animationDelay: "1.1s" }}>
+                    Taking you back to your wallet…
+                  </p>
                 </div>
               ) : (
                 <>
@@ -805,6 +926,63 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
           @keyframes walletLiveDot {
             0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
             50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
+          }
+
+          @keyframes walletRingDraw {
+            from { stroke-dashoffset: 233; }
+            to { stroke-dashoffset: 0; }
+          }
+          @keyframes walletTickDraw {
+            from { stroke-dashoffset: 60; }
+            to { stroke-dashoffset: 0; }
+          }
+          @keyframes walletRipple {
+            0% { transform: scale(0.9); opacity: 0.7; }
+            100% { transform: scale(1.9); opacity: 0; }
+          }
+          @keyframes walletRise {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes walletConfetti {
+            0% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(0.4); }
+            70% { opacity: 1; }
+            100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 46px)) rotate(var(--rot)) scale(1); }
+          }
+          @keyframes walletSuccessGlow {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            40% { opacity: 1; }
+            100% { opacity: 0.55; transform: translate(-50%, -50%) scale(1); }
+          }
+
+          .wallet-success-ring {
+            stroke-dasharray: 233;
+            stroke-dashoffset: 233;
+            animation: walletRingDraw 0.6s cubic-bezier(0.65, 0, 0.35, 1) 0.1s forwards;
+          }
+          .wallet-success-tick {
+            stroke-dasharray: 60;
+            stroke-dashoffset: 60;
+            animation: walletTickDraw 0.4s cubic-bezier(0.65, 0, 0.35, 1) 0.6s forwards;
+          }
+          .wallet-success-ripple {
+            opacity: 0;
+            animation: walletRipple 1.5s ease-out 0.7s 2 forwards;
+          }
+          .wallet-success-rise {
+            opacity: 0;
+            animation: walletRise 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          }
+          .wallet-success-glow { animation: walletSuccessGlow 1s ease-out forwards; }
+          .wallet-confetti {
+            opacity: 0;
+            animation: walletConfetti 1.25s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .wallet-success-ring, .wallet-success-tick { animation-duration: 0.01s; animation-delay: 0s; }
+            .wallet-success-ripple, .wallet-confetti, .wallet-success-glow { animation: none; opacity: 0; }
+            .wallet-success-rise { animation-duration: 0.01s; animation-delay: 0s; }
           }
 
           .wallet-glow-a { animation: walletGlowA 6s ease-in-out infinite; }

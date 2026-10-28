@@ -4,6 +4,7 @@ import { requireUser, rateLimit } from "@/lib/auth";
 import {
   gatewayNeedsUtr,
   getGatewayConfig,
+  normalizeBankReference,
   resolveGatewayId,
   verifyGatewayPayment,
 } from "@/lib/payment-gateway";
@@ -122,14 +123,11 @@ export async function POST(request: NextRequest) {
     if (needsUtr) {
       verifiedUtr = String(payment.utr || utrInput).replace(/\D/g, "") || utrInput;
     } else {
-      verifiedUtr = String(payment.utr || "").replace(/\D/g, "");
-      if (verifiedUtr.length < 10 || verifiedUtr.length > 30) {
-        console.error("GATEWAY PAID WITHOUT A USABLE BANK REFERENCE:", { gatewayOrderId, gateway: gatewayId });
-        return reply(409, {
-          success: false,
-          status: "manual_review",
-          message: "Payment was received but needs a manual check. Do not pay again; contact support with this order reference.",
-        });
+      // The gateway confirmed THIS order as paid. If it reports a non-numeric / missing bank
+      // reference, a stable number is derived so the wallet is still credited automatically.
+      verifiedUtr = normalizeBankReference(gatewayOrderId, payment.utr, { fallbackToOrder: true });
+      if (!payment.utr) {
+        console.warn("GATEWAY PAID WITHOUT A BANK REFERENCE (using derived reference):", { gatewayOrderId, gateway: gatewayId });
       }
     }
 

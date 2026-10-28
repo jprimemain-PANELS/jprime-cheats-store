@@ -13,6 +13,9 @@ import {
   KeyRound,
 } from "lucide-react";
 
+// After the key is shown and copied, the page returns to the store after this many seconds.
+const REDIRECT_SECONDS = 6;
+
 type PaymentOrder = {
   order_id: string;
   amount: string | number;
@@ -49,6 +52,7 @@ function UpiPaymentContent() {
   // xyz gateway: customer types the UTR. anuj gateway: no UTR, payment is detected automatically.
   const needsUtr = order?.needs_utr !== false;
   const recoverTriedRef = useRef(false);
+  const [redirectIn, setRedirectIn] = useState<number | null>(null);
 
   // ─────────────────────────────────────
   // LOAD EXACT PAYMENT ORDER
@@ -314,8 +318,11 @@ function UpiPaymentContent() {
       .writeText(releasedKey)
       .then(() => {
         setCopyMessage("✅ Key copied to clipboard!");
+        // The key is safely on the clipboard: return to the store shortly.
+        setRedirectIn(REDIRECT_SECONDS);
       })
       .catch(() => {
+        // Copy failed: stay on this page so the customer can copy the key manually.
         setCopyMessage("⚠️ Auto-copy failed. Use COPY KEY.");
       });
 
@@ -327,6 +334,26 @@ function UpiPaymentContent() {
       window.clearTimeout(timer);
     };
   }, [releasedKey]);
+
+  // ─────────────────────────────────────
+  // RETURN TO STORE COUNTDOWN
+  // ─────────────────────────────────────
+  useEffect(() => {
+    if (redirectIn === null) return;
+
+    if (redirectIn <= 0) {
+      router.replace("/");
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setRedirectIn((s) => (s === null ? null : s - 1));
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [redirectIn, router]);
 
   // ─────────────────────────────────────
   // MANUAL COPY
@@ -365,12 +392,12 @@ function UpiPaymentContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#050506] flex flex-col items-center justify-center gap-4">
-        <div className="relative w-10 h-10">
-          <div className="absolute inset-0 rounded-full border-2 border-white/[0.08]" />
-          <div className="jprime-spinner absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400" />
+      <div suppressHydrationWarning className="min-h-screen bg-[#050506] flex flex-col items-center justify-center gap-4">
+        <div suppressHydrationWarning className="relative w-10 h-10">
+          <div suppressHydrationWarning className="absolute inset-0 rounded-full border-2 border-white/[0.08]" />
+          <div suppressHydrationWarning className="jprime-spinner absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400" />
         </div>
-        <p className="text-cyan-400/80 font-mono text-[11px] tracking-[0.25em] uppercase">
+        <p suppressHydrationWarning className="text-cyan-400/80 font-mono text-[11px] tracking-[0.25em] uppercase">
           Connecting to payment gateway
         </p>
         <style jsx global>{`
@@ -443,9 +470,25 @@ function UpiPaymentContent() {
         .jprime-glow {
           animation: jprime-glow-pulse 2.4s ease-in-out infinite;
         }
+        @keyframes jprime-burst {
+          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+          15% { opacity: 1; }
+          100% { opacity: 0; transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1); }
+        }
+        @keyframes jprime-ripple-out {
+          0% { opacity: 0.8; transform: scale(1); }
+          100% { opacity: 0; transform: scale(2.1); }
+        }
+        .jprime-particle {
+          opacity: 0;
+          animation: jprime-burst 0.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        .jprime-ripple {
+          animation: jprime-ripple-out 1.1s ease-out 0.25s both;
+        }
         @media (prefers-reduced-motion: reduce) {
           .jprime-spinner, .jprime-dot, .jprime-fade-up, .jprime-scale-in,
-          .jprime-check-path, .jprime-ring-path, .jprime-glow {
+          .jprime-check-path, .jprime-ring-path, .jprime-glow, .jprime-particle, .jprime-ripple {
             animation: none !important;
           }
         }
@@ -695,7 +738,29 @@ function UpiPaymentContent() {
           {/* PAYMENT SUCCESS */}
           {paymentStatus === "success" && (
             <div className="jprime-fade-up border border-emerald-500/30 bg-emerald-950/10 p-6 rounded-xl text-center">
-              <div className="jprime-scale-in w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+              <div className="jprime-scale-in relative w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+                {/* celebration burst */}
+                <span aria-hidden className="jprime-ripple absolute inset-0 rounded-full border border-emerald-400/50" />
+                {Array.from({ length: 14 }).map((_, i) => {
+                  const angle = (i / 14) * Math.PI * 2;
+                  const dist = 52 + (i % 3) * 14;
+                  const colors = ["#34d399", "#22d3ee", "#fbbf24", "#a78bfa", "#f472b6"];
+                  return (
+                    <span
+                      key={i}
+                      aria-hidden
+                      className="jprime-particle absolute left-1/2 top-1/2 block h-1.5 w-1.5 rounded-full"
+                      style={
+                        {
+                          background: colors[i % colors.length],
+                          animationDelay: `${0.3 + (i % 4) * 0.04}s`,
+                          ["--tx" as string]: `${Math.cos(angle) * dist}px`,
+                          ["--ty" as string]: `${Math.sin(angle) * dist}px`,
+                        } as React.CSSProperties
+                      }
+                    />
+                  );
+                })}
                 <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
                   <path
                     d="M5 13.5L10.5 19L21 7"
@@ -711,6 +776,11 @@ function UpiPaymentContent() {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Payment Verified
               </div>
+              {!needsUtr && (
+                <p className="jprime-fade-up -mt-1 mb-2 text-[10px] uppercase tracking-[0.2em] text-emerald-300/70">
+                  Detected automatically
+                </p>
+              )}
               <h3 className="text-xl font-light tracking-[0.1em] text-white uppercase mb-4">
                 Payment Received
               </h3>
@@ -733,6 +803,37 @@ function UpiPaymentContent() {
                     <Copy className="h-3.5 w-3.5" />
                     Copy Key
                   </button>
+
+                  {redirectIn !== null && (
+                    <div className="jprime-fade-up mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                      <p className="text-[11px] text-neutral-300">
+                        Returning to the store in <span className="font-mono text-cyan-400">{redirectIn}s</span>
+                      </p>
+                      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                        <div
+                          className="h-full rounded-full bg-cyan-500/70"
+                          style={{
+                            width: `${(redirectIn / REDIRECT_SECONDS) * 100}%`,
+                            transition: "width 1s linear",
+                          }}
+                        />
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => router.replace("/")}
+                          className="flex-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-cyan-300 transition-colors active:scale-[0.98]"
+                        >
+                          Go to store now
+                        </button>
+                        <button
+                          onClick={() => setRedirectIn(null)}
+                          className="flex-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-300 transition-colors active:scale-[0.98]"
+                        >
+                          Stay here
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="bg-[#050506] border border-white/[0.04] px-4 py-4 rounded-xl font-mono text-cyan-400 text-xs tracking-wider">
@@ -783,15 +884,15 @@ function UpiPaymentContent() {
               </button>
             </div>
           )}
+        </div>
 
-          {/* FOOTER */}
-          <div className="mt-6 flex items-center justify-between text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-mono px-3">
-            <span>Secure Payment Verification</span>
-            <div className="flex items-center gap-2">
-              <span>SSL</span>
-              <span>•</span>
-              <span>UPI</span>
-            </div>
+        {/* FOOTER */}
+        <div className="mt-6 flex items-center justify-between text-[9px] text-neutral-500 uppercase tracking-[0.18em] font-mono px-3">
+          <span>Secure Payment Verification</span>
+          <div className="flex items-center gap-2">
+            <span>SSL</span>
+            <span>•</span>
+            <span>UPI</span>
           </div>
         </div>
       </div>
@@ -803,7 +904,7 @@ export default function UpiPaymentPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#050506] text-cyan-400 flex items-center justify-center font-mono text-xs tracking-widest uppercase">
+        <div suppressHydrationWarning className="min-h-screen bg-[#050506] text-cyan-400 flex items-center justify-center font-mono text-xs tracking-widest uppercase">
           Connecting to Gateway...
         </div>
       }

@@ -6,6 +6,7 @@ import { sendTelegramPurchase } from "@/lib/telegram";
 import {
   gatewayNeedsUtr,
   getGatewayConfig,
+  normalizeBankReference,
   resolveGatewayId,
   verifyGatewayPayment,
 } from "@/lib/payment-gateway";
@@ -289,8 +290,7 @@ export async function POST(request: NextRequest) {
     if (needsUtr) {
       claimUtr = utrInput;
     } else {
-      const reported = digitsOnly(payment.utr);
-      if (reported.length >= 10 && reported.length <= 30) claimUtr = reported;
+      claimUtr = normalizeBankReference(gatewayOrderId, payment.utr, { fallbackToOrder: false });
     }
 
     if (!needsUtr && claimUtr && (await utrAlreadyUsed(claimUtr, gatewayOrderId))) {
@@ -479,6 +479,7 @@ export async function POST(request: NextRequest) {
         duration: order.duration,
         amount: Number(order.amount),
         method: "UPI",
+        key: generatedKey,
       });
     } catch (telegramError) {
       console.error("TELEGRAM NOTIFICATION ERROR:", telegramError);
