@@ -484,7 +484,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
       await loadStock();
     } catch (error) {
       console.error("Wallet Payment Error:", error);
-      alert("Something went wrong with the wallet payment.");
+      alert("out off stock - ask the admin to add more stock.");
     } finally {
       setIsProcessing(false);
     }
