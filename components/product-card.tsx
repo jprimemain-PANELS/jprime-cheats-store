@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ProductVideo } from "@/components/product-video";
 import {
   Dialog,
   DialogContent,
@@ -610,15 +611,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
           </div>
 
           {product.videoUrl ? (
-            <video
-              controls
-              className="h-full w-full object-cover"
-            >
-              <source
-                src={product.videoUrl}
-                type="video/mp4"
-              />
-            </video>
+            <ProductVideo url={product.videoUrl} />
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-violet-950/30 to-black/60">
               <div

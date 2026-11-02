@@ -1,0 +1,4594 @@
+﻿========== components/admin/ProductManager.tsx ==========
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  Plus,
+  Save,
+  Trash2,
+  X,
+  RefreshCw,
+  Upload,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
+
+
+type Supplier = "SELLER1" | "SELLER2" | "LOCAL";
+
+interface PriceTier {
+  duration: string;
+  priceINR: string;
+  resellerPrice?: string;
+  priceUSD?: string;
+  sellerDuration?: string;
+
+  supplier?: Supplier;
+
+  seller1Pid?: string;
+  seller1Duration?: string;
+
+  seller2VariantId?: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  category: "mobile" | "pc" | "ios";
+  fulfillmentType?: "API" | "LOCAL";
+  updateChannel: string;
+  features: string[];
+  videoPlaceholder?: string;
+  videoUrl?: string;
+  status: "ONLINE" | "MAINTENANCE";
+  prices: PriceTier[];
+}
+
+interface CatalogRow {
+  id: number;
+  product_id: string;
+  name: string;
+  data: Product;
+}
+
+const emptyProduct: Product = {
+  id: "",
+  name: "",
+  category: "mobile",
+  fulfillmentType: "API",
+  updateChannel: "",
+  features: [""],
+  videoPlaceholder: "",
+  videoUrl: "",
+  status: "ONLINE",
+  prices: [
+    {
+      duration: "1 day",
+      priceINR: "",
+      resellerPrice: "",
+      supplier: "LOCAL",
+      seller1Pid: "",
+      seller1Duration: "",
+      seller2VariantId: "",
+    },
+  ],
+};
+
+function normalizeProduct(product: any): Product {
+  return {
+    id: String(product.id || ""),
+    name: String(product.name || ""),
+    category: product.category || "mobile",
+    fulfillmentType: product.fulfillmentType || "LOCAL",
+    updateChannel: String(product.updateChannel || ""),
+    features:
+      Array.isArray(product.features) && product.features.length
+        ? product.features
+        : [""],
+    videoPlaceholder: String(product.videoPlaceholder || ""),
+    videoUrl: String(product.videoUrl || ""),
+    status: product.status === "MAINTENANCE" ? "MAINTENANCE" : "ONLINE",
+
+    prices:
+      Array.isArray(product.prices) && product.prices.length
+        ? product.prices.map((tier: any) => ({
+            duration: String(tier.duration || ""),
+            priceINR: String(tier.priceINR || ""),
+            resellerPrice: String(tier.resellerPrice || ""),
+            priceUSD: String(tier.priceUSD || ""),
+            sellerDuration: String(tier.sellerDuration || ""),
+
+            supplier: tier.supplier || "LOCAL",
+
+            seller1Pid: String(tier.seller1Pid || ""),
+            seller1Duration: String(
+              tier.seller1Duration || tier.sellerDuration || ""
+            ),
+
+            seller2VariantId: String(tier.seller2VariantId || ""),
+          }))
+        : [],
+  };
+}
+
+async function adminCatalogRequest(
+  path: string,
+  options: RequestInit = {}
+) {
+  // Authentication is the HttpOnly session cookie; the server re-checks the
+  // admin role on every call. No identity is sent from the browser.
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || "Catalog request failed.");
+  }
+
+  return data;
+}
+
+export default function ProductManager() {
+  // Built-in product list, from an admin-only endpoint (used by "Import Existing").
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+
+  useEffect(() => {
+    adminCatalogRequest("/api/admin/legacy-products")
+      .then((r) => setAllProducts(Array.isArray(r.products) ? r.products : []))
+      .catch(() => setAllProducts([]));
+  }, []);
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selected, setSelected] = useState<Product | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const [showEditor, setShowEditor] = useState(false);
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  async function loadProducts() {
+    setLoading(true);
+
+    try {
+      const [catalogResult, adminResult] = await Promise.all([
+        adminCatalogRequest("/api/admin/catalog"),
+        adminCatalogRequest("/api/admin/data"),
+      ]);
+      const rows = catalogResult.products || [];
+      const priceRows: any[] = Array.isArray(adminResult.priceRows) ? adminResult.priceRows : [];
+      const pricesByKey = new Map<string, { priceINR: number; resellerPrice: number | null }>();
+      const statusesByName = new Map<string, "ONLINE" | "MAINTENANCE">();
+
+      for (const row of priceRows) {
+        if (row.duration === "__status__") {
+          statusesByName.set(row.product_name, Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE");
+        } else {
+          pricesByKey.set(`${row.product_name}::${row.duration}`, {
+            priceINR: Number(row.price_inr),
+            resellerPrice: row.reseller_price == null ? null : Number(row.reseller_price),
+          });
+        }
+      }
+
+      const mergedProducts = rows.map((row: any) => {
+        const product = normalizeProduct(row.data);
+        return {
+          ...product,
+          status: statusesByName.get(product.name) ?? product.status,
+          prices: product.prices.map((tier: any) => {
+            const override = pricesByKey.get(`${product.name}::${tier.duration}`);
+            if (!override || !Number.isFinite(override.priceINR)) return tier;
+            return {
+              ...tier,
+              priceINR: String(override.priceINR),
+              resellerPrice: override.resellerPrice == null ? "" : String(override.resellerPrice),
+            };
+          }),
+        } as Product;
+      });
+
+      setProducts(mergedProducts);
+    } catch (error: any) {
+      console.error(error);
+      alert("Failed to load products: " + (error?.message || "Unknown error"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function newProduct() {
+    setSelected({
+      ...emptyProduct,
+      id: `product-${Date.now()}`,
+      prices: [
+        {
+          duration: "1 day",
+          priceINR: "",
+          resellerPrice: "",
+          supplier: "LOCAL",
+          seller1Pid: "",
+          seller1Duration: "",
+          seller2VariantId: "",
+        },
+      ],
+    });
+
+    setShowEditor(true);
+  }
+
+  function editProduct(product: Product) {
+    setSelected(
+      JSON.parse(JSON.stringify(product))
+    );
+
+    setShowEditor(true);
+  }
+
+  async function saveProduct() {
+    if (!selected) return;
+
+    if (!selected.id.trim()) {
+      alert("Product ID is required.");
+      return;
+    }
+
+    if (!selected.name.trim()) {
+      alert("Product name is required.");
+      return;
+    }
+
+    if (!selected.prices.length) {
+      alert("Add at least one duration.");
+      return;
+    }
+
+    const cleaned: Product = {
+      ...selected,
+
+      id: selected.id.trim(),
+      name: selected.name.trim(),
+
+      features: selected.features
+        .map((x) => x.trim())
+        .filter(Boolean),
+
+      prices: selected.prices
+        .filter((x) => x.duration.trim())
+        .map((x) => ({
+          ...x,
+          duration: x.duration.trim(),
+          priceINR: String(x.priceINR || "").trim(),
+          resellerPrice: String(x.resellerPrice || "").trim(),
+          priceUSD: String(x.priceUSD || "").trim(),
+
+          supplier: x.supplier || "LOCAL",
+
+          seller1Pid: String(x.seller1Pid || "").trim(),
+          seller1Duration: String(
+            x.seller1Duration || ""
+          ).trim(),
+
+          seller2VariantId: String(
+            x.seller2VariantId || ""
+          ).trim(),
+        })),
+    };
+
+    setSaving(true);
+
+    try {
+      await adminCatalogRequest("/api/admin/catalog", {
+        method: "POST",
+        body: JSON.stringify({
+          product: cleaned,
+        }),
+      });
+    } catch (error: any) {
+      console.error(error);
+      alert("Save failed: " + (error?.message || "Unknown error"));
+      setSaving(false);
+      return;
+    }
+    
+    setSaving(false);
+
+    /*
+     * Keep the existing product_prices table working.
+     * This means your current storefront price override
+     * system continues to work.
+     */
+    const priceRows = cleaned.prices
+      .map((tier: any) => {
+        const price = Number(String(tier.priceINR).replace(/[^0-9.]/g, ""));
+        const reseller = tier.resellerPrice
+          ? Number(String(tier.resellerPrice).replace(/[^0-9.]/g, ""))
+          : null;
+
+        return {
+          product_name: cleaned.name,
+          duration: tier.duration,
+          price_inr: price,
+          reseller_price: reseller !== null && Number.isNaN(reseller) ? null : reseller,
+        };
+      })
+      .filter((r: any) => !Number.isNaN(r.price) && r.price > 0);
+
+    if (priceRows.length > 0) {
+      try {
+        await adminCatalogRequest("/api/admin/data", {
+          method: "POST",
+          body: JSON.stringify({ action: "save_prices", rows: priceRows }),
+        });
+      } catch (error: any) {
+        console.error(error);
+        alert("Product saved, but price sync failed: " + (error?.message || "Unknown error"));
+      }
+    }
+
+    try {
+      await adminCatalogRequest("/api/admin/data", {
+        method: "POST",
+        body: JSON.stringify({ action: "set_status", product_name: cleaned.name, status: cleaned.status }),
+      });
+    } catch (error: any) {
+      console.error(error);
+      alert("Product saved, but status sync failed: " + (error?.message || "Unknown error"));
+    }
+
+    window.dispatchEvent(new Event("jprime-catalog-updated"));
+    alert("Product saved successfully.");
+
+    setShowEditor(false);
+    setSelected(null);
+
+    await loadProducts();
+  }
+
+ async function deleteProduct(product: Product) {
+  const confirmed = window.confirm(
+    `Delete "${product.name}" from Product Catalog?\n\nThis does NOT delete old stock keys or purchase history.`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await adminCatalogRequest("/api/admin/catalog", {
+      method: "DELETE",
+      body: JSON.stringify({
+        product_id: product.id,
+      }),
+    });
+
+    if (selected?.id === product.id) {
+      setSelected(null);
+      setShowEditor(false);
+    }
+
+    window.dispatchEvent(new Event("jprime-catalog-updated"));
+    await loadProducts();
+  } catch (error: any) {
+    alert("Delete failed: " + (error?.message || "Unknown error"));
+  }
+}
+
+  async function importExistingProducts() {
+    if (!allProducts?.length) {
+      alert("No existing products found in lib/products.ts");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Import ${allProducts.length} existing products into the new Product Catalog?`
+    );
+
+    if (!confirmed) return;
+
+    setImporting(true);
+
+    const rows = allProducts.map((product: any) => {
+      const normalized = normalizeProduct(product);
+
+      /*
+       * Existing Seller 1 products:
+       * sellerPid belongs to the product currently.
+       *
+       * We copy it into every duration so the new system
+       * has a per-duration PID.
+       */
+      normalized.prices = normalized.prices.map(
+        (tier) => ({
+          ...tier,
+
+          supplier:
+            normalized.fulfillmentType === "API"
+              ? "SELLER1"
+              : "LOCAL",
+
+          seller1Pid:
+            product.sellerPid
+              ? String(product.sellerPid)
+              : "",
+
+          seller1Duration:
+            tier.sellerDuration || "",
+        })
+      );
+
+      return {
+        product_id: normalized.id,
+        name: normalized.name,
+        data: normalized,
+        updated_at: new Date().toISOString(),
+      };
+    });
+
+    try {
+      for (const row of rows) {
+        await adminCatalogRequest("/api/admin/catalog", {
+          method: "POST",
+          body: JSON.stringify({
+            product: row.data,
+          }),
+        });
+      }
+    } catch (error: any) {
+      console.error(error);
+      setImporting(false);
+      alert("Import failed: " + (error?.message || "Unknown error"));
+      return;
+    }
+    
+    setImporting(false);
+
+    alert(
+      `${rows.length} existing products imported successfully.`
+    );
+
+    window.dispatchEvent(new Event("jprime-catalog-updated"));
+    await loadProducts();
+  }
+
+  function updateSelected(
+    field: keyof Product,
+    value: any
+  ) {
+    if (!selected) return;
+
+    setSelected({
+      ...selected,
+      [field]: value,
+    });
+  }
+
+  function updateFeature(
+    index: number,
+    value: string
+  ) {
+    if (!selected) return;
+
+    const features = [...selected.features];
+
+    features[index] = value;
+
+    setSelected({
+      ...selected,
+      features,
+    });
+  }
+
+  function addFeature() {
+    if (!selected) return;
+
+    setSelected({
+      ...selected,
+      features: [
+        ...selected.features,
+        "",
+      ],
+    });
+  }
+
+  function removeFeature(index: number) {
+    if (!selected) return;
+
+    const features = selected.features.filter(
+      (_, i) => i !== index
+    );
+
+    setSelected({
+      ...selected,
+      features:
+        features.length ? features : [""],
+    });
+  }
+
+  function updateTier(
+    index: number,
+    field: keyof PriceTier,
+    value: any
+  ) {
+    if (!selected) return;
+
+    const prices = [...selected.prices];
+
+    prices[index] = {
+      ...prices[index],
+      [field]: value,
+    };
+
+    setSelected({
+      ...selected,
+      prices,
+    });
+  }
+
+  function addDuration() {
+    if (!selected) return;
+
+    setSelected({
+      ...selected,
+
+      prices: [
+        ...selected.prices,
+
+        {
+          duration: "",
+          priceINR: "",
+          resellerPrice: "",
+
+          supplier: "LOCAL",
+
+          seller1Pid: "",
+          seller1Duration: "",
+
+          seller2VariantId: "",
+        },
+      ],
+    });
+  }
+
+  function removeDuration(index: number) {
+    if (!selected) return;
+
+    if (selected.prices.length <= 1) {
+      alert("A product must have at least one duration.");
+      return;
+    }
+
+    setSelected({
+      ...selected,
+
+      prices: selected.prices.filter(
+        (_, i) => i !== index
+      ),
+    });
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* HEADER */}
+
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
+        <div>
+          <h2 className="text-2xl font-bold">
+            Product Manager
+          </h2>
+
+          <p className="text-sm text-zinc-400 mt-1">
+            Manage products, prices, durations and supplier routing.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+
+          <button
+            onClick={importExistingProducts}
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 transition"
+          >
+            <Upload className="w-4 h-4" />
+
+            {importing
+              ? "Importing..."
+              : "Import Existing"}
+          </button>
+
+          <button
+            onClick={loadProducts}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 transition"
+          >
+            <RefreshCw className="w-4 h-4" />
+
+            Refresh
+          </button>
+
+          <button
+            onClick={newProduct}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 text-black font-bold hover:bg-cyan-400 transition"
+          >
+            <Plus className="w-4 h-4" />
+
+            Add Product
+          </button>
+
+        </div>
+      </div>
+
+      {/* PRODUCT LIST */}
+
+      {loading ? (
+
+        <div className="p-10 text-center text-zinc-400">
+          Loading products...
+        </div>
+
+      ) : products.length === 0 ? (
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-10 text-center">
+
+          <p className="text-zinc-400 mb-5">
+            No products are in the new catalog yet.
+          </p>
+
+          <button
+            onClick={importExistingProducts}
+            className="px-5 py-3 rounded-xl bg-cyan-500 text-black font-bold"
+          >
+            Import Existing Products
+          </button>
+
+        </div>
+
+      ) : (
+
+        <div className="grid gap-3">
+
+          {products.map((product) => {
+
+            const expanded =
+              expandedProduct === product.id;
+
+            return (
+              <div
+                key={product.id}
+                className="border border-zinc-800 bg-zinc-950 rounded-2xl overflow-hidden"
+              >
+
+                <div className="p-4 flex items-center justify-between gap-4">
+
+                  <button
+                    onClick={() =>
+                      setExpandedProduct(
+                        expanded ? null : product.id
+                      )
+                    }
+                    className="flex items-center gap-3 text-left flex-1 min-w-0"
+                  >
+
+                    {expanded ? (
+                      <ChevronUp className="w-5 h-5 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 shrink-0" />
+                    )}
+
+                    <div className="min-w-0">
+
+                      <div className="font-semibold truncate">
+                        {product.name}
+                      </div>
+
+                      <div className="text-xs text-zinc-500 mt-1">
+                        {product.id} â€¢{" "}
+                        {product.category} â€¢{" "}
+                        {product.prices.length} duration
+                        {product.prices.length !== 1
+                          ? "s"
+                          : ""}
+                      </div>
+
+                    </div>
+
+                  </button>
+
+                  <div className="flex items-center gap-2 shrink-0">
+
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full ${
+                        product.status === "ONLINE"
+                          ? "bg-green-500/10 text-green-400"
+                          : "bg-yellow-500/10 text-yellow-400"
+                      }`}
+                    >
+                      {product.status}
+                    </span>
+
+                    <button
+                      onClick={() =>
+                        editProduct(product)
+                      }
+                      className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        deleteProduct(product)
+                      }
+                      className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+
+                  </div>
+                </div>
+
+                {expanded && (
+                  <div className="border-t border-zinc-800 p-4 space-y-3">
+
+                    <div className="text-sm text-zinc-400">
+                      <span className="text-white">
+                        Features:
+                      </span>{" "}
+                      {product.features.join(", ") ||
+                        "None"}
+                    </div>
+
+                    <div className="text-sm text-zinc-400">
+                      <span className="text-white">
+                        Video:
+                      </span>{" "}
+                      {product.videoUrl ||
+                        "No video URL"}
+                    </div>
+
+                    {product.prices.map(
+                      (tier, index) => (
+                        <div
+                          key={index}
+                          className="rounded-xl bg-zinc-900 p-3"
+                        >
+                          <div className="font-medium">
+                            {tier.duration}
+                          </div>
+
+                          <div className="text-xs text-zinc-500 mt-1">
+                            â‚¹{tier.priceINR} â€¢ Reseller â‚¹
+                            {tier.resellerPrice || "0"} â€¢{" "}
+                            {tier.supplier || "LOCAL"}
+                          </div>
+                        </div>
+                      )
+                    )}
+
+                  </div>
+                )}
+
+              </div>
+            );
+          })}
+
+        </div>
+      )}
+
+      {/* EDITOR */}
+
+      {showEditor && selected && (
+
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm overflow-y-auto p-4">
+
+          <div className="max-w-5xl mx-auto my-8 bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl">
+
+            {/* EDITOR HEADER */}
+
+            <div className="sticky top-0 z-10 bg-zinc-950 border-b border-zinc-800 px-6 py-5 flex items-center justify-between">
+
+              <div>
+                <h3 className="text-xl font-bold">
+                  {selected.name
+                    ? "Edit Product"
+                    : "Add Product"}
+                </h3>
+
+                <p className="text-xs text-zinc-500 mt-1">
+                  Customer-facing design remains unchanged.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowEditor(false);
+                  setSelected(null);
+                }}
+                className="p-2 rounded-xl hover:bg-zinc-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+            </div>
+
+            <div className="p-6 space-y-8">
+
+              {/* BASIC DETAILS */}
+
+              <section>
+
+                <h4 className="font-bold text-lg mb-4">
+                  Basic Details
+                </h4>
+
+                <div className="grid md:grid-cols-2 gap-4">
+
+                  <div>
+                    <label className="text-xs text-zinc-400">
+                      Product ID
+                    </label>
+
+                    <input
+                      value={selected.id}
+                      onChange={(e) =>
+                        updateSelected(
+                          "id",
+                          e.target.value
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800 outline-none focus:border-cyan-500"
+                      placeholder="example-product"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-zinc-400">
+                      Product Name
+                    </label>
+
+                    <input
+                      value={selected.name}
+                      onChange={(e) =>
+                        updateSelected(
+                          "name",
+                          e.target.value
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800 outline-none focus:border-cyan-500"
+                      placeholder="Product name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-zinc-400">
+                      Category
+                    </label>
+
+                    <select
+                      value={selected.category}
+                      onChange={(e) =>
+                        updateSelected(
+                          "category",
+                          e.target.value
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
+                    >
+                      <option value="mobile">
+                        Mobile
+                      </option>
+
+                      <option value="pc">
+                        PC
+                      </option>
+
+                      <option value="ios">
+                        iOS
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-zinc-400">
+                      Fulfillment
+                    </label>
+
+                    <select
+                      value={
+                        selected.fulfillmentType ||
+                        "LOCAL"
+                      }
+                      onChange={(e) =>
+                        updateSelected(
+                          "fulfillmentType",
+                          e.target.value
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
+                    >
+                      <option value="API">
+                        API
+                      </option>
+
+                      <option value="LOCAL">
+                        LOCAL STOCK
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-zinc-400">
+                      Status
+                    </label>
+
+                    <select
+                      value={selected.status}
+                      onChange={(e) =>
+                        updateSelected(
+                          "status",
+                          e.target.value
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
+                    >
+                      <option value="ONLINE">
+                        ONLINE
+                      </option>
+
+                      <option value="MAINTENANCE">
+                        MAINTENANCE
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-zinc-400">
+                      Update Channel
+                    </label>
+
+                    <input
+                      value={
+                        selected.updateChannel
+                      }
+                      onChange={(e) =>
+                        updateSelected(
+                          "updateChannel",
+                          e.target.value
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
+                      placeholder="Telegram / WhatsApp / Discord"
+                    />
+                  </div>
+
+                </div>
+
+              </section>
+
+              {/* VIDEO */}
+
+              <section>
+
+                <h4 className="font-bold text-lg mb-4">
+                  Video
+                </h4>
+
+                <input
+                  value={selected.videoUrl || ""}
+                  onChange={(e) =>
+                    updateSelected(
+                      "videoUrl",
+                      e.target.value
+                    )
+                  }
+                  className="w-full p-3 rounded-xl bg-zinc-900 border border-zinc-800"
+                  placeholder="https://..."
+                />
+
+              </section>
+
+              {/* FEATURES */}
+
+              <section>
+
+                <div className="flex items-center justify-between mb-4">
+
+                  <h4 className="font-bold text-lg">
+                    Features
+                  </h4>
+
+                  <button
+                    onClick={addFeature}
+                    className="text-sm px-3 py-2 rounded-lg bg-zinc-800"
+                  >
+                    + Add Feature
+                  </button>
+
+                </div>
+
+                <div className="space-y-2">
+
+                  {selected.features.map(
+                    (feature, index) => (
+
+                      <div
+                        key={index}
+                        className="flex gap-2"
+                      >
+
+                        <input
+                          value={feature}
+                          onChange={(e) =>
+                            updateFeature(
+                              index,
+                              e.target.value
+                            )
+                          }
+                          className="flex-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
+                          placeholder={`Feature ${
+                            index + 1
+                          }`}
+                        />
+
+                        <button
+                          onClick={() =>
+                            removeFeature(index)
+                          }
+                          className="p-3 rounded-xl bg-red-500/10 text-red-400"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+
+                      </div>
+
+                    )
+                  )}
+
+                </div>
+
+              </section>
+
+              {/* DURATIONS */}
+
+              <section>
+
+                <div className="flex items-center justify-between mb-4">
+
+                  <div>
+                    <h4 className="font-bold text-lg">
+                      Durations & Supplier Routing
+                    </h4>
+
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Supplier selection is internal only.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={addDuration}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-cyan-500 text-black font-bold"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Duration
+                  </button>
+
+                </div>
+
+                <div className="space-y-5">
+
+                  {selected.prices.map(
+                    (tier, index) => (
+
+                      <div
+                        key={index}
+                        className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5"
+                      >
+
+                        <div className="flex items-center justify-between mb-4">
+
+                          <h5 className="font-bold">
+                            Duration #{index + 1}
+                          </h5>
+
+                          <button
+                            onClick={() =>
+                              removeDuration(index)
+                            }
+                            className="text-red-400 text-sm flex items-center gap-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Remove
+                          </button>
+
+                        </div>
+
+                        <div className="grid md:grid-cols-3 gap-4">
+
+                          <div>
+                            <label className="text-xs text-zinc-400">
+                              Customer Duration
+                            </label>
+
+                            <input
+                              value={tier.duration}
+                              onChange={(e) =>
+                                updateTier(
+                                  index,
+                                  "duration",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                              placeholder="1 day"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-xs text-zinc-400">
+                              Customer Price â‚¹
+                            </label>
+
+                            <input
+                              type="number"
+                              value={tier.priceINR}
+                              onChange={(e) =>
+                                updateTier(
+                                  index,
+                                  "priceINR",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                              placeholder="40"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-xs text-zinc-400">
+                              Reseller Price â‚¹
+                            </label>
+
+                            <input
+                              type="number"
+                              value={
+                                tier.resellerPrice || ""
+                              }
+                              onChange={(e) =>
+                                updateTier(
+                                  index,
+                                  "resellerPrice",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                              placeholder="28"
+                            />
+                          </div>
+
+                        </div>
+
+                        {/* SUPPLIER */}
+
+                        <div className="mt-5">
+
+                          <label className="text-xs text-zinc-400">
+                            Internal Supplier
+                          </label>
+
+                          <select
+                            value={
+                              tier.supplier ||
+                              "LOCAL"
+                            }
+                            onChange={(e) =>
+                              updateTier(
+                                index,
+                                "supplier",
+                                e.target.value
+                              )
+                            }
+                            className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                          >
+                            <option value="LOCAL">
+                              Local Stock
+                            </option>
+
+                            <option value="SELLER1">
+                              Seller 1
+                            </option>
+
+                            <option value="SELLER2">
+                              Seller 2
+                            </option>
+                          </select>
+
+                        </div>
+
+                        {/* SELLER 1 */}
+
+                        {tier.supplier ===
+                          "SELLER1" && (
+
+                          <div className="mt-4 grid md:grid-cols-2 gap-4">
+
+                            <div>
+                              <label className="text-xs text-zinc-400">
+                                Seller 1 PID
+                              </label>
+
+                              <input
+                                value={
+                                  tier.seller1Pid ||
+                                  ""
+                                }
+                                onChange={(e) =>
+                                  updateTier(
+                                    index,
+                                    "seller1Pid",
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                                placeholder="62"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-xs text-zinc-400">
+                                Seller 1 Duration
+                              </label>
+
+                              <input
+                                value={
+                                  tier.seller1Duration ||
+                                  ""
+                                }
+                                onChange={(e) =>
+                                  updateTier(
+                                    index,
+                                    "seller1Duration",
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                                placeholder="30 Days NONROOT"
+                              />
+                            </div>
+
+                          </div>
+                        )}
+
+                        {/* SELLER 2 */}
+
+                        {tier.supplier ===
+                          "SELLER2" && (
+
+                          <div className="mt-4">
+
+                            <label className="text-xs text-zinc-400">
+                              Seller 2 Variant ID
+                            </label>
+
+                            <input
+                              value={
+                                tier.seller2VariantId ||
+                                ""
+                              }
+                              onChange={(e) =>
+                                updateTier(
+                                  index,
+                                  "seller2VariantId",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                              placeholder="167"
+                            />
+
+                          </div>
+                        )}
+
+                      </div>
+
+                    )
+                  )}
+
+                </div>
+
+              </section>
+
+              {/* SAVE */}
+
+              <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-zinc-800">
+
+                <button
+                  onClick={saveProduct}
+                  disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-2 p-4 rounded-xl bg-cyan-500 text-black font-black hover:bg-cyan-400 disabled:opacity-50"
+                >
+                  <Save className="w-5 h-5" />
+
+                  {saving
+                    ? "Saving..."
+                    : "Save Product"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowEditor(false);
+                    setSelected(null);
+                  }}
+                  className="px-6 py-4 rounded-xl bg-zinc-800 hover:bg-zinc-700"
+                >
+                  Cancel
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+    </div>
+  );
+}
+========== components/product-card.tsx ==========
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  Play,
+  ShoppingCart,
+  Bell,
+  Wallet,
+  QrCode,
+  Loader2,
+  ChevronRight,
+  CheckCircle2,
+  Copy,
+  Sparkles,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+
+import { useVipPrices } from "@/lib/useVipPrices";
+import type { Product, PriceTier } from "@/lib/products";
+
+interface ProductCardProps {
+  product: Product;
+  index: number;
+}
+
+const WALLET_BALANCE_EVENT = "wallet-balance-updated";
+
+// Special row in product_prices that stores the product status.
+// price_inr = 0 -> ONLINE, price_inr = 1 -> MAINTENANCE.
+const STATUS_ROW = "__status__";
+
+export function ProductCard({ product, index }: ProductCardProps) {
+  const [selectedDuration, setSelectedDuration] = useState<string>(
+    product.prices[0]?.duration ?? ""
+  );
+
+  const [liveOverrides, setLiveOverrides] = useState<
+    Record<string, { priceINR: number; resellerPrice?: number }>
+  >({});
+
+  // Live status from the database (null = nothing saved, fall back to products.ts)
+  const [liveStatus, setLiveStatus] = useState<"ONLINE" | "MAINTENANCE" | null>(null);
+  const effectiveStatus: "ONLINE" | "MAINTENANCE" = liveStatus ?? product.status;
+
+  const [isHovered, setIsHovered] = useState(false);
+  const [availableStock, setAvailableStock] = useState<number | null>(null);
+  const [userRole, setUserRole] = useState("user");
+  // Do not display any tier price until the authenticated role has been resolved.
+  const [roleReady, setRoleReady] = useState(false);
+  const [pricingIdentity, setPricingIdentity] = useState("anonymous");
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [purchasedKey, setPurchasedKey] = useState<string | null>(null);
+  const [keyCopied, setKeyCopied] = useState(false);
+  const [showAutoCopyToast, setShowAutoCopyToast] = useState(false);
+
+  // Per-reseller (VIP) custom prices. Empty for everyone except resellers
+  // who have custom prices saved by the admin.
+  const vipPriceState = useVipPrices(
+    roleReady && userRole === "reseller",
+    pricingIdentity
+  );
+  const vipPrices = vipPriceState.prices;
+  // VIP/custom reseller pricing must finish loading before any price is visible.
+  const pricingReady = roleReady && (userRole !== "reseller" || vipPriceState.loaded);
+
+  /*
+   * Merge live prices from Supabase with products.ts prices.
+   * Reseller price priority:
+   *   1. This reseller's own VIP price (reseller_price_overrides)
+   *   2. The common reseller price (product_prices / catalog)
+   */
+  const effectivePrices = useMemo<PriceTier[]>(() => {
+    return product.prices.map((tier) => {
+      const override = liveOverrides[tier.duration];
+
+      let result: PriceTier = tier;
+
+      if (override) {
+        result = {
+          ...tier,
+          priceINR: `â‚¹${Math.round(override.priceINR)}`,
+          resellerPrice:
+            override.resellerPrice != null
+              ? `â‚¹${Math.round(override.resellerPrice)}`
+              : tier.resellerPrice,
+        };
+      }
+
+      const vip = vipPrices[`${product.name}::${tier.duration}`];
+
+      if (userRole === "reseller" && vip != null && Number.isFinite(vip)) {
+        result = {
+          ...result,
+          resellerPrice: `â‚¹${Math.round(vip)}`,
+        };
+      }
+
+      return result;
+    });
+  }, [product.name, product.prices, liveOverrides, vipPrices, userRole]);
+
+  const selectedPrice: PriceTier =
+    effectivePrices.find(
+      (price) => price.duration === selectedDuration
+    ) ?? effectivePrices[0];
+
+  /*
+   * Load stock whenever the selected duration changes. Role is loaded separately
+   * below because wallet reads can fail independently of authentication.
+   */
+  useEffect(() => {
+    loadStock();
+  }, [selectedDuration]);
+
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  /*
+   * Load live prices and live status (both come from product_prices).
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLivePrices() {
+      let data: any[] = [];
+
+      try {
+        const res = await fetch(
+          `/api/product-prices?product=${encodeURIComponent(product.name)}`,
+          { cache: "no-store" }
+        );
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const json = await res.json();
+        data = Array.isArray(json?.rows) ? json.rows : [];
+      } catch (error: any) {
+        console.error(
+          `Live price lookup failed for "${product.name}":`,
+          error?.message || error
+        );
+        return;
+      }
+
+      if (cancelled) return;
+
+      const map: Record<
+        string,
+        { priceINR: number; resellerPrice?: number }
+      > = {};
+
+      let statusFromDb: "ONLINE" | "MAINTENANCE" | null = null;
+
+      for (const row of (data || []) as any[]) {
+        if (row.duration === STATUS_ROW) {
+          statusFromDb = Number(row.price_inr) === 1 ? "MAINTENANCE" : "ONLINE";
+          continue;
+        }
+
+        map[row.duration] = {
+          priceINR: Number(row.price_inr),
+          resellerPrice:
+            row.reseller_price != null
+              ? Number(row.reseller_price)
+              : undefined,
+        };
+      }
+
+      setLiveOverrides(map);
+      setLiveStatus(statusFromDb);
+    }
+
+    loadLivePrices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [product.name]);
+
+  /*
+   * Auto-hide copied toast.
+   */
+  useEffect(() => {
+    if (!showAutoCopyToast) return;
+
+    const timer = setTimeout(() => {
+      setShowAutoCopyToast(false);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [showAutoCopyToast]);
+
+  /*
+   * Listen for wallet balance changes from other components.
+   */
+  useEffect(() => {
+    function handleExternalBalanceUpdate(e: Event) {
+      const detail = (e as CustomEvent<{ balance: number }>).detail;
+
+      if (detail && typeof detail.balance === "number") {
+        setWalletBalance(detail.balance);
+      }
+    }
+
+    window.addEventListener(
+      WALLET_BALANCE_EVENT,
+      handleExternalBalanceUpdate
+    );
+
+    return () => {
+      window.removeEventListener(
+        WALLET_BALANCE_EVENT,
+        handleExternalBalanceUpdate
+      );
+    };
+  }, []);
+
+  /*
+   * Load product stock.
+   */
+  async function loadStock() {
+    // API products are delivered via supplier API, so skip local database stock check
+    if (product.fulfillmentType === "API") {
+      setAvailableStock(999);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/stock-count?product=${encodeURIComponent(
+          product.name
+        )}&duration=${encodeURIComponent(selectedDuration)}`,
+        { cache: "no-store" }
+      );
+
+      const json = await res.json();
+
+      if (!res.ok || typeof json?.count !== "number") {
+        setAvailableStock(null);
+        return;
+      }
+
+      setAvailableStock(json.count);
+    } catch (error) {
+      console.error("Stock loading error:", error);
+      setAvailableStock(null);
+    }
+  }
+
+  /*
+   * Load the authenticated role independently from the wallet.
+   *
+   * IMPORTANT: /api/get-wallet can return 500 when the wallet table has duplicate
+   * rows. That must not make an authenticated reseller silently see user pricing.
+   * /api/auth/me resolves the current account/role from the verified session and
+   * database user ID; wallet balance is a separate best-effort request.
+   */
+  async function loadUserData(): Promise<boolean> {
+    if (typeof window === "undefined") return false;
+
+    const roleTask = (async (): Promise<boolean> => {
+      try {
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        const result = await response.json().catch(() => null);
+
+        if (response.ok && result?.success && result?.user) {
+          const role = String(result.user.role || "user").trim().toLowerCase();
+          setUserRole(role === "reseller" || role === "admin" ? role : "user");
+          setPricingIdentity(String(result.user.id ?? result.user.username ?? "authenticated-user"));
+          setRoleReady(true);
+          return true;
+        }
+
+        // No valid authenticated user: show ordinary public pricing.
+        if (response.status === 401 || (response.ok && result?.user === null)) {
+          setUserRole("user");
+          setPricingIdentity("anonymous");
+          setRoleReady(true);
+          return false;
+        }
+
+        console.error("Could not load authenticated user role.");
+        return false;
+      } catch (error) {
+        console.error("Error reading authenticated user role:", error);
+        return false;
+      }
+    })();
+
+    const walletTask = (async (): Promise<void> => {
+      try {
+        const response = await fetch("/api/get-wallet", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (response.status === 401) {
+          setWalletBalance(0);
+          return;
+        }
+
+        const result = await response.json().catch(() => null);
+        if (response.ok && result?.success) {
+          const balance = Number(result.balance);
+          setWalletBalance(Number.isFinite(balance) ? balance : 0);
+        } else {
+          // Keep role/pricing loaded from /api/auth/me even if the wallet fails.
+          console.error("Wallet balance unavailable; role pricing remains active.");
+        }
+      } catch (error) {
+        console.error("Error reading wallet balance:", error);
+      }
+    })();
+
+    const [roleLoaded] = await Promise.all([roleTask, walletTask]);
+    return roleLoaded;
+  }
+
+  /*
+   * Get numeric price.
+   */
+  const getNumericPrice = (): number => {
+    if (!selectedPrice) {
+      return 0;
+    }
+
+    const rawPrice =
+      userRole === "reseller"
+        ? selectedPrice.resellerPrice || selectedPrice.priceINR
+        : selectedPrice.priceINR;
+
+    return parseFloat(
+      String(rawPrice).replace(/[^\d.]/g, "")
+    ) || 0;
+  };
+
+  const formattedPrice = !pricingReady
+    ? "Loading priceâ€¦"
+    : selectedPrice
+      ? userRole === "reseller"
+        ? selectedPrice.resellerPrice || selectedPrice.priceINR
+        : selectedPrice.priceINR
+      : "â‚¹0";
+
+  /*
+   * Buy button.
+   */
+  const handleInitialBuyClick = async () => {
+    if (effectiveStatus === "MAINTENANCE") {
+      alert("This product is under maintenance. Please check back soon.");
+      return;
+    }
+
+    if (product.fulfillmentType !== "API" && availableStock === 0) {
+      alert("This product is currently out of stock.");
+      return;
+    }
+
+    const loggedIn = await loadUserData();
+
+    if (!loggedIn) {
+      alert("Please login before purchasing.");
+      window.location.href = "/login";
+      return;
+    }
+
+    setIsPaymentModalOpen(true);
+  };
+
+  /*
+   * Wallet payment.
+   */
+  const handleWalletPayment = async () => {
+    try {
+      setIsProcessing(true);
+
+      const numericPrice = getNumericPrice();
+
+      if (walletBalance < numericPrice) {
+        alert(
+          `Insufficient wallet balance (â‚¹${walletBalance.toFixed(
+            2
+          )}). Please add funds or use UPI.`
+        );
+
+        setIsProcessing(false);
+        return;
+      }
+
+      const response = await fetch("/api/pay-via-wallet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        // The server decides who the buyer is and what the price is.
+        body: JSON.stringify({
+          product_name: product.name,
+
+          duration: selectedPrice.duration,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.status === 401) {
+        alert("Your session has expired. Please login again.");
+        window.location.href = "/login";
+        return;
+      }
+
+      if (!response.ok || !result.success) {
+        if (typeof result.newBalance === "number") {
+          setWalletBalance(result.newBalance);
+        }
+
+        alert(result.error || "Wallet payment failed.");
+        setIsProcessing(false);
+        return;
+      }
+
+      /*
+       * Update wallet balance locally.
+       */
+      if (result.newBalance !== undefined) {
+        setWalletBalance(result.newBalance);
+
+        /*
+         * Broadcast wallet update.
+         */
+        window.dispatchEvent(
+          new CustomEvent(WALLET_BALANCE_EVENT, {
+            detail: {
+              balance: result.newBalance,
+            },
+          })
+        );
+      }
+
+      /*
+       * Close payment modal.
+       */
+      setIsPaymentModalOpen(false);
+
+      /*
+       * Show purchased key.
+       */
+      setPurchasedKey(result.key);
+      setShowKeyModal(true);
+
+      /*
+       * Auto copy key.
+       */
+      if (result.key) {
+        try {
+          await navigator.clipboard.writeText(result.key);
+          setShowAutoCopyToast(true);
+        } catch (error) {
+          console.error("Clipboard error:", error);
+        }
+      }
+
+      /*
+       * Refresh stock after purchase.
+       */
+      await loadStock();
+    } catch (error) {
+      console.error("Wallet Payment Error:", error);
+      alert("out off stock - ask the admin to add more stock.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  /*
+   * UPI payment.
+   */
+  const handleUpiPayment = async () => {
+    try {
+      setIsProcessing(true);
+
+      const response = await fetch("/api/create-upi-order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        // The server decides who the buyer is and what the price is.
+        body: JSON.stringify({
+          product_name: product.name,
+
+          duration: selectedPrice.duration,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.status === 401) {
+        alert("Your session has expired. Please login again.");
+        setIsProcessing(false);
+        window.location.href = "/login";
+        return;
+      }
+
+      if (!response.ok || !result.success) {
+        alert(
+          result.error || "Failed to create payment order."
+        );
+
+        setIsProcessing(false);
+        return;
+      }
+
+      if (!result.payment?.order_id) {
+        alert(
+          "Payment order was created incorrectly. Please try again."
+        );
+
+        setIsProcessing(false);
+        return;
+      }
+
+      const orderId = encodeURIComponent(
+        result.payment.order_id
+      );
+
+      window.location.href =
+        `/upi-payment?order_id=${orderId}`;
+    } catch (error) {
+      console.error("UPI Payment Error:", error);
+
+      alert(
+        "Unable to start payment. Please try again."
+      );
+
+      setIsProcessing(false);
+    }
+  };
+
+  /*
+   * Copy key again.
+   */
+  async function handleCopyKeyAgain() {
+    if (!purchasedKey) return;
+
+    try {
+      await navigator.clipboard.writeText(purchasedKey);
+
+      setKeyCopied(true);
+
+      setTimeout(() => {
+        setKeyCopied(false);
+      }, 1800);
+    } catch (error) {
+      console.error("Clipboard error:", error);
+    }
+  }
+
+  return (
+    <>
+      {/* PRODUCT CARD */}
+      <Card
+        className="group relative overflow-hidden rounded-3xl border border-white/10 bg-[#0c081a]/70 backdrop-blur-xl transition-all duration-500 hover:border-fuchsia-500/40 hover:shadow-[0_15px_40px_rgba(192,38,211,0.2)]"
+        style={{
+          animationDelay: `${index * 100}ms`,
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Top ambient highlight glow */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-400/50 to-transparent" />
+
+        {/* VIDEO CONTAINER */}
+        <div className="relative aspect-video overflow-hidden bg-black/40">
+          {/* Status Badge */}
+          <div className="pointer-events-none absolute left-3 top-3 z-20">
+            <span
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wider backdrop-blur-md shadow-md ${
+                effectiveStatus === "ONLINE"
+                  ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                  : "border-amber-500/40 bg-amber-500/20 text-amber-300"
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  effectiveStatus === "ONLINE"
+                    ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]"
+                    : "bg-amber-400"
+                }`}
+              />
+              {effectiveStatus === "ONLINE" ? "Online" : "Maintenance"}
+            </span>
+          </div>
+
+          {product.videoUrl ? (
+            <video
+              controls
+              className="h-full w-full object-cover"
+            >
+              <source
+                src={product.videoUrl}
+                type="video/mp4"
+              />
+            </video>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-violet-950/30 to-black/60">
+              <div
+                className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-fuchsia-500/30 bg-fuchsia-500/15 backdrop-blur-md transition-all duration-300 ${
+                  isHovered
+                    ? "scale-110 bg-fuchsia-500/30 border-fuchsia-500/60 shadow-[0_0_20px_rgba(192,38,211,0.5)]"
+                    : ""
+                }`}
+              >
+                <Play className="ml-1 h-6 w-6 text-fuchsia-300" />
+              </div>
+
+              <span className="text-xs font-semibold uppercase tracking-widest text-white/50">
+                Demo Video
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* CARD CONTENT */}
+        <div className="space-y-5 p-6">
+          <div>
+            <h3 className="text-xl font-extrabold leading-tight tracking-tight text-white group-hover:text-fuchsia-300 transition-colors">
+              {product.name}
+            </h3>
+
+            <Badge
+              variant="secondary"
+              className="mt-2.5 border border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-300 text-[10px] uppercase font-bold tracking-widest px-2.5 py-0.5 rounded-full"
+            >
+              {product.category.toUpperCase()}
+            </Badge>
+          </div>
+
+          {/* FEATURES LIST */}
+          <div className="space-y-2">
+            {product.features.map((feature, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-2.5 text-xs text-white/70"
+              >
+                <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-fuchsia-400/40 bg-fuchsia-500/20">
+                  <Check className="h-2.5 w-2.5 text-fuchsia-300 stroke-[3]" />
+                </div>
+
+                <span className="font-medium text-white/80">
+                  {feature}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* DURATION SELECTION */}
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">
+              Select Plan Duration
+            </p>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              {effectivePrices.map((price, i) => {
+                const isSelected = selectedPrice?.duration === price.duration;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedDuration(price.duration)}
+                    className={`flex flex-col items-start rounded-2xl border p-3.5 transition-all duration-300 cursor-pointer ${
+                      isSelected
+                        ? "border-fuchsia-500 bg-fuchsia-500/20 shadow-[0_0_15px_rgba(192,38,211,0.3)]"
+                        : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+                    }`}
+                  >
+                    <span className="text-xs font-semibold text-white/60">
+                      {price.duration}
+                    </span>
+
+                    <div className="mt-1 flex items-baseline gap-1.5">
+                      <span className="text-base font-extrabold text-white" aria-live="polite">
+                        {pricingReady ? (
+                          userRole === "reseller"
+                            ? price.resellerPrice || price.priceINR
+                            : price.priceINR
+                        ) : (
+                          <span
+                            aria-label="Loading account price"
+                            className="inline-block h-5 w-14 animate-pulse rounded bg-white/10 align-middle"
+                          />
+                        )}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ACTION BUTTONS */}
+          <div className="flex gap-2.5 pt-2">
+            <Button
+              disabled={
+                !pricingReady ||
+                effectiveStatus === "MAINTENANCE" ||
+                (product.fulfillmentType !== "API" && availableStock === 0)
+              }
+              className="flex-1 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold text-xs tracking-wider uppercase py-5 rounded-xl shadow-[0_4px_20px_rgba(192,38,211,0.4)] transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleInitialBuyClick}
+            >
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              {effectiveStatus === "MAINTENANCE"
+                ? "MAINTENANCE"
+                : product.fulfillmentType !== "API" && availableStock === 0
+                ? "OUT OF STOCK"
+                : "BUY NOW"}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="flex-1 border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 text-white font-semibold text-xs tracking-wider uppercase py-5 rounded-xl transition-all duration-300"
+              onClick={() =>
+                window.open(
+                  product.updateChannel,
+                  "_blank"
+                )
+              }
+            >
+              <Bell className="mr-2 h-4 w-4 text-fuchsia-400" />
+              PANEL FILE
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* PAYMENT METHOD MODAL */}
+      <Dialog
+        open={isPaymentModalOpen}
+        onOpenChange={setIsPaymentModalOpen}
+      >
+        <DialogContent className="overflow-hidden rounded-3xl border border-white/15 bg-[#090514]/95 p-0 shadow-[0_30px_100px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:max-w-[440px] text-white">
+          <div className="relative p-6 md:p-8">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 overflow-hidden"
+            >
+              <div className="paymodal-glow-a absolute -right-16 -top-20 h-56 w-56 rounded-full bg-fuchsia-600/20 blur-[80px]" />
+              <div className="paymodal-glow-b absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-violet-600/20 blur-[80px]" />
+            </div>
+
+            <div className="paymodal-panel-in relative z-10">
+              <DialogHeader className="space-y-2 text-left">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/20 text-fuchsia-300">
+                    <ShoppingCart className="h-5 w-5" />
+                  </span>
+
+                  <DialogTitle className="text-xl font-extrabold tracking-tight text-white">
+                    Checkout Payment
+                  </DialogTitle>
+                </div>
+
+                <DialogDescription className="pl-[52px] text-xs font-medium text-white/60">
+                  {product.name} â€”{" "}
+                  <span className="font-bold text-fuchsia-300">
+                    {selectedPrice?.duration}
+                  </span>{" "}
+                  <span className="font-mono text-white/80">
+                    ({formattedPrice})
+                  </span>
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="my-6 grid gap-3.5">
+                {/* WALLET OPTION */}
+                <button
+                  disabled={isProcessing}
+                  onClick={handleWalletPayment}
+                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left transition-all duration-300 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span className="relative z-10 flex items-center gap-3.5">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-fuchsia-500/20 text-fuchsia-300 transition-all group-hover/opt:bg-fuchsia-500 group-hover/opt:text-white">
+                      <Wallet className="h-5 w-5" />
+                    </span>
+
+                    <span>
+                      <span className="block text-sm font-bold text-white">
+                        Pay via Wallet Balance
+                      </span>
+
+                      <span className="mt-0.5 block font-mono text-xs text-fuchsia-300/80">
+                        Available: â‚¹{walletBalance.toFixed(2)}
+                      </span>
+                    </span>
+                  </span>
+
+                  <span className="relative z-10 flex items-center gap-2">
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                      INSTANT
+                    </span>
+
+                    <ChevronRight className="h-4 w-4 text-white/40 opacity-0 transition-all group-hover/opt:translate-x-1 group-hover/opt:opacity-100" />
+                  </span>
+                </button>
+
+                {/* UPI OPTION */}
+                <button
+                  disabled={isProcessing}
+                  onClick={handleUpiPayment}
+                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left transition-all duration-300 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span className="relative z-10 flex items-center gap-3.5">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300 transition-all group-hover/opt:bg-violet-500 group-hover/opt:text-white">
+                      <QrCode className="h-5 w-5" />
+                    </span>
+
+                    <span>
+                      <span className="block text-sm font-bold text-white">
+                        Instant UPI Payment
+                      </span>
+
+                      <span className="mt-0.5 block text-xs text-white/50">
+                        Scan QR Code & Enter UTR
+                      </span>
+                    </span>
+                  </span>
+
+                  <ChevronRight className="relative z-10 h-4 w-4 text-white/40 opacity-0 transition-all group-hover/opt:translate-x-1 group-hover/opt:opacity-100" />
+                </button>
+              </div>
+
+              {isProcessing && (
+                <div className="flex items-center gap-3 rounded-2xl border border-fuchsia-500/30 bg-fuchsia-500/10 px-4 py-3.5">
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fuchsia-400" />
+
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-white">
+                      Processing purchase transactionâ€¦
+                    </p>
+
+                    <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                      <div className="paymodal-progress h-full w-1/3 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <style jsx>{`
+            .paymodal-glow-a {
+              animation: paymodalDrift 6s ease-in-out infinite;
+            }
+            .paymodal-glow-b {
+              animation: paymodalDrift 8s ease-in-out infinite reverse;
+            }
+            @keyframes paymodalDrift {
+              0%, 100% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0.6;
+              }
+              50% {
+                transform: translate(-10px, 10px) scale(1.15);
+                opacity: 1;
+              }
+            }
+            .paymodal-panel-in {
+              animation: paymodalPanelIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+            }
+            @keyframes paymodalPanelIn {
+              0% {
+                opacity: 0;
+                transform: translateY(10px) scale(0.99);
+              }
+              100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+              }
+            }
+            .paymodal-progress {
+              animation: paymodalProgress 1.4s ease-in-out infinite;
+            }
+            @keyframes paymodalProgress {
+              0% {
+                transform: translateX(-100%);
+              }
+              50% {
+                transform: translateX(60%);
+              }
+              100% {
+                transform: translateX(220%);
+              }
+            }
+          `}</style>
+        </DialogContent>
+      </Dialog>
+
+      {/* SUCCESS / KEY DELIVERY MODAL */}
+      <Dialog
+        open={showKeyModal}
+        onOpenChange={setShowKeyModal}
+      >
+        <DialogContent className="overflow-hidden rounded-3xl border border-emerald-500/40 bg-[#070b12]/95 p-0 shadow-[0_30px_100px_rgba(0,0,0,0.95)] backdrop-blur-2xl sm:max-w-[420px] text-white">
+          <div className="relative p-6 text-center">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 overflow-hidden"
+            >
+              <div className="keycard-glow-a absolute -right-16 -top-20 h-56 w-56 rounded-full bg-emerald-500/20 blur-[80px]" />
+              <div className="keycard-glow-b absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-fuchsia-500/10 blur-[80px]" />
+            </div>
+
+            <div className="keycard-panel-in relative z-10 flex flex-col items-center">
+              <span className="relative mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-emerald-500/40 bg-emerald-500/20 shadow-[0_0_25px_rgba(16,185,129,0.3)]">
+                <span className="keycard-ring pointer-events-none absolute inset-0 rounded-full border border-emerald-400/50" />
+                <CheckCircle2 className="keycard-check-pop h-8 w-8 text-emerald-400" />
+              </span>
+
+              <DialogHeader className="items-center space-y-1">
+                <DialogTitle className="text-xl font-extrabold text-white">
+                  Purchase Successful!
+                </DialogTitle>
+
+                <DialogDescription className="text-xs font-medium text-white/60">
+                  {product.name} â€”{" "}
+                  <span className="font-bold text-fuchsia-300">
+                    {selectedPrice?.duration}
+                  </span>
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="mt-5 w-full text-left">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-white/40">
+                  Your Serial / License Key
+                </p>
+
+                <div className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-4">
+                  <div
+                    aria-hidden
+                    className="keycard-shimmer pointer-events-none absolute inset-0"
+                  />
+                  <p className="relative z-10 break-all font-mono text-sm font-semibold text-emerald-300">
+                    {purchasedKey}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCopyKeyAgain}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/20 py-3 text-xs font-bold text-emerald-300 transition-all hover:bg-emerald-500/30 active:scale-95 cursor-pointer shadow-[0_4px_20px_rgba(16,185,129,0.2)]"
+              >
+                {keyCopied ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    Copied to Clipboard
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4" />
+                    Copy License Key
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowKeyModal(false)}
+                className="mt-2 w-full rounded-xl py-2 text-xs font-semibold text-white/40 hover:text-white transition-colors cursor-pointer"
+              >
+                Close Window
+              </button>
+            </div>
+          </div>
+
+          <style jsx>{`
+            .keycard-panel-in {
+              animation: keycardPanelIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+            }
+            @keyframes keycardPanelIn {
+              0% {
+                opacity: 0;
+                transform: translateY(14px) scale(0.97);
+              }
+              100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+              }
+            }
+            .keycard-check-pop {
+              animation: keycardCheckPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+            }
+            @keyframes keycardCheckPop {
+              0% {
+                opacity: 0;
+                transform: scale(0.4);
+              }
+              60% {
+                opacity: 1;
+                transform: scale(1.1);
+              }
+              100% {
+                opacity: 1;
+                transform: scale(1);
+              }
+            }
+            .keycard-ring {
+              animation: keycardRingPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            }
+            @keyframes keycardRingPulse {
+              0% {
+                transform: scale(1);
+                opacity: 0.6;
+              }
+              70%, 100% {
+                transform: scale(1.6);
+                opacity: 0;
+              }
+            }
+            .keycard-glow-a {
+              animation: keycardDrift 6s ease-in-out infinite;
+            }
+            .keycard-glow-b {
+              animation: keycardDrift 8s ease-in-out infinite reverse;
+            }
+            @keyframes keycardDrift {
+              0%, 100% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0.6;
+              }
+              50% {
+                transform: translate(-10px, 10px) scale(1.15);
+                opacity: 1;
+              }
+            }
+            .keycard-shimmer {
+              background: linear-gradient(
+                100deg,
+                transparent 30%,
+                rgba(16, 185, 129, 0.2) 50%,
+                transparent 70%
+              );
+              background-size: 200% 100%;
+              animation: keycardShimmerSweep 2.6s ease-in-out infinite;
+            }
+            @keyframes keycardShimmerSweep {
+              0% {
+                background-position: 200% 0;
+              }
+              100% {
+                background-position: -50% 0;
+              }
+            }
+          `}</style>
+        </DialogContent>
+      </Dialog>
+
+      {/* AUTO COPY TOAST */}
+      {showAutoCopyToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed right-5 top-5 z-[999] flex justify-end"
+        >
+          <div className="toast-in pointer-events-auto flex items-center gap-3 rounded-2xl border border-emerald-500/40 bg-[#070b12]/95 px-5 py-3.5 text-xs font-bold text-white shadow-[0_10px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+            <span>Key automatically copied to clipboard!</span>
+          </div>
+
+          <style jsx>{`
+            .toast-in {
+              animation:
+                toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both,
+                toastSlideOut 0.3s ease-in 2.7s forwards;
+            }
+            @keyframes toastSlideIn {
+              0% {
+                opacity: 0;
+                transform: translateX(24px) scale(0.96);
+              }
+              100% {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+              }
+            }
+            @keyframes toastSlideOut {
+              0% {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+              }
+              100% {
+                opacity: 0;
+                transform: translateX(24px) scale(0.96);
+              }
+            }
+          `}</style>
+        </div>
+      )}
+    </>
+  );
+}
+========== lib/release-product.ts ==========
+import { supabaseAdmin } from "@/lib/supabase-admin";
+
+// Stock keys are read/written with the service-role client only (the table is not exposed to the browser).
+const supabase = supabaseAdmin;
+import {
+  allProducts,
+  type Product,
+  type PriceTier,
+} from "@/lib/products";
+
+interface ReleaseProductParams {
+  username: string;
+  product_name: string;
+  duration: string;
+}
+
+type Supplier =
+  | "LOCAL"
+  | "SELLER1"
+  | "SELLER2";
+
+interface CatalogPrice {
+  duration?: unknown;
+  priceINR?: unknown;
+  resellerPrice?: unknown;
+
+  supplier?: unknown;
+
+  seller1Pid?: unknown;
+  seller1Duration?: unknown;
+
+  seller2VariantId?: unknown;
+}
+
+interface CatalogProduct {
+  id?: unknown;
+  name?: unknown;
+  category?: unknown;
+  fulfillmentType?: unknown;
+  prices?: CatalogPrice[];
+  status?: unknown;
+}
+
+const SELLER1_API_URL =
+  "https://bantibhaiya.to/api/reseller_v1.php";
+
+const SELLER2_API_URL =
+  "https://whitexmodz.store/api/v1/generate_key.php";
+
+/* =========================================================
+   CATALOG
+   ========================================================= */
+
+async function findCatalogProduct(
+  productName: string
+): Promise<CatalogProduct | null> {
+  const { data, error } =
+    await supabaseAdmin
+      .from("products_catalog")
+      .select("product_id, name, data")
+      .eq("name", productName)
+      .maybeSingle();
+
+  if (error) {
+    console.error(
+      "CATALOG PRODUCT LOOKUP ERROR:",
+      error
+    );
+
+    return null;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const catalogData =
+    data.data &&
+    typeof data.data === "object"
+      ? data.data
+      : {};
+
+  return {
+    ...catalogData,
+    id:
+      catalogData.id ||
+      data.product_id,
+    name:
+      catalogData.name ||
+      data.name,
+  };
+}
+
+function findCatalogPrice(
+  product: CatalogProduct,
+  duration: string
+): CatalogPrice | null {
+  const prices = Array.isArray(
+    product.prices
+  )
+    ? product.prices
+    : [];
+
+  const found = prices.find(
+    (price) =>
+      String(
+        price?.duration ?? ""
+      ).trim() === duration
+  );
+
+  return found || null;
+}
+
+/* =========================================================
+   SELLER 1
+   ========================================================= */
+
+async function purchaseFromSeller1(
+  price: CatalogPrice,
+  productName: string,
+  duration: string
+) {
+  const apiKey =
+    process.env.RESELLER_API_KEY;
+
+  const masterKey =
+    process.env.RESELLER_MASTER_KEY;
+
+  if (!apiKey || !masterKey) {
+    console.error(
+      "SELLER 1 API credentials are missing."
+    );
+
+    return {
+      success: false,
+      error:
+        "Seller 1 is not configured.",
+    };
+  }
+
+  const productId =
+    String(
+      price.seller1Pid ?? ""
+    ).trim();
+
+  const sellerDuration =
+    String(
+      price.seller1Duration ?? ""
+    ).trim();
+
+  if (!productId) {
+    return {
+      success: false,
+      error:
+        `Seller 1 product ID is not configured for "${productName}" - "${duration}".`,
+    };
+  }
+
+  if (!sellerDuration) {
+    return {
+      success: false,
+      error:
+        `Seller 1 duration is not configured for "${productName}" - "${duration}".`,
+    };
+  }
+
+  try {
+    const params =
+      new URLSearchParams({
+        api_key: apiKey,
+        action: "buy",
+        product_id: productId,
+        duration:
+          sellerDuration,
+      });
+
+    const response =
+      await fetch(
+        SELLER1_API_URL,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+
+            "x-master-key":
+              masterKey,
+          },
+
+          body:
+            params.toString(),
+
+          cache: "no-store",
+        }
+      );
+
+    const rawResponseText =
+      await response.text();
+
+    // Handle a possible UTF-8 BOM and harmless surrounding whitespace.
+    const responseText = rawResponseText
+      .replace(/^\uFEFF/, "")
+      .trim();
+
+    let result: any;
+
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      // Never log the raw supplier body: it may contain a generated key.
+      console.error("SELLER 1 NON-JSON RESPONSE:", {
+        httpStatus: response.status,
+        ok: response.ok,
+        contentType:
+          response.headers.get("content-type") || "(missing)",
+        bodyLength: rawResponseText.length,
+      });
+
+      return {
+        success: false,
+        error: "Seller 1 returned invalid data.",
+      };
+    }
+
+    console.log(
+      "SELLER 1 BUY RESPONSE STATUS:",
+      response.status,
+      result?.status
+    );
+
+    if (
+      !response.ok ||
+      result?.status !==
+        "success"
+    ) {
+      return {
+        success: false,
+        error:
+          result?.msg ||
+          result?.message ||
+          "Seller 1 rejected the purchase.",
+      };
+    }
+
+    const key =
+      result?.data?.key ??
+      result?.data?.key_code ??
+      result?.key ??
+      result?.key_code ??
+      result?.access_key;
+
+    if (!key) {
+      console.error("SELLER 1 SUCCESS BUT NO KEY:", {
+        httpStatus: response.status,
+        topLevelFields:
+          result && typeof result === "object"
+            ? Object.keys(result).slice(0, 20)
+            : [],
+        dataFields:
+          result?.data && typeof result.data === "object"
+            ? Object.keys(result.data).slice(0, 20)
+            : [],
+      });
+
+      return {
+        success: false,
+        error:
+          "Seller 1 completed the purchase but returned no key.",
+      };
+    }
+
+    return {
+      success: true,
+      key: String(key),
+    };
+  } catch (error) {
+    console.error(
+      "SELLER 1 REQUEST ERROR:",
+      error
+    );
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Seller 1 request failed.",
+    };
+  }
+}
+
+/* =========================================================
+   SELLER 2
+   ========================================================= */
+
+async function purchaseFromSeller2(
+  price: CatalogPrice,
+  productName: string,
+  duration: string
+) {
+  const apiToken =
+    process.env.SELLER2_API_TOKEN;
+
+  if (!apiToken) {
+    console.error(
+      "SELLER2_API_TOKEN is missing."
+    );
+
+    return {
+      success: false,
+      error:
+        "Seller 2 is not configured.",
+    };
+  }
+
+  const variantId =
+    String(
+      price.seller2VariantId ??
+        ""
+    ).trim();
+
+  if (!variantId) {
+    return {
+      success: false,
+      error:
+        `Seller 2 variant ID is not configured for "${productName}" - "${duration}".`,
+    };
+  }
+
+  try {
+    const response =
+      await fetch(
+        SELLER2_API_URL,
+        {
+          method: "POST",
+
+          headers: {
+            "X-API-Token":
+              apiToken,
+
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+          },
+
+          body:
+            new URLSearchParams({
+              variant_id:
+                variantId,
+
+              quantity: "1",
+            }).toString(),
+
+          cache: "no-store",
+        }
+      );
+
+    const rawResponseText =
+      await response.text();
+
+    // Handle a possible UTF-8 BOM and harmless surrounding whitespace.
+    const responseText = rawResponseText
+      .replace(/^\uFEFF/, "")
+      .trim();
+
+    let result: any;
+
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      // Log diagnostic metadata only; never print a supplier body/key.
+      console.error("SELLER 2 NON-JSON RESPONSE:", {
+        httpStatus: response.status,
+        ok: response.ok,
+        contentType:
+          response.headers.get("content-type") || "(missing)",
+        bodyLength: rawResponseText.length,
+      });
+
+      return {
+        success: false,
+        error: "Seller 2 returned invalid data.",
+      };
+    }
+
+    console.log(
+      "SELLER 2 BUY RESPONSE STATUS:",
+      response.status,
+      result?.success
+    );
+
+    /*
+     * Seller 2 documentation says:
+     * check JSON `success`, not HTTP status alone.
+     */
+
+    if (
+      result?.success !== true
+    ) {
+      return {
+        success: false,
+        error:
+          result?.error ||
+          result?.message ||
+          "Seller 2 rejected the purchase.",
+      };
+    }
+
+    const keysArray = Array.isArray(result?.keys)
+      ? result.keys
+      : Array.isArray(result?.data?.keys)
+        ? result.data.keys
+        : [];
+
+    const keyFromArray = keysArray.find(
+      (item: unknown) =>
+        typeof item === "string" && item.trim().length > 0
+    );
+
+    const key =
+      keyFromArray ??
+      result?.key ??
+      result?.key_code ??
+      result?.data?.key ??
+      result?.data?.key_code ??
+      result?.data?.license_key ??
+      result?.license_key ??
+      result?.access_key;
+
+    if (!key) {
+      console.error("SELLER 2 SUCCESS BUT NO KEY:", {
+        httpStatus: response.status,
+        topLevelFields:
+          result && typeof result === "object"
+            ? Object.keys(result).slice(0, 20)
+            : [],
+        dataFields:
+          result?.data && typeof result.data === "object"
+            ? Object.keys(result.data).slice(0, 20)
+            : [],
+        keysIsArray: Array.isArray(result?.keys),
+        dataKeysIsArray: Array.isArray(result?.data?.keys),
+      });
+
+      return {
+        success: false,
+        error:
+          "Seller 2 completed the purchase but returned no key.",
+      };
+    }
+
+    return {
+      success: true,
+      key: String(key),
+    };
+  } catch (error) {
+    console.error(
+      "SELLER 2 REQUEST ERROR:",
+      error
+    );
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Seller 2 request failed.",
+    };
+  }
+}
+
+/* =========================================================
+   LOCAL STOCK
+   ========================================================= */
+
+async function getLocalStockKey(
+  productName: string,
+  duration: string
+) {
+  const { data, error } =
+    await supabase
+      .from("stock_keys")
+      .select("*")
+      .eq(
+        "product_name",
+        productName
+      )
+      .eq(
+        "duration",
+        duration
+      )
+      .eq(
+        "is_used",
+        false
+      )
+      .order("id", {
+        ascending: true,
+      })
+      .limit(1)
+      .maybeSingle();
+
+  if (error) {
+    console.error(
+      "LOCAL STOCK LOOKUP ERROR:",
+      error
+    );
+
+    return {
+      success: false,
+      stockKey: null,
+    };
+  }
+
+  if (!data) {
+    return {
+      success: false,
+      stockKey: null,
+    };
+  }
+
+  return {
+    success: true,
+    stockKey: data,
+  };
+}
+
+async function reserveLocalStockKey(
+  id: number
+) {
+  const { data, error } =
+    await supabase
+      .from("stock_keys")
+      .update({
+        is_used: true,
+      })
+      .eq("id", id)
+      .eq("is_used", false)
+      .select("id")
+      .maybeSingle();
+
+  if (error) {
+    console.error(
+      "LOCAL STOCK RESERVE ERROR:",
+      error
+    );
+
+    return false;
+  }
+
+  return Boolean(data);
+}
+
+/* =========================================================
+   OLD CATALOG FALLBACK
+   ========================================================= */
+
+function findOldProduct(
+  productName: string
+): Product | undefined {
+  return allProducts.find(
+    (product) =>
+      product.name ===
+      productName
+  );
+}
+
+function findOldPrice(
+  product: Product,
+  duration: string
+): PriceTier | undefined {
+  return product.prices.find(
+    (price) =>
+      price.duration ===
+      duration
+  );
+}
+
+/*
+ * Backward-compatible Seller 1
+ * fallback for products that haven't
+ * been moved/configured in catalog yet.
+ */
+
+async function oldSeller1Fallback(
+  product: Product,
+  price: PriceTier
+) {
+  const apiKey =
+    process.env.RESELLER_API_KEY;
+
+  const masterKey =
+    process.env.RESELLER_MASTER_KEY;
+
+  if (!apiKey || !masterKey) {
+    return {
+      success: false,
+      error:
+        "Seller 1 is not configured.",
+    };
+  }
+
+  if (!product.sellerPid) {
+    return {
+      success: false,
+      error:
+        "Product has no supplier configuration.",
+    };
+  }
+
+  if (!price.sellerDuration) {
+    return {
+      success: false,
+      error:
+        "Seller duration is not configured.",
+    };
+  }
+
+  try {
+    const params =
+      new URLSearchParams({
+        api_key: apiKey,
+        action: "buy",
+        product_id:
+          String(
+            product.sellerPid
+          ),
+        duration:
+          price.sellerDuration,
+      });
+
+    const response =
+      await fetch(
+        SELLER1_API_URL,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+            "x-master-key":
+              masterKey,
+          },
+          body:
+            params.toString(),
+          cache: "no-store",
+        }
+      );
+
+    const text =
+      await response.text();
+
+    let result: any;
+
+    try {
+      result =
+        JSON.parse(text);
+    } catch {
+      return {
+        success: false,
+        error:
+          "Seller 1 returned invalid data.",
+      };
+    }
+
+    if (
+      !response.ok ||
+      result?.status !==
+        "success"
+    ) {
+      return {
+        success: false,
+        error:
+          result?.msg ||
+          result?.message ||
+          "Seller 1 purchase failed.",
+      };
+    }
+
+    const key =
+      result?.data?.key ??
+      result?.data?.key_code ??
+      result?.key ??
+      result?.key_code;
+
+    if (!key) {
+      return {
+        success: false,
+        error:
+          "Seller 1 returned no key.",
+      };
+    }
+
+    return {
+      success: true,
+      key: String(key),
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Seller 1 request failed.",
+    };
+  }
+}
+
+/* =========================================================
+   MAIN RELEASE FUNCTION
+   ========================================================= */
+
+export async function releaseProduct({
+  username,
+  product_name,
+  duration,
+}: ReleaseProductParams) {
+  console.log(
+    "================================="
+  );
+
+  console.log(
+    "RELEASE PRODUCT:",
+    product_name,
+    duration
+  );
+
+  console.log(
+    "================================="
+  );
+
+  /*
+   * First use products_catalog.
+   */
+
+  let catalogProduct:
+    | CatalogProduct
+    | null = null;
+
+  try {
+    catalogProduct =
+      await findCatalogProduct(
+        product_name
+      );
+  } catch (error) {
+    console.error(
+      "CATALOG READ FAILED:",
+      error
+    );
+  }
+
+  if (catalogProduct) {
+    const catalogPrice =
+      findCatalogPrice(
+        catalogProduct,
+        duration
+      );
+
+    if (!catalogPrice) {
+      return {
+        success: false,
+        error:
+          `Duration "${duration}" is not configured for "${product_name}" in Product Catalog.`,
+      };
+    }
+
+    const supplier =
+      String(
+        catalogPrice.supplier ??
+          ""
+      )
+        .trim()
+        .toUpperCase() as Supplier;
+
+    console.log(
+      "CATALOG SUPPLIER:",
+      supplier
+    );
+
+    /*
+     * SELLER 1
+     */
+
+    if (
+      supplier === "SELLER1"
+    ) {
+      const result =
+        await purchaseFromSeller1(
+          catalogPrice,
+          product_name,
+          duration
+        );
+
+      if (!result.success) {
+        return result;
+      }
+
+      return {
+        success: true,
+        key: result.key,
+      };
+    }
+
+    /*
+     * SELLER 2
+     */
+
+    if (
+      supplier === "SELLER2"
+    ) {
+      const result =
+        await purchaseFromSeller2(
+          catalogPrice,
+          product_name,
+          duration
+        );
+
+      if (!result.success) {
+        return result;
+      }
+
+      return {
+        success: true,
+        key: result.key,
+      };
+    }
+
+    /*
+     * LOCAL
+     */
+
+    if (
+      supplier === "LOCAL"
+    ) {
+      const stock =
+        await getLocalStockKey(
+          product_name,
+          duration
+        );
+
+      if (
+        !stock.success ||
+        !stock.stockKey
+      ) {
+        return {
+          success: false,
+          error:
+            "Payment received, but no stock key is currently available.",
+        };
+      }
+
+      const reserved =
+        await reserveLocalStockKey(
+          stock.stockKey.id
+        );
+
+      if (!reserved) {
+        return {
+          success: false,
+          error:
+            "Stock key was taken by another purchase. Please try again.",
+        };
+      }
+
+      return {
+        success: true,
+        key: String(
+          stock.stockKey.key_code
+        ),
+      };
+    }
+
+    return {
+      success: false,
+      error:
+        `Invalid supplier configuration for "${product_name}" - "${duration}".`,
+    };
+  }
+
+  /*
+   * =======================================================
+   * LEGACY FALLBACK
+   * =======================================================
+   *
+   * If the catalog has not been configured for a product yet,
+   * preserve the old behavior so the existing store does not
+   * suddenly stop working.
+   */
+
+  console.warn(
+    "CATALOG PRODUCT NOT FOUND. USING LEGACY PRODUCT CONFIG:",
+    product_name
+  );
+
+  const oldProduct =
+    findOldProduct(
+      product_name
+    );
+
+  if (!oldProduct) {
+    return {
+      success: false,
+      error:
+        "Product not found in Product Catalog.",
+    };
+  }
+
+  const oldPrice =
+    findOldPrice(
+      oldProduct,
+      duration
+    );
+
+  if (!oldPrice) {
+    return {
+      success: false,
+      error:
+        `Duration "${duration}" is not available for this product.`,
+    };
+  }
+
+  if (
+    oldProduct.sellerPid
+  ) {
+    const result =
+      await oldSeller1Fallback(
+        oldProduct,
+        oldPrice
+      );
+
+    if (!result.success) {
+      return result;
+    }
+
+    return {
+      success: true,
+      key: result.key,
+    };
+  }
+
+  const stock =
+    await getLocalStockKey(
+      product_name,
+      duration
+    );
+
+  if (
+    !stock.success ||
+    !stock.stockKey
+  ) {
+    return {
+      success: false,
+      error:
+        "Payment received, but no stock key is currently available.",
+    };
+  }
+
+  const reserved =
+    await reserveLocalStockKey(
+      stock.stockKey.id
+    );
+
+  if (!reserved) {
+    return {
+      success: false,
+      error:
+        "Stock key was taken by another purchase. Please try again.",
+    };
+  }
+
+  return {
+    success: true,
+    key: String(
+      stock.stockKey.key_code
+    ),
+  };
+}
+========== lib/products.ts ==========
+export interface PriceTier {
+  duration: string;
+  priceINR: string;
+  resellerPrice?: string;
+  priceUSD?: string;
+
+  // Duration exactly as required by the seller API.
+  // Only used for products that have a sellerPid.
+  sellerDuration?: string;
+  seller2VariantId?: number;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  category: "mobile" | "pc" | "ios";
+  fulfillmentType?: "API" | "LOCAL"; // Added fulfillment type
+  sellerPid?: string | number;       // Updated type to support string or number PIDs
+  prices: PriceTier[];
+  updateChannel: string;
+  features: string[];
+  videoPlaceholder?: string;
+  videoUrl?: string;
+  // Add status property ('ONLINE' | 'MAINTENANCE')
+  status: "ONLINE" | "MAINTENANCE";
+}
+
+export const mobileProducts: Product[] = [
+  {
+    id: "nine-non-root",
+    name: "PRIVATE - AIM SILENT NON ROOT (MAIN ID)",
+    fulfillmentType: "LOCAL",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/9x.mp4",
+    category: "mobile",
+    status: "ONLINE",
+    prices: [
+      { duration: "10 day", priceINR: "â‚¹440", resellerPrice: "â‚¹255", priceUSD: "$1.38" },
+      { duration: "20 day", priceINR: "â‚¹880", resellerPrice: "â‚¹510", priceUSD: "$2.20" },
+      { duration: "30 day", priceINR: "â‚¹1280", resellerPrice: "â‚¹765", priceUSD: "$9.80" },
+    ],
+    updateChannel: "https://t.me/+vmEtPFDt7wJmYTY1",
+    features: ["á´á´€ÉªÉ´ Éªá´… êœ±á´€êœ°á´‡", "É´á´É´ Ê€á´á´á´›", "á´…Ê€á´€É¢ Êœá´‡á´€á´…sÊœá´á´›", "Êœá´‡á´€á´… ÊŸá´á´„á´‹", "É´Éªá´„á´‹ ÊŸá´á´„á´‹", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "É´á´É´ Ê€á´á´á´› á´á´Ê™ÉªÊŸá´‡", "Ê€á´€É´á´‹ á´˜á´œêœ±Êœ á´˜á´œÊ€á´˜á´êœ±á´‡"],
+  },
+
+  {
+    id: "bala-v2",
+    name: "BALA MOD XYZ ~ V2 FF NONROOT",
+    fulfillmentType: "API",
+    sellerPid: "136",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/bala.mp4",
+    category: "mobile",
+    status: "MAINTENANCE",
+    prices: [
+      { duration: "1 Hours", resellerPrice: "â‚¹10", priceINR: "â‚¹25", sellerDuration: "1 Hours" },
+      { duration: "3 Hours", resellerPrice: "â‚¹35", priceINR: "â‚¹56", sellerDuration: "3 Hours" },
+      { duration: "6 Hours", resellerPrice: "â‚¹65", priceINR: "â‚¹90", sellerDuration: "6 Hours" },
+      { duration: "12 Hours", resellerPrice: "â‚¹160", priceINR: "â‚¹190", sellerDuration: "12 Hours" },
+      { duration: "1 Days", resellerPrice: "â‚¹240", priceINR: "â‚¹300", sellerDuration: "1 Days" },
+      { duration: "7 Days", resellerPrice: "â‚¹1432", priceINR: "â‚¹1790", sellerDuration: "7 Days" },
+    ],
+    updateChannel: "https://t.me/+yzkB9kD8zzUzMDQ1",
+    features: ["ÊŸá´á´„á´€á´›Éªá´É´","á´…Ê€á´€É¢ Êœá´‡á´€á´…êœ±Êœá´á´› 100%", "á´…Ê€á´€É¢ Êœá´‡á´€á´…êœ±Êœá´á´› 50%", "Êœá´‡á´€á´… ÊŸá´á´„á´‹", "Ê™á´á´…Ê Êœá´‡á´€á´…êœ±Êœá´á´›", "á´„Êœá´‡êœ±á´› Êœá´‡á´€á´…êœ±Êœá´á´›", "á´›á´‡ÊŸá´‡á´˜á´Ê€á´›"],
+  },
+
+  {
+    id: "silent-cheat-proxy",
+    name: "SILENT CHEAT FF NONROOT PROXY",
+    fulfillmentType: "API",
+    sellerPid: "148",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/silent%20proxy.mp4",
+    category: "mobile",
+    status: "ONLINE",
+    prices: [
+      { duration: "1 Hours Apk Silent", priceINR: "â‚¹78", resellerPrice: "â‚¹28", priceUSD: "$1.38", sellerDuration: "1 Hours Apk Silent" },
+      { duration: "3 Hours Apk Silent", priceINR: "â‚¹150", resellerPrice: "â‚¹68", priceUSD: "$2.20", sellerDuration: "3 Hours Apk Silent" },
+      { duration: "6 Hours Apk Silent", priceINR: "â‚¹348", resellerPrice: "â‚¹138", priceUSD: "$3.75", sellerDuration: "6 Hours Apk Silent" },
+      { duration: "12 Hours Apk Silent", priceINR: "â‚¹595", resellerPrice: "â‚¹268", priceUSD: "$6.90", sellerDuration: "12Hours Apk Silent" },
+      { duration: "1 DaYs Apk Silent", priceINR: "â‚¹899", resellerPrice: "â‚¹528", priceUSD: "$9.80", sellerDuration: "1 DaYs Apk Silent" },
+      { duration: "3 DaYs Apk Silent", priceINR: "â‚¹78", resellerPrice: "â‚¹28", priceUSD: "$1.38", sellerDuration: "3 DaYs Apk Silent" },
+      { duration: "7 DaYs Apk Silent", priceINR: "â‚¹150", resellerPrice: "â‚¹68", priceUSD: "$2.20", sellerDuration: "7 DaYs Apk Silent" },
+      { duration: "1 Hours Config Proxy", priceINR: "â‚¹345", resellerPrice: "â‚¹138", priceUSD: "$3.75", sellerDuration: "1 Hours Config Proxy" },
+      { duration: "3 Hours Config Proxy", priceINR: "â‚¹595", resellerPrice: "â‚¹268", priceUSD: "$6.90", sellerDuration: "3 Hours Config Proxy" },
+      { duration: "6 Hours Config Proxy", priceINR: "â‚¹895", resellerPrice: "â‚¹528", priceUSD: "$9.80", sellerDuration: "6 Hours Config Proxy" },
+      { duration: "12 Hours Config Proxy", priceINR: "â‚¹895", resellerPrice: "â‚¹528", priceUSD: "$9.80", sellerDuration: "12 Hours Config Proxy" },
+      { duration: "1 DaYs Config Proxy", priceINR: "â‚¹895", resellerPrice: "â‚¹528", priceUSD: "$9.80", sellerDuration: "1 DaYs Config Proxy" },
+      { duration: "3 DaYs Config Proxy", priceINR: "â‚¹895", resellerPrice: "â‚¹528", priceUSD: "$9.80", sellerDuration: "3 DaYs Config Proxy" },
+      { duration: "7 DaYs Config Proxy", priceINR: "â‚¹895", resellerPrice: "â‚¹528", priceUSD: "$9.80", sellerDuration: "7 DaYs Config Proxy" },
+    ],
+    updateChannel: "https://t.me/+GKY5UbxCPhlhNTU1",
+    features: ["ÊŸá´á´„á´€á´›Éªá´É´","á´…Ê€á´€É¢ Êœá´‡á´€á´…êœ±Êœá´á´› 100%", "á´…Ê€á´€É¢ Êœá´‡á´€á´…êœ±Êœá´á´› 50%", "Êœá´‡á´€á´… ÊŸá´á´„á´‹", "Ê™á´á´…Ê Êœá´‡á´€á´…êœ±Êœá´á´›", "á´„Êœá´‡êœ±á´› Êœá´‡á´€á´…êœ±Êœá´á´›", "á´›á´‡ÊŸá´‡á´˜á´Ê€á´›"],
+  },
+
+  {
+    id: "drip-client-apk",
+    name: "DRIPCLIENT FF NONROOT APKMOD",
+    fulfillmentType: "API",
+    sellerPid: "62",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20CLIENT%20NON%20ROOT%20MOBILE.mp4",
+    category: "mobile",
+    status: "ONLINE",
+    prices: [
+      {
+        duration: "1 day",
+        priceINR: "â‚¹40",
+        resellerPrice: "â‚¹28",
+        priceUSD: "$1.38",
+        sellerDuration: "1 Days NONROOT",
+        seller2VariantId: 167,
+      },
+    
+      {
+        duration: "3 day",
+        priceINR: "â‚¹135",
+        resellerPrice: "â‚¹58",
+        priceUSD: "$2.20",
+        sellerDuration: "3 Days NONROOT",
+        seller2VariantId: 168,
+      },
+    
+      {
+        duration: "7 day",
+        priceINR: "â‚¹290",
+        resellerPrice: "â‚¹125",
+        priceUSD: "$3.75",
+        sellerDuration: "7 Days NONROOT",
+        seller2VariantId: 169,
+      },
+    
+      {
+        duration: "15 day",
+        priceINR: "â‚¹399",
+        resellerPrice: "â‚¹195",
+        priceUSD: "$6.90",
+        sellerDuration: "15 Days NONROOT",
+        seller2VariantId: 170,
+      },
+    
+      {
+        duration: "31 day",
+        priceINR: "â‚¹599",
+        resellerPrice: "â‚¹285",
+        priceUSD: "$9.80",
+        sellerDuration: "30 Days NONROOT",
+      },
+    ],
+    updateChannel: "https://t.me/+JNLfa2pGuYxlNWNl",
+    features: ["á´€Éªá´ á´á´€É¢É´á´‡á´›", "êœ±ÉªÊŸá´‡É´á´› á´€Éªá´", "á´€Éªá´Ê™á´á´› ÊŸá´‡É¢Éªá´›", "êœ±á´˜á´‡á´‡á´… á´›Éªá´á´‡Ê€", "É¢Êœá´êœ±á´› Êœá´€á´„á´‹", "á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "É´á´É´ Ê€á´á´á´› á´á´Ê™ÉªÊŸá´‡", "Ê€á´€É´á´‹ á´˜á´œêœ±Êœ á´˜á´œêœ±á´˜á´êœ±á´‡"],
+  },
+
+  {
+    id: "drip-client-wire",
+    name: "DRIPCLIENT WIRE FF NONROOT ANDROID",
+    fulfillmentType: "API",
+    sellerPid: "150",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20WIRE%20HEAD.mp4",
+    category: "mobile",
+    status: "ONLINE",
+    prices: [
+      { duration: "6 Hours", priceINR: "â‚¹35", resellerPrice: "â‚¹25", priceUSD: "$1.38", sellerDuration: "6 Hours" },
+      { duration: "12 Hours", priceINR: "â‚¹65", resellerPrice: "â‚¹38", priceUSD: "$2.20", sellerDuration: "12 Hours" },
+      { duration: "1 DaYs", priceINR: "â‚¹95", resellerPrice: "â‚¹65", priceUSD: "$3.75", sellerDuration: "1 DaYs" },
+      { duration: "7 DaYs", priceINR: "â‚¹395", resellerPrice: "â‚¹215", priceUSD: "$6.90", sellerDuration: "7 DaYs" },
+    ],
+    updateChannel: "https://t.me/+JNLfa2pGuYxlNWNl",
+    features: ["É´á´É´ Ê€á´á´á´›", "á´…Ê€á´€É¢ Êœá´‡á´€á´…sÊœá´á´› 100%", "á´…Ê€á´€É¢ Êœá´‡á´€á´…sÊœá´á´› 50%", "ÊŸá´á´„á´€á´›Éªá´É´", "Ò“Ê€á´‡á´‡á´¢á´‡"],
+  },
+
+  {
+    id: "drip-client-root",
+    name: "DRIPCLIENT PROXY FF NONROOT ANDROID",
+    fulfillmentType: "API",
+    sellerPid: "91",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/DRIP%20PROXY%20MOBILE.mp4",
+    category: "mobile",
+    status: "ONLINE",
+    prices: [
+      { duration: "1 DaYs", priceINR: "â‚¹60", resellerPrice: "â‚¹45", priceUSD: "$1.38", sellerDuration: "1 DaYs"},
+      { duration: "3 DaYs", priceINR: "â‚¹60", resellerPrice: "â‚¹45", priceUSD: "$1.38", sellerDuration: "3 DaYs"},
+     { duration: "7 DaYs", priceINR: "â‚¹60", resellerPrice: "â‚¹45", priceUSD: "$1.38", sellerDuration: "7 DaYs"},
+      { duration: "30 DaYs", priceINR: "â‚¹60", resellerPrice: "â‚¹45", priceUSD: "$1.38", sellerDuration: "30 DaYs"},
+    ],
+    updateChannel: "https://t.me/+JNLfa2pGuYxlNWNl",
+    features: ["É´á´É´ Ê€á´á´á´›", "á´…Ê€á´€É¢ Êœá´‡á´€á´…sÊœá´á´›", "Êœá´‡á´€á´… ÊŸá´á´„á´‹", "É´Éªá´„á´‹ ÊŸá´á´„á´‹", "Ê™á´€á´„á´‹ á´Šá´œá´á´˜", "ÊœÉªÉ¢Êœ á´Šá´œá´á´˜", "Ò“á´€sá´› É¢á´œÉ´ sá´¡Éªá´›á´„Êœ", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "É´á´É´ Ê€á´á´á´› á´á´Ê™ÉªÊŸá´‡", "Ê€á´€É´á´‹ á´˜á´œêœ±Êœ á´˜á´œÊ€á´˜á´êœ±á´‡"],
+  },
+
+  {
+    id: "br-mod-root",
+    name: "BR MOD FF ROOT ANDROID",
+    fulfillmentType: "API",
+    sellerPid: "67",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/BR%20MOD%20ROOT%20MOBILE.mp4",
+    category: "mobile",
+    status: "MAINTENANCE",
+    prices: [
+      { duration: "1 day", priceINR: "â‚¹75", resellerPrice: "â‚¹45", priceUSD: "$1.30", sellerDuration: "1 Days" },
+      { duration: "7 day", priceINR: "â‚¹295", resellerPrice: "â‚¹105", priceUSD: "$3.75", sellerDuration: "7 Days" },
+      { duration: "15 day", priceINR: "â‚¹545", resellerPrice: "â‚¹215", priceUSD: "$6.90", sellerDuration: "15 Days" },
+      { duration: "31 day", priceINR: "â‚¹795", resellerPrice: "â‚¹295", priceUSD: "$9.80", sellerDuration: "31 Days" },
+    ],
+    updateChannel: "https://t.me/+vNW83oEZIzw3Y2Fl",
+    features: ["êœ±ÉªÊŸá´‡É´á´› á´€Éªá´Ê™á´á´›", "Êœá´‡á´€á´…êœ±Êœá´á´›", "êœ±á´˜á´‡á´‡á´… Êœá´€á´„á´‹", "É¢Êœá´êœ±á´› Êœá´€á´„á´‹", "á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "á´á´€ÉªÉ´ Éªá´… êœ±á´€êœ°á´‡", "Ê€á´á´á´› á´á´Ê™ÉªÊŸá´‡", "É´á´É´ Ê€á´á´á´› (á´ ÉªÊ€á´›á´œá´€ÊŸ É´á´‡á´‡á´…)"],
+  },
+
+  {
+    id: "prime-hook",
+    name: "PRIME HOOK FF NONROOT ANDROID",
+    fulfillmentType: "API",
+    sellerPid: "48",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/PRIME%20HOOK%20NON%20ROOT.mp4",
+    category: "mobile",
+    status: "MAINTENANCE",
+    prices: [
+      { duration: "1 day", resellerPrice: "â‚¹29", priceINR: "â‚¹70", sellerDuration: "1 Days Nonroot" },
+      { duration: "3 day", resellerPrice: "â‚¹59", priceINR: "â‚¹145", sellerDuration: "3 Days Nonroot" },
+      { duration: "7 day", resellerPrice: "â‚¹119", priceINR: "â‚¹295", sellerDuration: "7 Days NonRoot" },
+      { duration: "10 day", resellerPrice: "â‚¹147", priceINR: "â‚¹345", sellerDuration: "10 Days Nonroot" },
+    ],
+    updateChannel: "https://t.me/+cbv9Q58re1JiZjk1",
+    features: ["á´€Éªá´á´‹ÉªÊŸÊŸ", "êœ±á´˜á´‡á´‡á´… Êœá´€á´„á´‹", "á´€É´á´›Éª-á´›á´‡ÊŸá´‡á´˜á´Ê€á´›", "Êœá´‡á´€á´…êœ±Êœá´á´› Êœá´€á´„á´‹", "á´€Éªá´ á´ Éªêœ±ÉªÊ™ÊŸá´‡", "á´€Éªá´êœ°á´á´  180Â°", "á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "á´€Éªá´ á´á´€É¢É´á´‡á´›", "Ê€á´€É´á´‹ á´˜á´œêœ±Êœ á´˜á´œÊ€á´˜á´êœ±á´‡ (É´á´É´ Ê€á´á´á´›)"],
+  },
+
+  {
+    id: "silent-cheat-root",
+    name: "SILENT CHEAT FF ROOT ANDROID",
+    fulfillmentType: "API",
+    sellerPid: "128",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/silent.mp4",
+    category: "mobile",
+    status: "ONLINE",
+    prices: [
+      { duration: "1 day safe", priceINR: "â‚¹78", resellerPrice: "â‚¹28", priceUSD: "$1.38", sellerDuration: "1 Days SAFE" },
+      { duration: "3 day safe", priceINR: "â‚¹150", resellerPrice: "â‚¹68", priceUSD: "$2.20", sellerDuration: "3 Days SAFE" },
+      { duration: "7 day safe", priceINR: "â‚¹348", resellerPrice: "â‚¹138", priceUSD: "$3.75", sellerDuration: "7 Days SAFE" },
+      { duration: "15 day safe", priceINR: "â‚¹595", resellerPrice: "â‚¹268", priceUSD: "$6.90", sellerDuration: "14 Days SAFE" },
+      { duration: "31 day safe", priceINR: "â‚¹899", resellerPrice: "â‚¹528", priceUSD: "$9.80", sellerDuration: "28 Days SAFE" },
+      { duration: "1 day brutal", priceINR: "â‚¹78", resellerPrice: "â‚¹28", priceUSD: "$1.38", sellerDuration: "1 Days BRUTAL" },
+      { duration: "3 day brutal", priceINR: "â‚¹150", resellerPrice: "â‚¹68", priceUSD: "$2.20", sellerDuration: "3 Days BRUTAL" },
+      { duration: "7 day brutal", priceINR: "â‚¹345", resellerPrice: "â‚¹138", priceUSD: "$3.75", sellerDuration: "7 Days BRUTAL" },
+      { duration: "15 day brutal", priceINR: "â‚¹595", resellerPrice: "â‚¹268", priceUSD: "$6.90", sellerDuration: "14 Days BRUTAL" },
+      { duration: "31 day brutal", priceINR: "â‚¹895", resellerPrice: "â‚¹528", priceUSD: "$9.80", sellerDuration: "28 Days BRUTAL" },
+    ],
+    updateChannel: "https://t.me/+GKY5UbxCPhlhNTU1",
+    features: ["á´€Éªá´ á´á´€É¢É´á´‡á´›", "êœ±ÉªÊŸá´‡É´á´› á´€Éªá´", "á´€Éªá´Ê™á´á´› ÊŸá´‡É¢Éªá´›", "êœ±á´˜á´‡á´‡á´… á´›Éªá´á´‡Ê€", "É¢Êœá´êœ±á´› Êœá´€á´„á´‹", "á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "Ê€á´á´á´› á´á´Ê™ÉªÊŸá´‡"],
+  },
+
+  {
+    id: "rapid-core-root-panel",
+    name: "RAPID CORE INJECTOR ROOT ( main id )",
+    fulfillmentType: "LOCAL",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/rapid.mp4",
+    category: "mobile",
+    status: "MAINTENANCE",
+    prices: [
+      { duration: "1 day", priceINR: "â‚¹85", resellerPrice: "â‚¹39", priceUSD: "$1.38" },
+      { duration: "7 day", priceINR: "â‚¹320", resellerPrice: "â‚¹145", priceUSD: "$3.75" },
+      { duration: "15 day", priceINR: "â‚¹590", resellerPrice: "â‚¹290", priceUSD: "$6.90" },
+      { duration: "31 day", priceINR: "â‚¹1019", resellerPrice: "â‚¹480", priceUSD: "$9.80" },
+    ],
+    updateChannel: "https://t.me/+fy2vh_LXjJs4ODk9",
+    features: ["á´€Éªá´ á´á´€É¢É´á´‡á´›", "êœ±ÉªÊŸá´‡É´á´› á´€Éªá´", "á´€Éªá´Ê™á´á´› ÊŸá´‡É¢Éªá´›", "êœ±á´˜á´‡á´‡á´… á´›Éªá´á´‡Ê€", "É¢Êœá´êœ±á´› Êœá´€á´„á´‹", "á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "É´á´É´ Ê€á´á´á´› á´á´Ê™ÉªÊŸá´‡", "Ê€á´€É´á´‹ á´˜á´œêœ±Êœ á´˜á´œÊ€á´˜á´êœ±á´‡"],
+  },
+
+  {
+    id: "hg-cheats-mobile",
+    name: "HG CHEATS MOBILE NON ROOT",
+    fulfillmentType: "LOCAL",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/HG%20NON%20ROOT%20PANEL.mp4",
+    category: "mobile",
+    status: "MAINTENANCE",
+    prices: [
+      { duration: "1 day", resellerPrice: "â‚¹45", priceINR: "â‚¹60" },
+      { duration: "10 day", resellerPrice: "â‚¹149", priceINR: "â‚¹320" },
+      { duration: "31 day", resellerPrice: "â‚¹299", priceINR: "â‚¹550" },
+    ],
+    updateChannel: "https://t.me/+lzOZzChCQmE3ZmQ1",
+    features: ["á´€Éªá´á´‹ÉªÊŸÊŸ", "êœ±á´˜á´‡á´‡á´… Êœá´€á´„á´‹", "á´€É´á´›Éª-á´›á´‡ÊŸá´‡á´˜á´Ê€á´›", "Êœá´‡á´€á´…êœ±Êœá´á´› Êœá´€á´„á´‹", "á´€Éªá´ á´ Éªêœ±ÉªÊ™ÊŸá´‡", "á´€Éªá´êœ°á´á´  180Â°", "á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "Ê€á´€É´á´‹ á´˜á´œêœ±Êœ á´˜á´œÊ€á´˜á´êœ±á´‡", "É´á´É´ Ê€á´á´á´›"],
+  },
+
+  {
+    id: "haxx-cker-pro",
+    name: "HAXX-CKER PRO FF ROOT",
+    fulfillmentType: "API",
+    sellerPid: "64",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/haxx%20pro.MOV",
+    category: "mobile",
+    status: "ONLINE",
+    prices: [
+      { duration: "3 day", resellerPrice: "â‚¹np", priceINR: "â‚¹249", sellerDuration: "3 Days" },
+      { duration: "5 day", resellerPrice: "â‚¹np", priceINR: "â‚¹399", sellerDuration: "5 Days" },
+      { duration: "10 day", resellerPrice: "â‚¹np", priceINR: "â‚¹549", sellerDuration: "10 Days" },
+      { duration: "20 day", resellerPrice: "â‚¹np", priceINR: "â‚¹1049", sellerDuration: "20 Days" },
+      { duration: "30 day", resellerPrice: "â‚¹np", priceINR: "â‚¹1449", sellerDuration: "30 Days" },
+      { duration: "60 day", resellerPrice: "â‚¹np", priceINR: "â‚¹2799", sellerDuration: "60 Days" },
+      { duration: "120 day", resellerPrice: "â‚¹np", priceINR: "â‚¹5449" },
+    ],
+    updateChannel: "https://t.me/+1bfn34OibsAyODc1",
+    features: ["Headshot Hack", "AimFov 360Â°", "Esp Line Location", "Stream Mode", "ðŸ„²ðŸ…‚ / ðŸ„±ðŸ… Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "root support", "non root (virtual - vphone)"],
+  },
+];
+
+export const pcProducts: Product[] = [
+  {
+    id: "br-mod-pc-aim",
+    name: "BR MOD PC AIM SILENT ( MAIN ID )",
+    fulfillmentType: "LOCAL",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/BR%20MOD%20PC%20PANEL.mp4",
+    category: "pc",
+    status: "ONLINE",
+    prices: [
+      { duration: "1 day", priceINR: "â‚¹85", resellerPrice: "â‚¹48", priceUSD: "$1.40" },
+      { duration: "10 day", priceINR: "â‚¹435", resellerPrice: "â‚¹245", priceUSD: "$5.30" },
+      { duration: "31 day", priceINR: "â‚¹825", resellerPrice: "â‚¹490", priceUSD: "$8.95" },
+    ],
+    updateChannel: "https://t.me/+vNW83oEZIzw3Y2Fl",
+    features: ["â›¨ á´€Éªá´Ê™á´á´› ÊŸÉªá´›á´‡", "â›¨ á´€Éªá´êœ°á´á´  1200Â°", "â›¨ É¢Êœá´êœ±á´›", "â›¨ á´œÉ´á´…á´‡Ê€ á´„á´€Ê€", "â›¨ á´›á´‡ÊŸá´‡á´˜á´Ê€á´› á´¡á´€ÊŸÊŸ á´„êœ±", "â›¨ á´›á´‡ÊŸá´‡á´˜á´Ê€á´› á´¡á´€ÊŸÊŸ Ê™Ê€", "â›¨ êœ±á´˜á´‡á´‡á´… Êœá´€á´„á´‹", "â›¨ É¢Êœá´êœ±á´› êœ±ÊÉ´á´„", "â›¨ á´¡á´€ÊŸÊŸ Êœá´€á´„á´‹", "â›¨ êœ±á´„Ê€á´‡á´‡É´ êœ±á´›á´á´˜", "â›¨ á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "â›¨ Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢", "MAIN ID FULL SAFE"],
+  },
+
+  {
+    id: "basic-customized-pc",
+    name: "BASIC CUSTOMIZED PC PANEL ( MAIN ID )",
+    fulfillmentType: "LOCAL",
+    videoUrl: "https://res.cloudinary.com/dda4gh2wm/video/upload/q_auto/f_auto/v1780157629/BASIC_PC_PANEL_wuorib.mp4",
+    category: "pc",
+    status: "ONLINE",
+    prices: [
+      { duration: "1 day", resellerPrice: "â‚¹30", priceINR: "â‚¹65" },
+      { duration: "15 day", resellerPrice: "â‚¹255", priceINR: "â‚¹559" },
+      { duration: "31 day", resellerPrice: "â‚¹489", priceINR: "â‚¹1099" },
+      { duration: "Lifetime", resellerPrice: "â‚¹1300", priceINR: "â‚¹1999" },
+    ],
+    updateChannel: "https://t.me/jprimeallcustompcpanel",
+    features: ["â˜‰ á´€Éªá´Ê™á´á´› É¢ÊŸá´Ê™á´€ÊŸ", "â˜‰ á´€Éªá´Ê™á´á´› á´‡xá´›á´‡Ê€É´á´€ÊŸ", "â˜‰ êœ±É´Éªá´˜á´‡Ê€ êœ±á´¡Éªá´›á´„Êœ", "â˜‰ êœ±É´Éªá´˜á´‡Ê€ êœ±á´„á´á´˜á´‡", "â˜‰ É¢ÊŸÉªá´›á´„Êœ êœ°ÉªÊ€á´‡", "â˜‰ á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ Ê™á´x", "â˜‰ á´‡êœ±á´˜ á´€ÊŸá´‡Ê€á´›", "â˜‰ á´‡êœ±á´˜ ÉªÉ´êœ°á´Ê€á´á´€á´›Éªá´É´ á´¡á´‡á´€á´˜á´É´", "â˜‰ á´€á´œá´›á´ Ê€á´‡êœ°Ê€á´‡êœ±Êœ", "â˜‰ êœ±á´›Ê€á´‡á´€á´á´‡Ê€ á´á´á´…á´‡"],
+  },
+
+  {
+    id: "brutal-haxxcer-pc",
+    name: "AIM SILENT EXE - HAXXCKER CLIENT",
+    fulfillmentType: "LOCAL",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/haxx%20silent.mp4",
+    category: "pc",
+    status: "ONLINE",
+    prices: [
+      { duration: "1 day", resellerPrice: "â‚¹30", priceINR: "â‚¹65" },
+      { duration: "15 day", resellerPrice: "â‚¹255", priceINR: "â‚¹559" },
+      { duration: "31 day", resellerPrice: "â‚¹489", priceINR: "â‚¹1099" },
+      { duration: "Lifetime", resellerPrice: "â‚¹1300", priceINR: "â‚¹1999" },
+    ],
+    updateChannel: "https://t.me/+F8nTtUENXi9mYmY1",
+    features: ["â›¨ á´€Éªá´ á´…á´á´¡É´á´‹ÉªÊŸÊŸ", "â›¨ á´€Éªá´êœ°á´á´  1200Â°", "â›¨ á´œá´˜ á´˜ÊŸá´€Êá´‡Ê€", "â›¨ á´›á´‡ÊŸá´‡ á´‹ÉªÊŸÊŸ 10á´", "â›¨á´›á´‡ÊŸá´‡á´˜á´Ê€á´› Êœá´€á´„á´‹ á´„êœ±", "â›¨á´›á´‡ÊŸá´‡á´˜á´Ê€á´› Êœá´€á´„á´‹ Ê™Ê€", "â›¨ á´á´‡á´…á´‹Éªá´› Ê€á´œÉ´", "â›¨ êœ±á´˜á´‡á´‡á´… Êœá´€á´„á´‹ á´Šá´yêœ±á´›Éªá´„á´‹", "â›¨ á´„ÊŸÉªá´Ê™ á´œá´˜", "â›¨ É´á´ Ê€á´‡á´„á´ÉªÊŸ", "â›¨ á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "â›¨ Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢"],
+  },
+
+  {
+    id: "brutal-customized-pc",
+    name: "AIM COVER PANEL ( Rank push )",
+    fulfillmentType: "LOCAL",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/AIM%20COVER%20PC.mp4",
+    category: "pc",
+    status: "ONLINE",
+    prices: [
+      { duration: "1 day", resellerPrice: "â‚¹30", priceINR: "â‚¹65" },
+      { duration: "15 day", resellerPrice: "â‚¹255", priceINR: "â‚¹559" },
+      { duration: "31 day", resellerPrice: "â‚¹489", priceINR: "â‚¹1099" },
+      { duration: "Lifetime", resellerPrice: "â‚¹1300", priceINR: "â‚¹1999" },
+    ],
+    updateChannel: "https://t.me/jprimeallcustompcpanel",
+    features: ["â›¨ á´€Éªá´ á´…á´á´¡É´á´‹ÉªÊŸÊŸ", "â›¨ á´€Éªá´êœ°á´á´  1200Â°", "â›¨ á´œá´˜ á´˜ÊŸá´€Êá´‡Ê€", "â›¨ á´›á´‡ÊŸá´‡ á´‹ÉªÊŸÊŸ 10á´", "â›¨á´›á´‡ÊŸá´‡á´˜á´Ê€á´› Êœá´€á´„á´‹ á´„êœ±", "â›¨á´›á´‡ÊŸá´‡á´˜á´Ê€á´› Êœá´€á´„á´‹ Ê™Ê€", "â›¨ á´á´‡á´…á´‹Éªá´› Ê€á´œÉ´", "â›¨ êœ±á´˜á´‡á´‡á´… Êœá´€á´„á´‹ á´Šá´yêœ±á´›Éªá´„á´‹", "â›¨ á´„ÊŸÉªá´Ê™ á´œá´˜", "â›¨ É´á´ Ê€á´‡á´„á´ÉªÊŸ", "â›¨ á´€á´œá´›á´ êœ±á´¡Éªá´›á´„Êœ", "â›¨ êœ°á´€êœ±á´› êœ±á´¡Éªá´›á´„Êœ", "â›¨ á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "â›¨ Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢"],
+  },
+
+  {
+    id: "brutal-customized-aim-kill-pc",
+    name: "AIM KILL PANEL ( Rank push )",
+    fulfillmentType: "LOCAL",
+    videoUrl: "https://vukdpfogrmaqxhbnljbs.supabase.co/storage/v1/object/public/demo-videos/akill.mp4",
+    category: "pc",
+    status: "ONLINE",
+    prices: [
+      { duration: "1 day", resellerPrice: "â‚¹30", priceINR: "â‚¹85" },
+      { duration: "15 day", resellerPrice: "â‚¹255", priceINR: "â‚¹569" },
+      { duration: "31 day", resellerPrice: "â‚¹489", priceINR: "â‚¹1199" },
+      { duration: "Lifetime", resellerPrice: "â‚¹1400", priceINR: "â‚¹2199" },
+    ],
+    updateChannel: "https://t.me/jprimeallcustompcpanel",
+    features: ["â›¨ á´€Éªá´ á´…á´á´¡É´á´‹ÉªÊŸÊŸ", "â›¨ á´€Éªá´êœ°á´á´  1200Â°", "â›¨ á´œá´˜ á´˜ÊŸá´€Êá´‡Ê€", "â›¨ á´›á´‡ÊŸá´‡ á´‹ÉªÊŸÊŸ 10á´", "â›¨á´›á´‡ÊŸá´‡á´˜á´Ê€á´› Êœá´€á´„á´‹ á´„êœ±", "â›¨á´›á´‡ÊŸá´‡á´˜á´Ê€á´› Êœá´€á´„á´‹ Ê™Ê€", "â›¨ á´á´‡á´…á´‹Éªá´› Ê€á´œÉ´", "â›¨ êœ±á´˜á´‡á´‡á´… Êœá´€á´„á´‹ á´Šá´yêœ±á´›Éªá´„á´‹", "â›¨ á´„ÊŸÉªá´Ê™ á´œá´˜", "â›¨ É´á´ Ê€á´‡á´„á´ÉªÊŸ", "â›¨ á´€á´œá´›á´ êœ±á´¡Éªá´›á´„Êœ", "â›¨ êœ°á´€êœ±á´› êœ±á´¡Éªá´›á´„Êœ", "â›¨ á´‡êœ±á´˜ ÊŸÉªÉ´á´‡ ÊŸá´á´„á´€á´›Éªá´É´", "â›¨ Ê€á´€É´á´‹ á´¡á´Ê€á´‹ÉªÉ´É¢"],
+  },
+];
+
+export const allProducts: Product[] = [
+  ...mobileProducts,
+  ...pcProducts,
+];
+========== app/api/stock-count/route.ts ==========
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+
+export const dynamic = "force-dynamic";
+
+const NO_STORE = { "Cache-Control": "no-store" };
+
+// Public, customer-safe: only a number. The stock_keys table itself is never exposed.
+export async function GET(request: NextRequest) {
+  const product = String(request.nextUrl.searchParams.get("product") || "").trim();
+  const duration = String(request.nextUrl.searchParams.get("duration") || "").trim();
+
+  if (!product || !duration || product.length > 200 || duration.length > 100) {
+    return NextResponse.json({ count: null }, { status: 400, headers: NO_STORE });
+  }
+
+  const { count, error } = await supabaseAdmin
+    .from("stock_keys")
+    .select("id", { count: "exact", head: true })
+    .eq("product_name", product)
+    .eq("duration", duration)
+    .eq("is_used", false);
+
+  if (error) {
+    console.error("STOCK COUNT ERROR:", error.message);
+    return NextResponse.json({ count: null }, { headers: NO_STORE });
+  }
+
+  return NextResponse.json({ count: count ?? 0 }, { headers: NO_STORE });
+}
+
+========== app/api/catalog/route.ts ==========
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { allProducts } from "@/lib/products";
+import type { Product, PriceTier } from "@/lib/products";
+
+export const dynamic = "force-dynamic";
+
+function formatRupees(value: unknown): string | undefined {
+  const s = String(value ?? "").trim();
+
+  if (!s) {
+    return undefined;
+  }
+
+  return s.startsWith("â‚¹") ? s : `â‚¹${s}`;
+}
+
+function toPublicProduct(
+  row: {
+    product_id: string;
+    name: string;
+    data: any;
+  }
+): Product | null {
+  const d = row.data || {};
+
+  const rawPrices: any[] = Array.isArray(d.prices)
+    ? d.prices
+    : [];
+
+  const prices: PriceTier[] = rawPrices
+    .map((p) => {
+      const duration = String(
+        p?.duration ?? ""
+      ).trim();
+
+      const priceINR = formatRupees(
+        p?.priceINR
+      );
+
+      if (!duration || !priceINR) {
+        return null;
+      }
+
+      const tier: PriceTier = {
+        duration,
+        priceINR,
+      };
+
+      const reseller = formatRupees(
+        p?.resellerPrice
+      );
+
+      if (reseller) {
+        tier.resellerPrice = reseller;
+      }
+
+      return tier;
+    })
+    .filter(
+      (t): t is PriceTier =>
+        t !== null
+    );
+
+  if (prices.length === 0) {
+    return null;
+  }
+
+  const category: Product["category"] =
+    d.category === "pc" ||
+    d.category === "ios" ||
+    d.category === "mobile"
+      ? d.category
+      : "mobile";
+
+  const product: Product = {
+    id: String(
+      d.id || row.product_id
+    ),
+
+    name: String(
+      d.name || row.name
+    ),
+
+    category,
+
+    prices,
+
+    updateChannel:
+      typeof d.updateChannel === "string"
+        ? d.updateChannel
+        : "",
+
+    features:
+      Array.isArray(d.features)
+        ? d.features.filter(
+            (f: unknown) =>
+              typeof f === "string" &&
+              f.trim() !== ""
+          )
+        : [],
+
+    status:
+      String(d.status || "").toUpperCase() ===
+      "MAINTENANCE"
+        ? "MAINTENANCE"
+        : "ONLINE",
+  };
+
+  if (
+    d.fulfillmentType === "API" ||
+    d.fulfillmentType === "LOCAL"
+  ) {
+    product.fulfillmentType =
+      d.fulfillmentType;
+  }
+
+  if (
+    typeof d.videoUrl === "string" &&
+    d.videoUrl.trim() !== ""
+  ) {
+    product.videoUrl =
+      d.videoUrl.trim();
+  }
+
+  return product;
+}
+
+// Server-side fallback (lib/products.ts) with every supplier field stripped,
+// so supplier IDs/durations/variants never reach the browser.
+function fallbackProducts(): Product[] {
+  return allProducts.map((p) => {
+    const safe: Product = {
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      prices: p.prices.map((t) => {
+        const tier: PriceTier = { duration: t.duration, priceINR: t.priceINR };
+        if (t.resellerPrice) tier.resellerPrice = t.resellerPrice;
+        return tier;
+      }),
+      updateChannel: p.updateChannel,
+      features: [...p.features],
+      status: p.status,
+    };
+    if (p.fulfillmentType) safe.fulfillmentType = p.fulfillmentType;
+    if (p.videoUrl) safe.videoUrl = p.videoUrl;
+    return safe;
+  });
+}
+
+export async function GET() {
+  try {
+    const { data, error } =
+      await supabaseAdmin
+        .from("products_catalog")
+        .select(
+          "product_id, name, data"
+        )
+        .order("id", {
+          ascending: true,
+        });
+
+    if (error) {
+      console.error(
+        "PUBLIC CATALOG ERROR:",
+        error
+      );
+
+      return NextResponse.json(
+        {
+          products: fallbackProducts(),
+          source: "fallback",
+        },
+        {
+          status: 200,
+          headers: {
+            "Cache-Control":
+              "no-store",
+          },
+        }
+      );
+    }
+
+    const products = (data || [])
+      .map((row: any) =>
+        toPublicProduct(row)
+      )
+      .filter(
+        (p): p is Product =>
+          p !== null
+      );
+
+    if (products.length === 0) {
+      return NextResponse.json(
+        { products: fallbackProducts(), source: "fallback" },
+        { headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    return NextResponse.json(
+      { products, source: "catalog" },
+      {
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      }
+    );
+  } catch (error) {
+    console.error(
+      "PUBLIC CATALOG EXCEPTION:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        products: fallbackProducts(),
+        source: "fallback",
+      },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control":
+            "no-store",
+        },
+      }
+    );
+  }
+}
+========== app/api/admin/catalog/route.ts ==========
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireAdmin } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
+
+
+/**
+ * GET /api/admin/catalog
+ * Admin-only raw catalog access.
+ * Supplier fields are allowed here because this endpoint is admin-only.
+ */
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("products_catalog")
+      .select("id, product_id, name, data, created_at, updated_at")
+      .order("id", { ascending: true });
+
+    if (error) {
+      console.error("ADMIN CATALOG GET ERROR:", error);
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      products: data || [],
+    });
+  } catch (error: any) {
+    console.error("ADMIN CATALOG GET EXCEPTION:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error?.message || "Failed to load catalog",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/admin/catalog
+ * Creates or updates one catalog product.
+ */
+export async function POST(request: NextRequest) {
+  const auth = await requireAdmin(request);
+
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  try {
+    const body = await request.json();
+    const product = body?.product;
+
+    if (!product || typeof product !== "object") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Missing product",
+        },
+        { status: 400 }
+      );
+    }
+
+    const productId = String(product.id || "").trim();
+    const productName = String(product.name || "").trim();
+
+    if (!productId || !productName) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Product id and name are required",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("products_catalog")
+      .upsert(
+        {
+          product_id: productId,
+          name: productName,
+          data: product,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "product_id",
+        }
+      )
+      .select("id, product_id, name, data, created_at, updated_at")
+      .single();
+
+    if (error) {
+      console.error("ADMIN CATALOG SAVE ERROR:", error);
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      product: data,
+    });
+  } catch (error: any) {
+    console.error("ADMIN CATALOG SAVE EXCEPTION:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error?.message || "Failed to save product",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/admin/catalog
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await requireAdmin(request);
+
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  try {
+    const body = await request.json();
+    const productId = String(body?.product_id || "").trim();
+
+    if (!productId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Missing product_id",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await supabaseAdmin
+      .from("products_catalog")
+      .delete()
+      .eq("product_id", productId);
+
+    if (error) {
+      console.error("ADMIN CATALOG DELETE ERROR:", error);
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+    });
+  } catch (error: any) {
+    console.error("ADMIN CATALOG DELETE EXCEPTION:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error?.message || "Failed to delete product",
+      },
+      { status: 500 }
+    );
+  }
+}
+========== app/api/admin/data/route.ts ==========
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireAdmin } from "@/lib/auth";
+import { allProducts } from "@/lib/products";
+import { creditWallet, debitWallet, getBalance, logWalletTransaction } from "@/lib/wallet";
+
+export const dynamic = "force-dynamic";
+
+const NO_STORE = { "Cache-Control": "no-store" };
+const STATUS_ROW = "__status__";
+const ROLES = ["user", "reseller", "admin"];
+
+function fail(error: string, status = 400) {
+  return NextResponse.json({ success: false, error }, { status, headers: NO_STORE });
+}
+
+/**
+ * GET  /api/admin/data  -> everything the admin dashboard needs (admin session required).
+ * POST /api/admin/data  -> { action, ... } admin mutations. Every call re-checks the admin session.
+ * Password hashes are NEVER returned.
+ */
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) return auth.response;
+
+  try {
+    const [stock, users, wallets, purchases, prices, catalog] = await Promise.all([
+      supabaseAdmin.from("stock_keys").select("*").eq("is_used", false),
+      supabaseAdmin.from("users").select("*"),
+      supabaseAdmin.from("wallets").select("username, balance"),
+      supabaseAdmin.from("purchase_history").select("*").order("id", { ascending: false }).limit(5000),
+      supabaseAdmin.from("product_prices").select("*"),
+      supabaseAdmin.from("products_catalog").select("product_id, name, data").order("id", { ascending: true }),
+    ]);
+
+    const firstError = stock.error || users.error || wallets.error || purchases.error || prices.error || catalog.error;
+    if (firstError) {
+      console.error("ADMIN DATA ERROR:", firstError.message);
+      return fail("Could not load admin data.", 500);
+    }
+
+    const safeUsers = (users.data || []).map((u: any) => {
+      const { password, ...rest } = u;
+      return rest;
+    });
+
+    const catalogProducts = (catalog.data || [])
+      .map((row: any) => {
+        const product = row?.data && typeof row.data === "object" ? row.data : null;
+        if (!product) return null;
+        return { ...product, id: String(product.id || row.product_id || ""), name: String(product.name || row.name || "") };
+      })
+      .filter((product: any) => Boolean(product?.id && product?.name && Array.isArray(product?.prices)));
+
+    // Quick-control tabs use the live catalog. The built-in list remains only as a fallback
+    // for an empty catalog; importing it is handled separately by /api/admin/legacy-products.
+    const dashboardProducts = catalogProducts.length ? catalogProducts : allProducts;
+
+    return NextResponse.json(
+      {
+        success: true,
+        keys: stock.data || [],
+        users: safeUsers,
+        wallets: wallets.data || [],
+        purchases: purchases.data || [],
+        priceRows: prices.data || [],
+        products: dashboardProducts,
+        me: { username: auth.user.username },
+      },
+      { headers: NO_STORE }
+    );
+  } catch (e) {
+    console.error("ADMIN DATA EXCEPTION:", e instanceof Error ? e.message : "unknown");
+    return fail("Could not load admin data.", 500);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) return auth.response;
+
+  try {
+    const body = await request.json().catch(() => ({}));
+    const action = String(body?.action || "");
+
+    /* ---------- stock ---------- */
+    if (action === "stock_count") {
+      const { count, error } = await supabaseAdmin
+        .from("stock_keys")
+        .select("id", { count: "exact", head: true })
+        .eq("product_name", String(body.product_name || ""))
+        .eq("duration", String(body.duration || ""))
+        .eq("is_used", false);
+      if (error) return fail("Could not count stock.", 500);
+      return NextResponse.json({ success: true, count: count ?? 0 }, { headers: NO_STORE });
+    }
+
+    if (action === "add_stock") {
+      const productName = String(body.product_name || "").trim();
+      const duration = String(body.duration || "").trim();
+      const keys: string[] = (Array.isArray(body.keys) ? body.keys : [])
+        .map((k: unknown) => String(k ?? "").trim())
+        .filter(Boolean)
+        .slice(0, 2000);
+
+      if (!productName || !duration || keys.length === 0) return fail("Missing product, duration or keys.");
+
+      const { error } = await supabaseAdmin.from("stock_keys").insert(
+        keys.map((key_code) => ({ product_name: productName, duration, key_code, is_used: false }))
+      );
+      if (error) {
+        console.error("ADD STOCK ERROR:", error.message);
+        return fail("Could not add stock.", 500);
+      }
+      return NextResponse.json({ success: true }, { headers: NO_STORE });
+    }
+
+    if (action === "delete_stock") {
+      const id = Number(body.id);
+      if (!Number.isFinite(id)) return fail("Invalid id.");
+      const { error } = await supabaseAdmin.from("stock_keys").delete().eq("id", id);
+      if (error) return fail("Could not delete key.", 500);
+      return NextResponse.json({ success: true }, { headers: NO_STORE });
+    }
+
+    /* ---------- prices / status ---------- */
+    if (action === "save_prices") {
+      const rows: any[] = Array.isArray(body.rows) ? body.rows : [];
+      const clean: any[] = [];
+
+      for (const r of rows.slice(0, 200)) {
+        const product_name = String(r?.product_name || "").trim();
+        const duration = String(r?.duration || "").trim();
+        const price = Number(r?.price_inr);
+        const reseller =
+          r?.reseller_price === null || r?.reseller_price === undefined || r?.reseller_price === ""
+            ? null
+            : Number(r.reseller_price);
+
+        if (!product_name || !duration || duration === STATUS_ROW) return fail("Invalid price row.");
+        if (!Number.isFinite(price) || price <= 0) return fail(`Invalid price for "${duration}".`);
+        if (reseller !== null && (!Number.isFinite(reseller) || reseller <= 0)) {
+          return fail(`Invalid reseller price for "${duration}".`);
+        }
+        clean.push({ product_name, duration, price_inr: price, reseller_price: reseller });
+      }
+
+      if (clean.length === 0) return fail("Nothing to save.");
+
+      const { error } = await supabaseAdmin
+        .from("product_prices")
+        .upsert(clean, { onConflict: "product_name,duration" });
+      if (error) {
+        console.error("SAVE PRICES ERROR:", error.message);
+        return fail("Could not save prices.", 500);
+      }
+      return NextResponse.json({ success: true }, { headers: NO_STORE });
+    }
+
+    if (action === "set_status") {
+      const productName = String(body.product_name || "").trim();
+      const status = String(body.status || "");
+      if (!productName || (status !== "ONLINE" && status !== "MAINTENANCE")) return fail("Invalid status.");
+
+      const { error } = await supabaseAdmin.from("product_prices").upsert(
+        {
+          product_name: productName,
+          duration: STATUS_ROW,
+          price_inr: status === "MAINTENANCE" ? 1 : 0,
+          reseller_price: null,
+        },
+        { onConflict: "product_name,duration" }
+      );
+      if (error) return fail("Could not save status.", 500);
+      return NextResponse.json({ success: true }, { headers: NO_STORE });
+    }
+
+    /* ---------- users / wallets ---------- */
+    if (action === "update_user") {
+      const userId = String(body.userId ?? "").trim();
+      if (!userId) return fail("Missing user ID. Refresh the admin page and try again.");
+
+      const { data: target, error: targetError } = await supabaseAdmin
+        .from("users")
+        .select("id, username, role")
+        .eq("id", userId)
+        .maybeSingle();
+      if (targetError || !target) return fail("User not found.", 404);
+      const username = String(target.username ?? "");
+      if (!username) return fail("This account has no username and cannot have a wallet.");
+
+      if (body.role !== undefined && String(body.role) !== target.role) {
+        const role = String(body.role);
+        if (!ROLES.includes(role)) return fail("Invalid role.");
+        if (String(target.id) === String(auth.user.id)) return fail("You cannot change your own role.");
+
+        const { error } = await supabaseAdmin.from("users").update({ role }).eq("id", userId);
+        if (error) return fail("Could not update role.", 500);
+      }
+
+      const action2 = String(body.balanceAction || "none");
+      const amount = Math.round(Number(body.amount) * 100) / 100;
+
+      if ((action2 === "add" || action2 === "remove") && Number.isFinite(amount) && amount > 0) {
+        if (amount > 1_000_000) return fail("Amount too large.");
+
+        let newBalance: number | null = null;
+        let applied = amount;
+
+        if (action2 === "add") {
+          const r = await creditWallet(username, amount);
+          if (!r.ok) return fail("Could not update wallet.", 500);
+          newBalance = r.balance;
+        } else {
+          const current = await getBalance(username);
+          if (current === null) return fail("Could not update wallet.", 500);
+          applied = Math.min(amount, current); // never below zero (same as before)
+          if (applied > 0) {
+            const r = await debitWallet(username, applied);
+            if (!r.ok) return fail("Could not update wallet.", 500);
+            newBalance = r.balance;
+          }
+        }
+
+        if (newBalance !== null) {
+          await logWalletTransaction({
+            username,
+            type: action2 === "add" ? "credit" : "debit",
+            amount: applied,
+            balance_after: newBalance,
+            description: `Admin ${action2 === "add" ? "added" : "removed"} funds`,
+          });
+        }
+      }
+
+      return NextResponse.json({ success: true }, { headers: NO_STORE });
+    }
+
+    return fail("Unknown action.");
+  } catch (e) {
+    console.error("ADMIN ACTION ERROR:", e instanceof Error ? e.message : "unknown");
+    return fail("Admin action failed.", 500);
+  }
+}
+
+========== lib/useCatalogProducts.ts ==========
+"use client";
+
+import { useEffect, useState } from "react";
+import type { Product } from "@/lib/products";
+
+export type CatalogSource = "catalog" | "fallback";
+
+// Loads customer-safe products from /api/catalog. The server falls back to the
+// built-in lib/products.ts list (with all supplier fields removed) when the
+// catalog is empty or unavailable, so the storefront never goes blank and
+// supplier IDs never reach the browser bundle.
+export function useCatalogProducts(): {
+  products: Product[];
+  loading: boolean;
+  source: CatalogSource;
+} {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState<CatalogSource>("fallback");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch("/api/catalog", { cache: "no-store" });
+        if (!res.ok) throw new Error(`Catalog request failed (${res.status})`);
+
+        const json = await res.json();
+        const list: Product[] = Array.isArray(json?.products) ? json.products : [];
+
+        if (cancelled) return;
+
+        setProducts(list);
+        setSource(json?.source === "catalog" ? "catalog" : "fallback");
+      } catch (err) {
+        console.error("Catalog load failed:", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    const refreshCatalog = () => { void load(); };
+    void load();
+    window.addEventListener("jprime-catalog-updated", refreshCatalog);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("jprime-catalog-updated", refreshCatalog);
+    };
+  }, []);
+
+  return { products, loading, source };
+}
+
