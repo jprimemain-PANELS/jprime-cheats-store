@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, rateLimit } from "@/lib/auth";
 import {
   getGatewayAdminView,
+  inspectGatewayOrder,
   isGatewayId,
   saveGatewayConfig,
   setActiveGateway,
@@ -18,7 +19,7 @@ function fail(error: string, status = 400) {
 
 /**
  * GET  /api/admin/gateway -> current gateway settings (API keys are NEVER returned, only a masked hint).
- * POST /api/admin/gateway -> { action: "set_active" | "save_config" | "test", gateway, ... }
+ * POST /api/admin/gateway -> { action: "set_active" | "save_config" | "test" | "inspect", gateway, ... }
  * Admin session required on every call.
  */
 export async function GET(request: NextRequest) {
@@ -72,6 +73,13 @@ export async function POST(request: NextRequest) {
     if (action === "test") {
       const result = await testGateway(gateway);
       return NextResponse.json({ success: true, ok: result.ok, message: result.message }, { headers: NO_STORE });
+    }
+
+    if (action === "inspect") {
+      const orderId = String(body?.orderId || "").trim();
+      if (!/^[A-Za-z0-9_-]{4,64}$/.test(orderId)) return fail("Enter a valid order ID (letters and numbers only).");
+      const result = await inspectGatewayOrder(gateway, orderId);
+      return NextResponse.json({ success: true, ...result }, { headers: NO_STORE });
     }
 
     return fail("Unknown action.");

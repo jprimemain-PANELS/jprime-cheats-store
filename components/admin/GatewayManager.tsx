@@ -9,12 +9,13 @@ import {
   Loader2,
   RotateCcw,
   Save,
+  Search,
   ShieldCheck,
   Trash2,
   Zap,
 } from "lucide-react";
 
-type GatewayId = "xyz" | "anuj";
+type GatewayId = "xyz" | "anuj" | "paytm";
 
 interface GatewayInfo {
   id: GatewayId;
@@ -43,7 +44,7 @@ interface EditState {
   verifyUrl: string;
 }
 
-const IDS: GatewayId[] = ["xyz", "anuj"];
+const IDS: GatewayId[] = ["xyz", "anuj", "paytm"];
 
 async function gatewayRequest(options: RequestInit = {}) {
   // Authentication is the HttpOnly session cookie; the server re-checks the admin role.
@@ -66,16 +67,20 @@ export default function GatewayManager() {
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState<string>("");
   const [notes, setNotes] = useState<Partial<Record<GatewayId, { ok: boolean; text: string }>>>({});
+  const [orderIds, setOrderIds] = useState<Partial<Record<GatewayId, string>>>({});
+  const [inspections, setInspections] = useState<Partial<Record<GatewayId, { summary: string; raw: string }>>>({});
 
   const load = useCallback(async () => {
     try {
       setLoadError("");
       const data = (await gatewayRequest()) as GatewayView & { success: boolean };
       setView(data);
-      setEdit({
-        xyz: { apiKey: "", createUrl: data.gateways.xyz.createUrl, verifyUrl: data.gateways.xyz.verifyUrl },
-        anuj: { apiKey: "", createUrl: data.gateways.anuj.createUrl, verifyUrl: data.gateways.anuj.verifyUrl },
-      });
+      const next = {} as Record<GatewayId, EditState>;
+      for (const id of IDS) {
+        const g = data.gateways[id];
+        next[id] = { apiKey: "", createUrl: g.createUrl, verifyUrl: g.verifyUrl };
+      }
+      setEdit(next);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not load gateway settings.");
     } finally {
@@ -99,6 +104,32 @@ export default function GatewayManager() {
       } else {
         note(id, true, okText || "Saved.");
         await load();
+      }
+    } catch (e) {
+      note(id, false, e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function inspect(id: GatewayId) {
+    const orderId = (orderIds[id] || "").trim();
+    if (!orderId) {
+      note(id, false, "Paste an order ID first (for example GRAM4EB00B3C).");
+      return;
+    }
+    setBusy(`${id}:inspect`);
+    try {
+      const data = await gatewayRequest({ method: "POST", body: JSON.stringify({ gateway: id, action: "inspect", orderId }) });
+      if (!data.ok) {
+        note(id, false, String(data.message || "Gateway check failed."));
+        setInspections((prev) => ({ ...prev, [id]: undefined }));
+      } else {
+        setInspections((prev) => ({
+          ...prev,
+          [id]: { summary: String(data.interpreted || `HTTP ${data.httpStatus ?? ""}`), raw: String(data.raw || "") },
+        }));
+        setNotes((prev) => ({ ...prev, [id]: undefined }));
       }
     } catch (e) {
       note(id, false, e instanceof Error ? e.message : "Something went wrong.");
@@ -167,7 +198,7 @@ export default function GatewayManager() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
         {IDS.map((id) => {
           const g = view.gateways[id];
           const e = edit[id];
@@ -312,6 +343,40 @@ export default function GatewayManager() {
                 )}
               </div>
 
+              {/* troubleshooting: what does the gateway say about one order? */}
+              {id !== "xyz" && (
+                <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Check an order (troubleshooting)
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      value={orderIds[id] || ""}
+                      onChange={(ev) => setOrderIds({ ...orderIds, [id]: ev.target.value })}
+                      placeholder="Order ID e.g. GRAM4EB00B3C"
+                      spellCheck={false}
+                      className="min-w-0 flex-1 rounded-lg bg-slate-950 border border-slate-700 focus:border-indigo-500 outline-none px-3 py-2 text-xs font-mono text-slate-200"
+                    />
+                    <button
+                      onClick={() => inspect(id)}
+                      disabled={!!busy}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-40 px-3 py-2 rounded-lg transition-colors cursor-pointer shrink-0"
+                    >
+                      {busy === `${id}:inspect` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                      Check
+                    </button>
+                  </div>
+                  {inspections[id] && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold text-amber-300">{inspections[id]!.summary}</p>
+                      <pre className="max-h-48 overflow-auto rounded-lg bg-black/40 border border-slate-800 p-2.5 text-[10px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all">
+                        {inspections[id]!.raw}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {n && (
                 <div
                   className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
@@ -333,6 +398,8 @@ export default function GatewayManager() {
         <p>• Switching affects <span className="text-slate-200">new</span> orders only. A payment already in progress is always verified on the gateway that created it.</p>
         <p>• API keys are stored server-side and are never sent back to this page; only the last 4 characters are shown.</p>
         <p>• &ldquo;Test connection&rdquo; looks up a fake order. It creates nothing and moves no money.</p>
+        <p>• ANUJ (FamPay) and PAYTM (ANUJ) use the same provider but need their own API key each. Keep one key per card.</p>
+        <p>• &ldquo;Check an order&rdquo; shows exactly what the provider answers for an order ID. If it says PENDING after the customer paid, the provider has not detected the payment yet.</p>
       </div>
     </div>
   );

@@ -7,6 +7,9 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
  *  - "xyz"  : the original FamPay gateway (xyzcheats.com). Customer must type the UTR.
  *  - "anuj" : the new FamPay gateway (gateway.anujbots.in). No UTR needed; the order is
  *             confirmed with the order_id only.
+ *  - "paytm": the Paytm bank account on the SAME provider (gateway.anujbots.in) but with its
+ *             OWN API key. Works exactly like "anuj"; it is a separate slot so you can keep
+ *             the FamPay key and the Paytm key side by side and switch in Admin -> Payments.
  *
  * The ACTIVE gateway (used for NEW orders) and each gateway's URLs / API key can be changed
  * from Admin -> Payments. Every order remembers the gateway that created it (`gateway`
@@ -14,12 +17,12 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
  * active gateway is switched while someone is paying.
  *
  * Settings live in the `app_settings` table (service-role only). If the table does not
- * exist yet, the code falls back to environment variables (FP_API_KEY / ANUJ_API_KEY and
- * PAYMENT_GATEWAY), so nothing breaks before the SQL is run.
+ * exist yet, the code falls back to environment variables (FP_API_KEY / ANUJ_API_KEY /
+ * PAYTM_API_KEY and PAYMENT_GATEWAY), so nothing breaks before the SQL is run.
  */
 
-export type GatewayId = "xyz" | "anuj";
-export const GATEWAY_IDS: GatewayId[] = ["xyz", "anuj"];
+export type GatewayId = "xyz" | "anuj" | "paytm";
+export const GATEWAY_IDS: GatewayId[] = ["xyz", "anuj", "paytm"];
 
 export const GATEWAY_META: Record<
   GatewayId,
@@ -48,10 +51,23 @@ export const GATEWAY_META: Record<
     needsUtr: false,
     description: "New gateway. No UTR needed: payment is detected automatically from the order ID.",
   },
+  paytm: {
+    label: "PAYTM (ANUJ)",
+    envKey: "PAYTM_API_KEY",
+    defaultCreateUrl: "https://gateway.anujbots.in/autoqr.php",
+    defaultVerifyUrl: "https://gateway.anujbots.in/autoverify.php",
+    needsUtr: false,
+    description: "Paytm bank account on the ANUJ provider. Own API key. No UTR needed: payment is detected automatically.",
+  },
 };
 
+/** "anuj" and "paytm" speak the same autoqr.php / autoverify.php protocol. */
+export function usesAutoQr(id: GatewayId): boolean {
+  return id === "anuj" || id === "paytm";
+}
+
 export function isGatewayId(value: unknown): value is GatewayId {
-  return value === "xyz" || value === "anuj";
+  return value === "xyz" || value === "anuj" || value === "paytm";
 }
 
 /** Orders created before the `gateway` column existed were all created on xyz. */
@@ -237,7 +253,7 @@ export async function createGatewayOrder(cfg: GatewayConfig, amount: number): Pr
     return { ok: false, error: "Payment gateway returned an unexpected amount", httpStatus: 502 };
   }
 
-  if (cfg.id === "anuj") {
+  if (usesAutoQr(cfg.id)) {
     const orderId = String(data.order_id);
     const validSeconds = Number(data.valid_seconds);
     const seconds = Number.isFinite(validSeconds) && validSeconds > 0 ? validSeconds : 300;
@@ -324,6 +340,39 @@ export type VerifyResult =
   | { state: "expired" }
   | { state: "failed"; message: string; httpStatus: number; gatewayDown: boolean };
 
+const PAID_STATES = ["PAID", "SUCCESS", "SUCCESSFUL", "COMPLETED"];
+
+/** Reads an autoverify.php answer (anuj / paytm). Shared by real verification and the admin inspector. */
+function parseAutoVerify(id: GatewayId, body: any, httpStatus: number): VerifyResult {
+  const data = body?.data || {};
+  const message = String(body?.message || data?.message || "");
+  const code = String(data?.code || "");
+  const st = String(data?.status || "").toUpperCase();
+
+  if (code === "SUBSCRIPTION_EXPIRED" || /invalid api_key|api_key is required|subscription expired/i.test(message)) {
+    // Operator problem (plan ended / key wrong). Never show details to customers.
+    console.error("GATEWAY ACCOUNT PROBLEM:", { gateway: id, message: message.slice(0, 160) });
+    return { state: "failed", message: "Payment gateway is temporarily unavailable. Please try again shortly.", httpStatus: 502, gatewayDown: true };
+  }
+  if (PAID_STATES.includes(st)) {
+    return {
+      state: "paid",
+      amount: Number(data.amount),
+      utr: data.utr ? String(data.utr) : data.transaction_id ? String(data.transaction_id) : null,
+      payer: data.payer ? String(data.payer) : null,
+      paymentTime: data.payment_time ? String(data.payment_time) : null,
+    };
+  }
+  if (st === "PENDING") return { state: "pending" };
+  if (st === "EXPIRED") return { state: "expired" };
+
+  if (/order not found/i.test(message)) {
+    return { state: "failed", message: "Payment order not found at the gateway", httpStatus: 404, gatewayDown: false };
+  }
+  console.error("GATEWAY UNEXPECTED VERIFY RESPONSE:", { gateway: id, http: httpStatus, status: st, message: message.slice(0, 160) });
+  return { state: "failed", message: "Unable to verify payment", httpStatus: 502, gatewayDown: false };
+}
+
 export async function verifyGatewayPayment(
   cfg: GatewayConfig,
   input: { orderId: string; utr?: string }
@@ -346,35 +395,9 @@ export async function verifyGatewayPayment(
 
   const body = res.json;
 
-  /* ----- anuj ----- */
-  if (cfg.id === "anuj") {
-    const data = body?.data || {};
-    const message = String(body?.message || data?.message || "");
-    const code = String(data?.code || "");
-    const st = String(data?.status || "").toUpperCase();
-
-    if (code === "SUBSCRIPTION_EXPIRED" || /invalid api_key|api_key is required|subscription expired/i.test(message)) {
-      // Operator problem (plan ended / key wrong). Never show details to customers.
-      console.error("ANUJ GATEWAY ACCOUNT PROBLEM:", message.slice(0, 160));
-      return { state: "failed", message: "Payment gateway is temporarily unavailable. Please try again shortly.", httpStatus: 502, gatewayDown: true };
-    }
-    if (st === "PAID") {
-      return {
-        state: "paid",
-        amount: Number(data.amount),
-        utr: data.utr ? String(data.utr) : data.transaction_id ? String(data.transaction_id) : null,
-        payer: data.payer ? String(data.payer) : null,
-        paymentTime: data.payment_time ? String(data.payment_time) : null,
-      };
-    }
-    if (st === "PENDING") return { state: "pending" };
-    if (st === "EXPIRED") return { state: "expired" };
-
-    if (/order not found/i.test(message)) {
-      return { state: "failed", message: "Payment order not found at the gateway", httpStatus: 404, gatewayDown: false };
-    }
-    console.error("ANUJ GATEWAY UNEXPECTED VERIFY RESPONSE:", { http: res.httpStatus, message: message.slice(0, 160) });
-    return { state: "failed", message: "Unable to verify payment", httpStatus: 502, gatewayDown: false };
+  /* ----- anuj / paytm (same provider protocol) ----- */
+  if (usesAutoQr(cfg.id)) {
+    return parseAutoVerify(cfg.id, body, res.httpStatus);
   }
 
   /* ----- xyz (unchanged behaviour) ----- */
@@ -551,7 +574,7 @@ export async function testGateway(id: GatewayId): Promise<{ ok: boolean; message
 
   const message = String(res.json?.message || res.json?.data?.message || "").slice(0, 200);
 
-  if (id === "anuj") {
+  if (usesAutoQr(id)) {
     if (/invalid api_key|api_key is required/i.test(message)) return { ok: false, message: "Gateway reachable, but the API key was rejected." };
     if (res.json?.data?.code === "SUBSCRIPTION_EXPIRED" || /subscription expired/i.test(message)) {
       return { ok: false, message: `Gateway reachable, but the subscription has ended. ${message}` };
@@ -560,4 +583,46 @@ export async function testGateway(id: GatewayId): Promise<{ ok: boolean; message
   }
 
   return { ok: true, message: `Gateway reachable (HTTP ${res.httpStatus}).${message ? ` Reply: ${message}` : ""}` };
+}
+
+/**
+ * Admin troubleshooting: asks the gateway about ONE real order and returns exactly what it
+ * answered (API key removed). Use it when a customer paid but the page keeps waiting: if the
+ * provider itself says PENDING / "Order not found", the problem is on the provider side
+ * (their detection of the payment), not in this website.
+ */
+export async function inspectGatewayOrder(
+  id: GatewayId,
+  orderId: string
+): Promise<{ ok: boolean; message: string; httpStatus?: number; interpreted?: string; raw?: string }> {
+  const cfg = await getGatewayConfig(id, true);
+  if (!cfg.apiKey) return { ok: false, message: `No API key saved for ${GATEWAY_META[id].label}.` };
+
+  const url = safeUrl(cfg.verifyUrl);
+  if (!url) return { ok: false, message: "Verify URL is invalid." };
+
+  url.searchParams.set("order_id", orderId);
+  url.searchParams.set("api_key", cfg.apiKey);
+  if (id === "xyz") url.searchParams.set("utr", "000000000000");
+
+  const res = await getJson(url);
+  if (res.network) return { ok: false, message: "Could not reach the gateway (timeout or network error)." };
+  if (!res.json) return { ok: false, message: `Gateway answered HTTP ${res.httpStatus} but not valid JSON.`, httpStatus: res.httpStatus };
+
+  const raw = JSON.stringify(res.json, null, 2).split(cfg.apiKey).join("[api key hidden]").slice(0, 3000);
+
+  let interpreted = "";
+  if (usesAutoQr(id)) {
+    const parsed = parseAutoVerify(id, res.json, res.httpStatus);
+    interpreted =
+      parsed.state === "paid"
+        ? `PAID: the website WOULD credit ₹${parsed.amount}`
+        : parsed.state === "pending"
+        ? "PENDING: the gateway has not detected this payment yet"
+        : parsed.state === "expired"
+        ? "EXPIRED: the 5-minute window passed without a detected payment"
+        : `Not usable: ${parsed.message}`;
+  }
+
+  return { ok: true, message: "Gateway answered.", httpStatus: res.httpStatus, interpreted, raw };
 }
