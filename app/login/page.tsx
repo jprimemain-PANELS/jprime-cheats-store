@@ -950,17 +950,20 @@ const LoginStyles = () => (
       to   { transform: translateY(1.8px); }
     }
 
-    /* MOBILE / TABLET: Kelly stands on the top edge of the card (her lower body is
-       hidden behind it) on the right, with the pet on the left. Her head, shoulders
-       and arms stay fully visible above the card. */
+    /* MOBILE / TABLET: Kelly is a full-height backdrop standing BEHIND the centered
+       card (same idea as desktop). She is sized so her head + hair sit in the free
+       space above the card, her body runs down behind the card, and the very bottom
+       fades out softly. Her right side peeks out past the card edge. */
     @media (max-width: 900px) {
-      .card-wrap { margin-top: calc(min(44vh, 340px) - 56px) !important; }
       .kelly-stage {
-        position: absolute;
-        --kh: min(44vh, 340px);
-        bottom: calc(100% - 64px);
+        position: fixed;
+        top: 0;
+        bottom: auto;
         left: auto;
-        right: -4px;
+        right: -12vw;
+        --kh: clamp(420px, calc((50vh - 225px) / 0.27), 860px);
+        -webkit-mask-image: linear-gradient(to bottom, #000 76%, transparent 100%);
+        mask-image: linear-gradient(to bottom, #000 76%, transparent 100%);
       }
     }
 
