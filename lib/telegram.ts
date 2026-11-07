@@ -177,12 +177,22 @@ async function tg(token: string, method: string, payload: Record<string, unknown
   }
 }
 
-function sendMessage(token: string, chatId: string, text: string) {
+/** Shop link shown in every purchase notification (text link + inline button). */
+const SITE_URL = "https://www.jprimecheats.store/";
+const SITE_LABEL = "jprimecheats.store";
+
+/** Inline "Buy Now" button shown under the message (Telegram URL button). */
+const BUY_MARKUP = {
+  inline_keyboard: [[{ text: "🛒  Buy Access Now  ➜", url: SITE_URL }]],
+};
+
+function sendMessage(token: string, chatId: string, text: string, replyMarkup?: Record<string, unknown>) {
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
 }
 
@@ -200,31 +210,68 @@ export interface PurchaseNotice {
   key?: string;
 }
 
+/** Wraps a value onto several lines (by words) so long product names don't stretch the card. */
+function wrapValue(value: string, width = 24): string[] {
+  const words = String(value ?? "").trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    if (!cur) cur = w;
+    else if ((cur + " " + w).length <= width) cur += " " + w;
+    else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : ["-"];
+}
+
+const LABEL_W = 8; // width of the longest label ("Duration")
+const INDENT = " ".repeat(LABEL_W + 6);
+
+/** One aligned card row: icon + padded label + ":" + (wrapped) value. */
+function cardRow(icon: string, label: string, value: string): string {
+  const [first, ...rest] = wrapValue(value);
+  const head = `${icon} ${label.padEnd(LABEL_W)} : ${esc(first)}`;
+  return [head, ...rest.map((l) => `${INDENT}${esc(l)}`)].join("\n");
+}
+
 function buildPurchaseMessage(n: PurchaseNotice, mode: KeyMode): string {
-  const time = new Date().toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: "Asia/Kolkata",
-  });
+  const time = new Date()
+    .toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Kolkata",
+    })
+    .replace(/\b(am|pm)\b/i, (m) => m.toUpperCase());
 
   const key = String(n.key ?? "").trim();
-  let keyLine = "";
-  if (key && mode === "full") keyLine = `\n🔑 Key : <code>${esc(key)}</code>`;
-  else if (key && mode === "masked") keyLine = `\n🔑 Key : <code>${esc(maskKey(key))}</code>`;
 
-  return `🛒 <b>New Purchase${n.method ? ` via ${esc(n.method)}` : ""}</b>
+  const details = [
+    cardRow("👤", "User", n.username),
+    cardRow("📦", "Product", n.product),
+    cardRow("⏳", "Duration", n.duration),
+    cardRow("💰", "Paid", `₹${n.amount}`),
+    cardRow("🕒", "Time", time),
+  ].join("\n");
 
-👤 User : <b>${esc(n.username)}</b>
-📦 Product : <b>${esc(n.product)}</b>
-⏳ Duration : <b>${esc(n.duration)}</b>
-💰 Paid : <b>₹${esc(n.amount)}</b>
-🕒 Time : <b>${esc(time)}</b>${keyLine}
+  // masked -> shown inside the card; full -> shown below the card as tap-to-copy; hidden -> no key row.
+  const keyInCard = key && mode === "masked" ? "\n" + cardRow("🔑", "License", maskKey(key)) : "";
+  const keyBelow = key && mode === "full" ? `\n🔑 <b>License</b> : <code>${esc(key)}</code>` : "";
 
-✅ <b>Key Released</b>`;
+  const status = cardRow("🛡", "Status", "Key Released ✅");
+
+  return `🛒 <b>NEW PURCHASE</b>${n.method ? `  ·  via ${esc(n.method)}` : ""}
+━━━━━━━━━━━━━━━━━━━━━━
+<pre>${details}
+${"─".repeat(30)}${keyInCard}
+${status}</pre>${keyBelow}
+────  🌐 <a href="${SITE_URL}">${SITE_LABEL}</a>  ────`;
 }
 
 /** Best effort: never throws, so a Telegram problem can never lose a customer's key. */
@@ -239,7 +286,7 @@ export async function sendTelegramPurchase(notice: PurchaseNotice) {
       targets.map(async (d) => {
         const token = resolveToken(d, list);
         if (!token || !d.chat_id) return;
-        const result = await sendMessage(token, d.chat_id, buildPurchaseMessage(notice, d.key_mode));
+        const result = await sendMessage(token, d.chat_id, buildPurchaseMessage(notice, d.key_mode), BUY_MARKUP);
         if (!result.ok) {
           console.error("TELEGRAM SEND FAILED:", { destination: d.name, error: result.error });
         }
@@ -425,7 +472,7 @@ export async function testTelegramDestination(
       { username: "demo_user", product: "Sample Product", duration: "1 DAY", amount: 100, method: "Test", key: "AB12CD34EF56" },
       d.key_mode
     );
-  const res = await sendMessage(token, d.chat_id, text);
+  const res = await sendMessage(token, d.chat_id, text, custom ? undefined : BUY_MARKUP);
   return res.ok
     ? { ok: true, message: `Sent to "${d.name}". Check Telegram.` }
     : { ok: false, message: friendlyTelegramError(res.error) };
