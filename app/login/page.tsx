@@ -465,10 +465,17 @@ const BackgroundLayer = () => (
 /* One copy of the Kelly image. Each copy is masked to a body region
    (legs / torso / head / arms / clothing) so the regions can move
    independently while the feet stay anchored. */
-const KellyLayer = ({ className }: { className: string }) => (
+const KellyLayer = ({ className, nested = false }: { className: string; nested?: boolean }) => (
   <div className={`k-layer ${className}`}>
-    {/* eslint-disable-next-line @next/next/no-img-element */}
-    <img src={KELLY_IMAGE} alt="" draggable={false} />
+    {nested ? (
+      <div className="k-nod">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={KELLY_IMAGE} alt="" draggable={false} />
+      </div>
+    ) : (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={KELLY_IMAGE} alt="" draggable={false} />
+    )}
   </div>
 );
 
@@ -476,19 +483,24 @@ const KellyLayer = ({ className }: { className: string }) => (
    faces the right direction, so it is NOT mirrored in code any more.
    Idle animation = layered body parts (see styles), looping forever. */
 const KellyBackdrop = () => (
-  <div className="kelly-stage pointer-events-none absolute bottom-0 z-[5] select-none" aria-hidden="true">
+  <div className="kelly-stage pointer-events-none z-[5] select-none" aria-hidden="true">
     {/* soft purple glow behind her */}
     <div className="absolute inset-x-[10%] bottom-[8%] top-[18%] rounded-full bg-fuchsia-600/25 blur-[90px]" />
     <div className="kelly-rig relative h-full w-full">
-      {/* legs / hips: never move, so the feet stay anchored */}
-      <KellyLayer className="k-base" />
+      {/* hips + legs: tiny counter-sway, pivots at the bottom so the feet never move */}
+      <KellyLayer className="k-hips" />
 
-      {/* everything above the hips sways + bounces together */}
+      {/* upper body: slow weight shift around the waist */}
       <div className="k-upper absolute inset-0">
-        <KellyLayer className="k-torso" />
-        <KellyLayer className="k-cloth" />
-        <KellyLayer className="k-arms" />
-        <KellyLayer className="k-head" />
+        {/* chest rises and falls gently (breathing) */}
+        <div className="k-breath absolute inset-0">
+          <KellyLayer className="k-torso" />
+          <KellyLayer className="k-sh-l" />
+          <KellyLayer className="k-sh-r" />
+          <KellyLayer className="k-arm-l" />
+          <KellyLayer className="k-arm-r" />
+          <KellyLayer className="k-head" nested />
+        </div>
       </div>
     </div>
   </div>
@@ -703,15 +715,14 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#07040f] text-white flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden font-sans antialiased selection:bg-fuchsia-500 selection:text-white">
       <BackgroundLayer />
 
-      {/* Big Kelly standing behind the card, left side */}
-      <KellyBackdrop />
-
       <main className="relative z-10 w-full flex flex-col" style={{ maxWidth: SIZES.cardMaxWidth }}>
         {/* wrapper lets the pet sit on the card edge without being clipped */}
-        <div className="relative mt-10">
+        <div className="card-wrap relative mt-10">
+          {/* Kelly stands behind the card (desktop: right side of screen, mobile: peeks over the card) */}
+          <KellyBackdrop />
           <PetMascot />
 
-          <section className="login-panel relative overflow-hidden rounded-3xl border border-violet-300/20 bg-[#080511]/92 p-3 shadow-[0_28px_80px_rgba(0,0,0,0.7)] backdrop-blur-2xl">
+          <section className="login-panel relative z-10 overflow-hidden rounded-3xl border border-violet-300/20 bg-[#080511]/92 p-3 shadow-[0_28px_80px_rgba(0,0,0,0.7)] backdrop-blur-2xl">
             <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-400/80 to-transparent" />
             <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-violet-600/10 blur-3xl" />
 
@@ -779,6 +790,8 @@ const LoginStyles = () => (
 
     /* ================= KELLY (behind card, left, mirrored) ================= */
     .kelly-stage {
+      position: fixed;
+      bottom: 0;
       --kh: min(88vh, 880px);
       height: var(--kh);
       width: calc(var(--kh) * 0.667);
@@ -786,13 +799,19 @@ const LoginStyles = () => (
       left: calc(50% + ${SIZES.cardMaxWidth / 2}px - var(--kh) * 0.05);
       filter: drop-shadow(0 0 28px rgba(192, 38, 211, 0.35));
     }
-    /* ---- Kelly layered idle animation ----
-       One loop = 1.6s: sways left -> right -> left (rotation around the hips)
-       and bounces up/down twice per loop (once on each side).
-       Every keyframe set starts and ends on the same pose = seamless loop.
-       Every layer is a full-size copy of the PNG shown through a soft mask. */
+    /* ---- Kelly natural idle (relaxed, confident, NO shaking) ----
+       Every motion is a slow, smooth back-and-forth ("alternate" + ease-in-out),
+       so it flows like a sine wave and loops seamlessly with no jerks.
+       The body parts share one rhythm (2.6s per side, 5.2s for a full left-right
+       cycle) but start at different phases, so the movement reads as ONE
+       coordinated motion:
+         hips push one way  ->  waist/torso lean the other way
+         shoulders roll one after the other  ->  head tilts last and nods softly
+         arms swing a little later than the body, each on its own timing. */
+    .kelly-rig { --side: 2.6s; }
+
     .k-layer { position: absolute; inset: 0; will-change: transform; }
-    .k-layer img {
+    .k-layer img, .k-nod img {
       display: block;
       width: 100%;
       height: 100%;
@@ -801,80 +820,147 @@ const LoginStyles = () => (
       object-position: bottom;
       user-select: none;
     }
+    .k-nod { position: absolute; inset: 0; will-change: transform; }
 
-    /* legs: static (feet anchored) - only the lower part of the image */
-    .k-base {
-      -webkit-mask-image: linear-gradient(to bottom, transparent 68%, #000 80%);
-      mask-image: linear-gradient(to bottom, transparent 68%, #000 80%);
+    /* ---------- body-part masks (soft edges hide the seams) ---------- */
+    .k-hips {
+      -webkit-mask-image: linear-gradient(to bottom, transparent 66%, #000 78%);
+      mask-image: linear-gradient(to bottom, transparent 66%, #000 78%);
     }
-    /* torso + shoulders + sleeves */
     .k-torso {
-      -webkit-mask-image: linear-gradient(to bottom, transparent 25%, #000 33%, #000 78%, transparent 90%);
-      mask-image: linear-gradient(to bottom, transparent 25%, #000 33%, #000 78%, transparent 90%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 25%, #000 33%, #000 76%, transparent 88%);
+      mask-image: linear-gradient(to bottom, transparent 25%, #000 33%, #000 76%, transparent 88%);
     }
-    /* head + hair */
+    .k-sh-l {
+      -webkit-mask-image: radial-gradient(ellipse 15% 7% at 38% 40%, #000 70%, transparent 100%);
+      mask-image: radial-gradient(ellipse 15% 7% at 38% 40%, #000 70%, transparent 100%);
+    }
+    .k-sh-r {
+      -webkit-mask-image: radial-gradient(ellipse 15% 7% at 83% 38%, #000 70%, transparent 100%);
+      mask-image: radial-gradient(ellipse 15% 7% at 83% 38%, #000 70%, transparent 100%);
+    }
+    .k-arm-l {
+      -webkit-mask-image: radial-gradient(ellipse 30% 14% at 24% 57%, #000 78%, transparent 100%);
+      mask-image: radial-gradient(ellipse 30% 14% at 24% 57%, #000 78%, transparent 100%);
+    }
+    .k-arm-r {
+      -webkit-mask-image: radial-gradient(ellipse 22% 24% at 82% 62%, #000 72%, transparent 100%);
+      mask-image: radial-gradient(ellipse 22% 24% at 82% 62%, #000 72%, transparent 100%);
+    }
     .k-head {
       -webkit-mask-image: linear-gradient(to bottom, #000 28%, transparent 36%);
       mask-image: linear-gradient(to bottom, #000 28%, transparent 36%);
-      transform-origin: 66% 31%;
-      animation: kHead 1.6s ease-in-out infinite;
-      animation-delay: -0.15s;
-    }
-    /* hands + gun */
-    .k-arms {
-      -webkit-mask-image: radial-gradient(ellipse 30% 13% at 26% 55%, #000 78%, transparent 100%);
-      mask-image: radial-gradient(ellipse 30% 13% at 26% 55%, #000 78%, transparent 100%);
-      transform-origin: 62% 40%;
-      animation: kArms 1.6s ease-in-out infinite;
-      animation-delay: -0.25s;
-    }
-    /* right sleeve + jacket body (cloth follow-through) */
-    .k-cloth {
-      -webkit-mask-image: radial-gradient(ellipse 26% 24% at 78% 62%, #000 75%, transparent 100%);
-      mask-image: radial-gradient(ellipse 26% 24% at 78% 62%, #000 75%, transparent 100%);
-      transform-origin: 70% 40%;
-      animation: kCloth 1.6s ease-in-out infinite;
-      animation-delay: -0.35s;
     }
 
-    /* whole upper body: pivot at the hips */
+    /* ---------- motions ---------- */
+    .k-upper, .k-hips, .k-breath, .k-sh-l, .k-sh-r, .k-arm-l, .k-arm-r, .k-head, .k-nod {
+      animation-timing-function: ease-in-out;
+      animation-iteration-count: infinite;
+      animation-direction: alternate;
+    }
+
+    /* 1) weight shift: upper body leans around the waist */
     .k-upper {
-      transform-origin: 50% 88%;
-      animation: kUpper 1.6s ease-in-out infinite;
-      will-change: transform;
+      transform-origin: 50% 76%;
+      animation-name: kShift;
+      animation-duration: var(--side);
     }
-    @keyframes kUpper {
-      0%, 100% { transform: rotate(-0.8deg) translateY(0); }
-      25%      { transform: rotate(0deg) translateY(-4px); }
-      50%      { transform: rotate(0.8deg) translateY(0); }
-      75%      { transform: rotate(0deg) translateY(-4px); }
-    }
-    /* head: counter-tilts and lags behind the body */
-    @keyframes kHead {
-      0%, 100% { transform: rotate(1.6deg) translate(1px, 0); }
-      25%      { transform: rotate(0deg) translate(0, -1px); }
-      50%      { transform: rotate(-1.6deg) translate(-1px, 0); }
-      75%      { transform: rotate(0deg) translate(0, -1px); }
-    }
-    /* arms / gun: small lagging swing */
-    @keyframes kArms {
-      0%, 100% { transform: rotate(0.9deg) translateY(1px); }
-      25%      { transform: rotate(0deg) translateY(-1px); }
-      50%      { transform: rotate(-0.9deg) translateY(1px); }
-      75%      { transform: rotate(0deg) translateY(-1px); }
-    }
-    /* clothing: tiny skew sway */
-    @keyframes kCloth {
-      0%, 100% { transform: rotate(0.6deg) skewX(0.5deg); }
-      50%      { transform: rotate(-0.6deg) skewX(-0.5deg); }
+    @keyframes kShift {
+      from { transform: rotate(-0.75deg) translateX(-3px); }
+      to   { transform: rotate(0.75deg) translateX(3px); }
     }
 
-    /* small screens: she goes mostly behind the card as a faded backdrop */
+    /* 2) hips counter-sway (opposite way to the torso); pivot = bottom, feet stay put */
+    .k-hips {
+      transform-origin: 50% 100%;
+      animation-name: kHips;
+      animation-duration: var(--side);
+    }
+    @keyframes kHips {
+      from { transform: rotate(0.5deg); }
+      to   { transform: rotate(-0.5deg); }
+    }
+
+    /* 3) breathing: chest rises a touch */
+    .k-breath {
+      animation-name: kBreath;
+      animation-duration: calc(var(--side) / 2);
+    }
+    @keyframes kBreath {
+      from { transform: translateY(0); }
+      to   { transform: translateY(-2px); }
+    }
+
+    /* 4) shoulder rolls: left and right a quarter-cycle apart */
+    .k-sh-l {
+      transform-origin: 50% 40%;
+      animation-name: kShoulder;
+      animation-duration: calc(var(--side) / 2);
+    }
+    .k-sh-r {
+      transform-origin: 50% 40%;
+      animation-name: kShoulder;
+      animation-duration: calc(var(--side) / 2);
+      animation-delay: calc(var(--side) / -4);
+    }
+    @keyframes kShoulder {
+      from { transform: translateY(-2px) rotate(-0.5deg); }
+      to   { transform: translateY(1px) rotate(0.4deg); }
+    }
+
+    /* 5) arms: gentle swing, each arm on its own timing and a bit behind the body */
+    .k-arm-l {
+      transform-origin: 37% 40%;
+      animation-name: kArmL;
+      animation-duration: var(--side);
+      animation-delay: calc(var(--side) / -5);
+    }
+    @keyframes kArmL {
+      from { transform: rotate(-1deg); }
+      to   { transform: rotate(1.1deg); }
+    }
+    .k-arm-r {
+      transform-origin: 82% 38%;
+      animation-name: kArmR;
+      animation-duration: calc(var(--side) * 1.25);
+      animation-delay: calc(var(--side) / -2);
+    }
+    @keyframes kArmR {
+      from { transform: rotate(0.9deg); }
+      to   { transform: rotate(-1deg); }
+    }
+
+    /* 6) head: soft tilt that follows the body a moment later + a slow, small nod */
+    .k-head {
+      transform-origin: 66% 31%;
+      animation-name: kHeadTilt;
+      animation-duration: var(--side);
+      animation-delay: calc(var(--side) / -6);
+    }
+    @keyframes kHeadTilt {
+      from { transform: rotate(1.5deg); }
+      to   { transform: rotate(-1.5deg); }
+    }
+    .k-nod {
+      animation-name: kNod;
+      animation-duration: calc(var(--side) * 0.8);
+    }
+    @keyframes kNod {
+      from { transform: translateY(0); }
+      to   { transform: translateY(1.8px); }
+    }
+
+    /* MOBILE / TABLET: Kelly stands on the top edge of the card (her lower body is
+       hidden behind it) on the right, with the pet on the left. Her head, shoulders
+       and arms stay fully visible above the card. */
     @media (max-width: 900px) {
+      .card-wrap { margin-top: calc(min(44vh, 340px) - 56px) !important; }
       .kelly-stage {
-        --kh: min(72vh, 700px);
-        left: calc(50% + ${SIZES.cardMaxWidth / 2}px - var(--kh) * 0.4);
-        opacity: 0.55;
+        position: absolute;
+        --kh: min(44vh, 340px);
+        bottom: calc(100% - 64px);
+        left: auto;
+        right: -4px;
       }
     }
 
