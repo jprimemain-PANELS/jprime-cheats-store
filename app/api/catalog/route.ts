@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allProducts } from "@/lib/products";
 import type { Product, PriceTier } from "@/lib/products";
+import { deliveryModeForTier, summarizeFulfillment } from "@/lib/delivery";
 
 export const dynamic = "force-dynamic";
 
@@ -42,9 +43,12 @@ function toPublicProduct(
         return null;
       }
 
+      // Safe, public delivery flag only. The supplier, seller product ids and variant ids
+      // are read here to decide it and are NEVER copied into the response.
       const tier: PriceTier = {
         duration,
         priceINR,
+        deliveryMode: deliveryModeForTier(p ?? {}, d.fulfillmentType),
       };
 
       const reseller = formatRupees(
@@ -107,13 +111,11 @@ function toPublicProduct(
         : "ONLINE",
   };
 
-  if (
-    d.fulfillmentType === "API" ||
-    d.fulfillmentType === "LOCAL"
-  ) {
-    product.fulfillmentType =
-      d.fulfillmentType;
-  }
+  // Product-level summary derived from the durations (kept for older code). The storefront
+  // decides stock handling per duration using tier.deliveryMode.
+  product.fulfillmentType = summarizeFulfillment(
+    prices.map((t) => t.deliveryMode ?? "LOCAL")
+  );
 
   if (
     typeof d.videoUrl === "string" &&
@@ -135,7 +137,14 @@ function fallbackProducts(): Product[] {
       name: p.name,
       category: p.category,
       prices: p.prices.map((t) => {
-        const tier: PriceTier = { duration: t.duration, priceINR: t.priceINR };
+        const tier: PriceTier = {
+          duration: t.duration,
+          priceINR: t.priceINR,
+          deliveryMode: deliveryModeForTier(
+            { seller1Pid: p.sellerPid, sellerDuration: t.sellerDuration, seller2VariantId: t.seller2VariantId },
+            p.fulfillmentType
+          ),
+        };
         if (t.resellerPrice) tier.resellerPrice = t.resellerPrice;
         return tier;
       }),
@@ -143,7 +152,7 @@ function fallbackProducts(): Product[] {
       features: [...p.features],
       status: p.status,
     };
-    if (p.fulfillmentType) safe.fulfillmentType = p.fulfillmentType;
+    safe.fulfillmentType = summarizeFulfillment(safe.prices.map((t) => t.deliveryMode ?? "LOCAL"));
     if (p.videoUrl) safe.videoUrl = p.videoUrl;
     return safe;
   });

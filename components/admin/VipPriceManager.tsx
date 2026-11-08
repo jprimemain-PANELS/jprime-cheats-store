@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Crown, Loader2, Save, Trash2, AlertTriangle, ChevronDown } from "lucide-react";
+import { Crown, Loader2, Save, Trash2, AlertTriangle, ChevronDown, Copy } from "lucide-react";
 
 interface ResellerOption {
   username: string;
@@ -61,6 +61,12 @@ export default function VipPriceManager({ resellers }: { resellers: ResellerOpti
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // "product" = the original one-product editor, "all" = every product + duration on one screen.
+  const [mode, setMode] = useState<"product" | "all">("product");
+  const [gridDrafts, setGridDrafts] = useState<Record<string, string>>({});
+  const [gridFilter, setGridFilter] = useState("");
+  const [copyFrom, setCopyFrom] = useState("");
 
   // Load the product catalog (admin route) once.
   useEffect(() => {
@@ -153,6 +159,130 @@ export default function VipPriceManager({ resellers }: { resellers: ResellerOpti
   }, [productName, rows, products]);
 
   const selectedProduct = products.find((p) => p.name === productName) || null;
+
+  const keyOf = (name: string, duration: string) => `${name}::${duration}`;
+
+  const savedPrice = (name: string, duration: string): string => {
+    const found = rows.find((r) => r.product_name === name && r.duration === duration);
+    return found ? String(found.reseller_price) : "";
+  };
+
+  // Rebuild the all-products boxes from what is saved for this reseller.
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const p of products) {
+      for (const t of p.prices) next[keyOf(p.name, t.duration)] = savedPrice(p.name, t.duration);
+    }
+    setGridDrafts(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, products]);
+
+  const changedKeys = Object.keys(gridDrafts).filter((k) => {
+    const [name, ...rest] = k.split("::");
+    return (gridDrafts[k] ?? "").trim() !== savedPrice(name, rest.join("::"));
+  });
+
+  const gridProducts = products.filter((p) =>
+    gridFilter.trim() ? p.name.toLowerCase().includes(gridFilter.trim().toLowerCase()) : true
+  );
+
+  async function handleSaveAll() {
+    if (!username) return;
+
+    const prices: VipRow[] = [];
+    const remove: { product_name: string; duration: string }[] = [];
+
+    for (const p of products) {
+      for (const tier of p.prices) {
+        const k = keyOf(p.name, tier.duration);
+        const raw = (gridDrafts[k] ?? "").trim();
+        const before = savedPrice(p.name, tier.duration);
+        if (raw === before) continue;
+
+        if (raw === "") {
+          remove.push({ product_name: p.name, duration: tier.duration });
+          continue;
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value < 0) {
+          setError(`Invalid price for "${p.name}" / "${tier.duration}".`);
+          return;
+        }
+        prices.push({ product_name: p.name, duration: tier.duration, reseller_price: Math.round(value) });
+      }
+    }
+
+    if (prices.length === 0 && remove.length === 0) return;
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const result = await adminRequest("/api/admin/reseller-prices", {
+        method: "POST",
+        body: JSON.stringify({ username, prices, remove }),
+      });
+      setRows(result.prices || []);
+      setNotice(`Saved ${prices.length + remove.length} change(s) for @${username}.`);
+    } catch (err: any) {
+      setError(err?.message || "Failed to save custom prices.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Copy every custom price of one reseller to another (new resellers start from a good price list).
+  async function handleCopy(replaceAll: boolean) {
+    if (!username || !copyFrom || copyFrom === username) return;
+
+    const message = replaceAll
+      ? `Replace ALL of @${username}'s custom prices with @${copyFrom}'s prices?`
+      : `Copy @${copyFrom}'s prices to @${username}? (Same product + duration are overwritten, other prices stay.)`;
+    if (!confirm(message)) return;
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const source = await adminRequest(`/api/admin/reseller-prices?username=${encodeURIComponent(copyFrom)}`);
+      const sourceRows: VipRow[] = source.prices || [];
+
+      if (sourceRows.length === 0) {
+        setError(`@${copyFrom} has no custom prices to copy.`);
+        return;
+      }
+
+      const sourceKeys = new Set(sourceRows.map((r) => keyOf(r.product_name, r.duration)));
+      const remove = replaceAll
+        ? rows
+            .filter((r) => !sourceKeys.has(keyOf(r.product_name, r.duration)))
+            .map((r) => ({ product_name: r.product_name, duration: r.duration }))
+        : [];
+
+      const result = await adminRequest("/api/admin/reseller-prices", {
+        method: "POST",
+        body: JSON.stringify({
+          username,
+          prices: sourceRows.map((r) => ({
+            product_name: r.product_name,
+            duration: r.duration,
+            reseller_price: r.reseller_price,
+          })),
+          remove,
+        }),
+      });
+
+      setRows(result.prices || []);
+      setNotice(`Copied ${sourceRows.length} price(s) from @${copyFrom} to @${username}.`);
+    } catch (err: any) {
+      setError(err?.message || "Failed to copy prices.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleSave() {
     if (!username || !selectedProduct) return;
@@ -296,6 +426,47 @@ export default function VipPriceManager({ resellers }: { resellers: ResellerOpti
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 A custom price applies only to the selected reseller. Leave a box empty to use the common reseller price.
               </p>
+
+              {username && resellers.length > 1 && (
+                <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                    <Copy className="h-3.5 w-3.5" /> Copy prices from another reseller
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={copyFrom}
+                      onChange={(e) => setCopyFrom(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-3.5 pr-9 text-xs text-slate-100 outline-none focus:border-amber-500 appearance-none cursor-pointer"
+                    >
+                      <option value="">Copy from…</option>
+                      {resellers
+                        .filter((r) => r.username !== username)
+                        .map((r) => (
+                          <option key={r.username} value={r.username}>
+                            @{r.username}
+                          </option>
+                        ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleCopy(false)}
+                      disabled={!copyFrom || saving}
+                      className="text-[11px] font-semibold bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white py-2 rounded-lg cursor-pointer"
+                    >
+                      Copy prices
+                    </button>
+                    <button
+                      onClick={() => handleCopy(true)}
+                      disabled={!copyFrom || saving}
+                      className="text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-100 py-2 rounded-lg cursor-pointer"
+                    >
+                      Replace all
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -306,12 +477,41 @@ export default function VipPriceManager({ resellers }: { resellers: ResellerOpti
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800 gap-3 flex-wrap">
             <h2 className="text-sm font-bold text-white tracking-wide">
-              {selectedProduct && username
+              {mode === "all" && username
+                ? `Custom Prices — @${username} — all products`
+                : selectedProduct && username
                 ? `Custom Prices — @${username} — ${selectedProduct.name}`
                 : "Custom Prices"}
             </h2>
 
-            {selectedProduct && username && (
+            <div className="flex items-center gap-2">
+              {(["product", "all"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${
+                    mode === m
+                      ? "bg-amber-600 border-amber-500 text-white"
+                      : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {m === "product" ? "One product" : "All products"}
+                </button>
+              ))}
+            </div>
+
+            {mode === "all" && username && (
+              <button
+                onClick={handleSaveAll}
+                disabled={saving || changedKeys.length === 0}
+                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-all cursor-pointer"
+              >
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                Save {changedKeys.length > 0 ? `${changedKeys.length} change${changedKeys.length === 1 ? "" : "s"}` : "changes"}
+              </button>
+            )}
+
+            {mode === "product" && selectedProduct && username && (
               <button
                 onClick={handleSave}
                 disabled={saving}
@@ -338,6 +538,49 @@ export default function VipPriceManager({ resellers }: { resellers: ResellerOpti
 
           {!username ? (
             <p className="text-xs text-slate-500 py-8 text-center">Select a reseller to manage their custom prices.</p>
+          ) : mode === "all" ? (
+            <div className="space-y-4">
+              <input
+                value={gridFilter}
+                onChange={(e) => setGridFilter(e.target.value)}
+                placeholder="Search product…"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-100 outline-none focus:border-amber-500"
+              />
+              <div className="space-y-5 max-h-[560px] overflow-y-auto pr-1">
+                {gridProducts.map((p) => (
+                  <div key={p.id || p.name} className="space-y-2">
+                    <p className="text-xs font-bold text-white">{p.name}</p>
+                    {p.prices.map((tier) => {
+                      const k = keyOf(p.name, tier.duration);
+                      const dirty = (gridDrafts[k] ?? "").trim() !== savedPrice(p.name, tier.duration);
+                      return (
+                        <div
+                          key={k}
+                          className={`grid grid-cols-[1fr_100px_110px] gap-3 items-center rounded-lg border px-3 py-2 ${
+                            dirty ? "border-amber-500/50 bg-amber-500/5" : "border-slate-800 bg-slate-950/50"
+                          }`}
+                        >
+                          <span className="text-xs font-medium text-slate-300 min-w-0 truncate">{tier.duration}</span>
+                          <span className="text-xs text-slate-500 text-right tabular-nums">
+                            {tier.resellerPrice ? `₹${tier.resellerPrice}` : "—"}
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            placeholder="common"
+                            value={gridDrafts[k] ?? ""}
+                            onChange={(e) => setGridDrafts((prev) => ({ ...prev, [k]: e.target.value }))}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-2 text-xs text-slate-100 text-right outline-none focus:border-amber-500 placeholder-slate-600"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+                {gridProducts.length === 0 && <p className="text-xs text-slate-500 py-6 text-center">No products found.</p>}
+              </div>
+            </div>
           ) : !selectedProduct ? (
             <p className="text-xs text-slate-500 py-8 text-center">Select a product to set this reseller's prices.</p>
           ) : (

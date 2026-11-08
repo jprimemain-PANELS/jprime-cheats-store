@@ -8,6 +8,10 @@ export interface PriceTier {
   // Only used for products that have a sellerPid.
   sellerDuration?: string;
   seller2VariantId?: number;
+
+  // How THIS duration is delivered: "API" (Seller 1 / Seller 2) or "LOCAL" (stock keys).
+  // Set by the public catalogue (/api/catalog) and safe to show: it carries no supplier details.
+  deliveryMode?: "API" | "LOCAL";
 }
 
 export interface Product {

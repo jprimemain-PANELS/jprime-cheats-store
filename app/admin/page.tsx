@@ -35,7 +35,11 @@ import {
 } from "lucide-react";
 
 import type { Product, PriceTier } from "@/lib/products";
+import { buildStockCountMap, deliveryModeForTier, stockCountKey } from "@/lib/delivery";
 import ProductManager from "@/components/admin/ProductManager";
+import UserLedger from "@/components/admin/UserLedger";
+import CouponManager from "@/components/admin/CouponManager";
+import AllPricesEditor from "@/components/admin/AllPricesEditor";
 import VipPriceManager from "@/components/admin/VipPriceManager";
 import GatewayManager from "@/components/admin/GatewayManager";
 import TelegramManager from "@/components/admin/TelegramManager";
@@ -170,9 +174,10 @@ function SectionCard({
 }
 
 // Small stock "box" used in the redesigned Stock Matrix — one glanceable tile per duration.
-function StockBox({ duration, count }: { duration: string; count: number }) {
-  const tone =
-    count === 0
+function StockBox({ duration, count, api = false }: { duration: string; count: number; api?: boolean }) {
+  const tone = api
+    ? "bg-sky-500/10 border-sky-500/30 text-sky-400"
+    : count === 0
       ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
       : count <= 3
       ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
@@ -180,7 +185,7 @@ function StockBox({ duration, count }: { duration: string; count: number }) {
 
   return (
     <div className={`rounded-lg border px-3 py-2.5 flex flex-col items-center justify-center gap-1 text-center ${tone}`}>
-      <span className="text-sm font-bold tabular-nums">{count}</span>
+      <span className="text-sm font-bold tabular-nums">{api ? "API" : count}</span>
       <span className="text-[10px] font-medium text-slate-400 leading-tight">{duration}</span>
     </div>
   );
@@ -210,10 +215,24 @@ export default function AdminPage() {
   // Built-in product list, loaded from an admin-only endpoint
   // (keeps supplier IDs out of the public browser bundle).
   const [allProducts, setAllProducts] = useState<Product[]>([]);
+  // Products that have at least one LOCAL (stock key) duration, limited to those durations.
+  // Decided per duration, not per product: a product can mix Seller and Local durations.
   const inventoryProducts = useMemo(
-    () => allProducts.filter((product) => product.fulfillmentType !== "API"),
+    () =>
+      allProducts
+        .map((product) => ({
+          ...product,
+          prices: product.prices.filter(
+            (tier) => deliveryModeForTier(tier as any, product.fulfillmentType) === "LOCAL"
+          ),
+        }))
+        .filter((product) => product.prices.length > 0),
     [allProducts]
   );
+  // Unused keys that match no catalogue product/duration (read-only diagnostics from the server).
+  const [unmatchedStock, setUnmatchedStock] = useState<
+    { product_name: string; duration: string; count: number }[]
+  >([]);
   const [keys, setKeys] = useState<any[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -234,6 +253,7 @@ export default function AdminPage() {
   const [priceProduct, setPriceProduct] = useState<Product | null>(null);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, { priceINR: string; resellerPrice: string }>>({});
   const [isSavingPrices, setIsSavingPrices] = useState(false);
+  const [pricingMode, setPricingMode] = useState<"one" | "all" | "coupons">("one");
   const [priceError, setPriceError] = useState<string | null>(null);
   const [priceSavedAt, setPriceSavedAt] = useState<number | null>(null);
 
@@ -250,6 +270,7 @@ export default function AdminPage() {
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [ledgerUser, setLedgerUser] = useState<{ username: string; balance: number } | null>(null);
   const [editRole, setEditRole] = useState("user");
   const [balanceAction, setBalanceAction] = useState<"add" | "remove" | "none">("none");
   const [amountInput, setAmountInput] = useState("");
@@ -300,6 +321,7 @@ export default function AdminPage() {
     }
 
     const stockData: any[] = json.keys || [];
+    setUnmatchedStock(Array.isArray(json.unmatchedStock) ? json.unmatchedStock : []);
     const usersData: any[] = json.users || [];
     const walletsData: any[] = json.wallets || [];
     const purchaseData: any[] = json.purchases || [];
@@ -484,25 +506,31 @@ export default function AdminPage() {
 
   // ---- derived data ----
 
+  // One counting rule everywhere (lib/delivery.ts): unused keys, ignoring letter case and extra spaces.
+  const stockCounts = useMemo(() => buildStockCountMap(keys), [keys]);
+
   const stockMatrix = useMemo(() => {
-    return inventoryProducts.map((product) => ({
+    return allProducts.map((product) => ({
       id: product.id,
       name: product.name,
-      rows: product.prices.map((tier) => ({
-        duration: tier.duration,
-        count: keys.filter(
-          (k) => k.product_name === product.name && k.duration === tier.duration
-        ).length,
-      })),
+      rows: product.prices.map((tier) => {
+        const mode = deliveryModeForTier(tier as any, product.fulfillmentType);
+        return {
+          duration: tier.duration,
+          mode,
+          count: stockCounts.get(stockCountKey(product.name, tier.duration)) ?? 0,
+        };
+      }),
     }));
-  }, [keys, inventoryProducts]);
+  }, [stockCounts, allProducts]);
 
+  // Only LOCAL durations can run out of keys; API durations are supplied by the seller.
   const lowStockAlerts = useMemo(() => {
     const threshold = 3;
     const list: { product: string; duration: string; count: number }[] = [];
     stockMatrix.forEach((p) =>
       p.rows.forEach((r) => {
-        if (r.count <= threshold) list.push({ product: p.name, duration: r.duration, count: r.count });
+        if (r.mode === "LOCAL" && r.count <= threshold) list.push({ product: p.name, duration: r.duration, count: r.count });
       })
     );
     return list.sort((a, b) => a.count - b.count).slice(0, 8);
@@ -814,12 +842,27 @@ export default function AdminPage() {
                         <p className="text-xs font-bold text-white truncate">{product.name}</p>
                         <div className="grid grid-cols-3 gap-2">
                           {product.rows.map((row) => (
-                            <StockBox key={row.duration} duration={row.duration} count={row.count} />
+                            <StockBox key={row.duration} duration={row.duration} count={row.count} api={row.mode === "API"} />
                           ))}
                         </div>
                       </div>
                     ))}
                   </div>
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    API = delivered by Seller 1 / Seller 2, no local keys needed.
+                  </p>
+                  {unmatchedStock.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-1.5">
+                      <p className="text-[11px] font-semibold text-amber-300">
+                        {unmatchedStock.reduce((n, g) => n + g.count, 0)} unused key(s) match no product / duration in your catalogue, so customers can never receive them:
+                      </p>
+                      {unmatchedStock.slice(0, 10).map((g) => (
+                        <p key={`${g.product_name}::${g.duration}`} className="text-[11px] text-amber-200/80 break-words">
+                          {g.product_name} — {g.duration} ({g.count})
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </SectionCard>
               </div>
             </div>
@@ -882,6 +925,51 @@ export default function AdminPage() {
 
         {/* PRICING */}
         {activeTab === "pricing" && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap gap-2">
+              {([
+                { id: "one", label: "One product" },
+                { id: "all", label: "All products" },
+                { id: "coupons", label: "Coupon codes" },
+              ] as const).map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setPricingMode(m.id)}
+                  className={`text-xs font-semibold px-4 py-2 rounded-xl border cursor-pointer transition-colors ${
+                    pricingMode === m.id
+                      ? "bg-emerald-600 border-emerald-500 text-white"
+                      : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {pricingMode === "all" && (
+              <AllPricesEditor
+                key={JSON.stringify(priceOverrides).length + ":" + allProducts.length}
+                products={allProducts.map((p) => ({
+                  name: p.name,
+                  tiers: p.prices.map((tier: PriceTier) => {
+                    const live = resolvePrice(priceOverrides, p.name, tier.duration, tier);
+                    return {
+                      duration: tier.duration,
+                      retail: live.priceINR,
+                      reseller: live.resellerPrice ? live.resellerPrice : null,
+                    };
+                  }),
+                }))}
+                onSave={async (rows) => {
+                  await adminPost({ action: "save_prices", rows });
+                  await loadDashboard();
+                }}
+              />
+            )}
+
+            {pricingMode === "coupons" && <CouponManager productNames={allProducts.map((p) => p.name)} />}
+
+            {pricingMode === "one" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-4">
               <SectionCard icon={Tag} title="Select Product">
@@ -990,6 +1078,8 @@ export default function AdminPage() {
                 )}
               </SectionCard>
             </div>
+          </div>
+            )}
           </div>
         )}
 
@@ -1193,13 +1283,22 @@ export default function AdminPage() {
                           ₹{(u.wallet_balance || 0).toFixed(2)}
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => handleOpenManageModal(u)}
-                            className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                          >
-                            <Settings className="h-3.5 w-3.5" />
-                            Manage
-                          </button>
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() => setLedgerUser({ username: u.username, balance: u.wallet_balance || 0 })}
+                              className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                            >
+                              <History className="h-3.5 w-3.5" />
+                              Ledger
+                            </button>
+                            <button
+                              onClick={() => handleOpenManageModal(u)}
+                              className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                            >
+                              <Settings className="h-3.5 w-3.5" />
+                              Manage
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1210,6 +1309,15 @@ export default function AdminPage() {
           </SectionCard>
         )}
       </main>
+
+      {/* USER LEDGER (every wallet top-up and purchase of one user) */}
+      {ledgerUser && (
+        <UserLedger
+          username={ledgerUser.username}
+          balance={ledgerUser.balance}
+          onClose={() => setLedgerUser(null)}
+        />
+      )}
 
       {/* MANAGE USER MODAL */}
       {isManageModalOpen && selectedUser && (

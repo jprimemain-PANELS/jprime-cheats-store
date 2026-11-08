@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Play,
@@ -18,7 +18,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ProductVideo } from "@/components/product-video";
+import { parseVideoSource } from "@/lib/video";
+import { formatPercents, percentsFor } from "@/lib/coupons";
+import { useCoupons } from "@/lib/useCoupons";
 import {
   Dialog,
   DialogContent,
@@ -122,12 +124,103 @@ export function ProductCard({ product, index }: ProductCardProps) {
     ) ?? effectivePrices[0];
 
   /*
+   * Stock handling follows how the SELECTED duration is actually delivered:
+   *   API   -> supplier API, never blocked by local stock counts
+   *   LOCAL -> local stock keys, blocked when the count is 0
+   * (tier.deliveryMode comes from /api/catalog; the product-level flag is only a fallback.)
+   */
+  const selectedDeliveryMode: "API" | "LOCAL" =
+    selectedPrice?.deliveryMode ??
+    (product.fulfillmentType === "API" ? "API" : "LOCAL");
+  const usesLocalStock = selectedDeliveryMode === "LOCAL";
+
+  /*
+   * Coupon codes. The small hints only appear when the admin created a coupon that covers this
+   * product (public data = percentages only). The code itself is typed by the customer and the
+   * server re-checks it at purchase time. Resellers do not use coupons.
+   */
+  const couponView = useCoupons();
+  const couponPercents =
+    userRole === "reseller" ? [] : percentsFor(couponView, product.name);
+  const couponRange = formatPercents(couponPercents);
+  const [couponInput, setCouponInput] = useState("");
+  const [couponBusy, setCouponBusy] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    percent: number;
+    original: number;
+    final: number;
+    duration: string;
+  } | null>(null);
+
+  // Only counts while it was checked for the plan that is selected right now.
+  const couponActive =
+    appliedCoupon !== null && appliedCoupon.duration === selectedPrice?.duration;
+
+  async function checkCoupon(code: string, duration: string, silent = false) {
+    setCouponBusy(true);
+    if (!silent) setCouponError(null);
+
+    try {
+      const res = await fetch("/api/coupons/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, product_name: product.name, duration }),
+      });
+
+      if (res.status === 401) {
+        setAppliedCoupon(null);
+        setCouponError("Please login to use a coupon code.");
+        return;
+      }
+
+      const json = await res.json().catch(() => ({}));
+
+      if (json?.valid) {
+        setAppliedCoupon({
+          code: String(json.code),
+          percent: Number(json.percent),
+          original: Number(json.original),
+          final: Number(json.final),
+          duration,
+        });
+        setCouponError(null);
+      } else {
+        setAppliedCoupon(null);
+        setCouponError(String(json?.error || "This coupon code is not valid."));
+      }
+    } catch {
+      setCouponError("Could not check the coupon. Please try again.");
+    } finally {
+      setCouponBusy(false);
+    }
+  }
+
+  // The price changes with the plan, so re-check the same code for the newly selected plan.
+  useEffect(() => {
+    if (appliedCoupon && selectedPrice && appliedCoupon.duration !== selectedPrice.duration) {
+      checkCoupon(appliedCoupon.code, selectedPrice.duration, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDuration]);
+
+  // Demo video: YouTube (watch / youtu.be / Shorts) or a direct file. Unsafe URLs render nothing.
+  const videoSource = useMemo(
+    () => parseVideoSource(product.videoUrl),
+    [product.videoUrl]
+  );
+
+  // Ignore stock answers from a previously selected duration that arrive late.
+  const stockRequestId = useRef(0);
+
+  /*
    * Load stock whenever the selected duration changes. Role is loaded separately
    * below because wallet reads can fail independently of authentication.
    */
   useEffect(() => {
     loadStock();
-  }, [selectedDuration]);
+  }, [selectedDuration, selectedDeliveryMode]);
 
   useEffect(() => {
     loadUserData();
@@ -239,8 +332,10 @@ export function ProductCard({ product, index }: ProductCardProps) {
    * Load product stock.
    */
   async function loadStock() {
-    // API products are delivered via supplier API, so skip local database stock check
-    if (product.fulfillmentType === "API") {
+    const requestId = ++stockRequestId.current;
+
+    // API durations are delivered via the supplier API, so the local stock count is irrelevant.
+    if (!usesLocalStock) {
       setAvailableStock(999);
       return;
     }
@@ -255,6 +350,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
       const json = await res.json();
 
+      if (requestId !== stockRequestId.current) return;
+
       if (!res.ok || typeof json?.count !== "number") {
         setAvailableStock(null);
         return;
@@ -263,7 +360,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
       setAvailableStock(json.count);
     } catch (error) {
       console.error("Stock loading error:", error);
-      setAvailableStock(null);
+      if (requestId === stockRequestId.current) setAvailableStock(null);
     }
   }
 
@@ -344,6 +441,10 @@ export function ProductCard({ product, index }: ProductCardProps) {
       return 0;
     }
 
+    if (couponActive && appliedCoupon) {
+      return appliedCoupon.final;
+    }
+
     const rawPrice =
       userRole === "reseller"
         ? selectedPrice.resellerPrice || selectedPrice.priceINR
@@ -356,6 +457,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
   const formattedPrice = !pricingReady
     ? "Loading price…"
+    : couponActive && appliedCoupon
+    ? `₹${appliedCoupon.final}`
     : selectedPrice
       ? userRole === "reseller"
         ? selectedPrice.resellerPrice || selectedPrice.priceINR
@@ -371,7 +474,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
       return;
     }
 
-    if (product.fulfillmentType !== "API" && availableStock === 0) {
+    if (usesLocalStock && availableStock === 0) {
       alert("This product is currently out of stock.");
       return;
     }
@@ -417,6 +520,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
           product_name: product.name,
 
           duration: selectedPrice.duration,
+
+          coupon: couponActive && appliedCoupon ? appliedCoupon.code : undefined,
         }),
       });
 
@@ -508,6 +613,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
           product_name: product.name,
 
           duration: selectedPrice.duration,
+
+          coupon: couponActive && appliedCoupon ? appliedCoupon.code : undefined,
         }),
       });
 
@@ -610,8 +717,27 @@ export function ProductCard({ product, index }: ProductCardProps) {
             </span>
           </div>
 
-          {product.videoUrl ? (
-            <ProductVideo url={product.videoUrl} />
+          {videoSource?.kind === "youtube" ? (
+            <iframe
+              src={videoSource.embedUrl}
+              title={`${product.name} demo video`}
+              className="h-full w-full border-0"
+              loading="lazy"
+              allow="accelerometer; encrypted-media; picture-in-picture; fullscreen"
+              allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
+              sandbox="allow-scripts allow-same-origin allow-presentation"
+            />
+          ) : videoSource?.kind === "file" ? (
+            <video
+              controls
+              className="h-full w-full object-cover"
+            >
+              <source
+                src={videoSource.src}
+                type="video/mp4"
+              />
+            </video>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-violet-950/30 to-black/60">
               <div
@@ -691,9 +817,18 @@ export function ProductCard({ product, index }: ProductCardProps) {
                     <div className="mt-1 flex items-baseline gap-1.5">
                       <span className="text-base font-extrabold text-white" aria-live="polite">
                         {pricingReady ? (
-                          userRole === "reseller"
-                            ? price.resellerPrice || price.priceINR
-                            : price.priceINR
+                          isSelected && couponActive && appliedCoupon ? (
+                            <>
+                              <span className="mr-1.5 text-xs font-semibold text-white/40 line-through">
+                                ₹{appliedCoupon.original}
+                              </span>
+                              ₹{appliedCoupon.final}
+                            </>
+                          ) : userRole === "reseller" ? (
+                            price.resellerPrice || price.priceINR
+                          ) : (
+                            price.priceINR
+                          )
                         ) : (
                           <span
                             aria-label="Loading account price"
@@ -702,6 +837,12 @@ export function ProductCard({ product, index }: ProductCardProps) {
                         )}
                       </span>
                     </div>
+
+                    {pricingReady && couponRange && (
+                      <span className="mt-1 text-[10px] font-semibold text-amber-300/90">
+                        {couponRange} off with coupon
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -714,7 +855,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
               disabled={
                 !pricingReady ||
                 effectiveStatus === "MAINTENANCE" ||
-                (product.fulfillmentType !== "API" && availableStock === 0)
+                (usesLocalStock && availableStock === 0)
               }
               className="flex-1 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold text-xs tracking-wider uppercase py-5 rounded-xl shadow-[0_4px_20px_rgba(192,38,211,0.4)] transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleInitialBuyClick}
@@ -722,7 +863,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
               <ShoppingCart className="mr-2 h-4 w-4" />
               {effectiveStatus === "MAINTENANCE"
                 ? "MAINTENANCE"
-                : product.fulfillmentType !== "API" && availableStock === 0
+                : usesLocalStock && availableStock === 0
                 ? "OUT OF STOCK"
                 : "BUY NOW"}
             </Button>
@@ -741,6 +882,54 @@ export function ProductCard({ product, index }: ProductCardProps) {
               PANEL FILE
             </Button>
           </div>
+
+          {/* COUPON CODE (only when a coupon covers this product) */}
+          {couponRange && (
+            <div className="space-y-2 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] p-3">
+              <p className="text-[11px] font-semibold text-amber-200">
+                Apply coupon code for {couponRange} offer
+              </p>
+
+              {couponActive && appliedCoupon ? (
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="font-semibold text-emerald-300">
+                    ✓ {appliedCoupon.code} applied: {appliedCoupon.percent}% off (₹{appliedCoupon.original} → ₹{appliedCoupon.final})
+                  </span>
+                  <button
+                    type="button"
+                    className="cursor-pointer text-white/50 underline hover:text-white"
+                    onClick={() => {
+                      setAppliedCoupon(null);
+                      setCouponInput("");
+                      setCouponError(null);
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                    maxLength={24}
+                    placeholder="Enter coupon code"
+                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs font-semibold tracking-wider text-white outline-none placeholder:text-white/30 focus:border-amber-300/60"
+                  />
+                  <button
+                    type="button"
+                    disabled={couponBusy || !couponInput.trim() || !selectedPrice}
+                    onClick={() => selectedPrice && checkCoupon(couponInput, selectedPrice.duration)}
+                    className="cursor-pointer rounded-lg bg-amber-400/90 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-black transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {couponBusy ? "…" : "Apply"}
+                  </button>
+                </div>
+              )}
+
+              {couponError && <p className="text-[11px] text-rose-300">{couponError}</p>}
+            </div>
+          )}
         </div>
       </Card>
 

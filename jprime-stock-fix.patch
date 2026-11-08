@@ -1,0 +1,2937 @@
+diff --git a/app/admin/page.tsx b/app/admin/page.tsx
+index 914d376..1777a64 100644
+--- a/app/admin/page.tsx
++++ b/app/admin/page.tsx
+@@ -35,6 +35,7 @@ import {
+ } from "lucide-react";
+ 
+ import type { Product, PriceTier } from "@/lib/products";
++import { buildStockCountMap, deliveryModeForTier, stockCountKey } from "@/lib/delivery";
+ import ProductManager from "@/components/admin/ProductManager";
+ import VipPriceManager from "@/components/admin/VipPriceManager";
+ import GatewayManager from "@/components/admin/GatewayManager";
+@@ -170,9 +171,10 @@ function SectionCard({
+ }
+ 
+ // Small stock "box" used in the redesigned Stock Matrix — one glanceable tile per duration.
+-function StockBox({ duration, count }: { duration: string; count: number }) {
+-  const tone =
+-    count === 0
++function StockBox({ duration, count, api = false }: { duration: string; count: number; api?: boolean }) {
++  const tone = api
++    ? "bg-sky-500/10 border-sky-500/30 text-sky-400"
++    : count === 0
+       ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+       : count <= 3
+       ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+@@ -180,7 +182,7 @@ function StockBox({ duration, count }: { duration: string; count: number }) {
+ 
+   return (
+     <div className={`rounded-lg border px-3 py-2.5 flex flex-col items-center justify-center gap-1 text-center ${tone}`}>
+-      <span className="text-sm font-bold tabular-nums">{count}</span>
++      <span className="text-sm font-bold tabular-nums">{api ? "API" : count}</span>
+       <span className="text-[10px] font-medium text-slate-400 leading-tight">{duration}</span>
+     </div>
+   );
+@@ -210,10 +212,24 @@ export default function AdminPage() {
+   // Built-in product list, loaded from an admin-only endpoint
+   // (keeps supplier IDs out of the public browser bundle).
+   const [allProducts, setAllProducts] = useState<Product[]>([]);
++  // Products that have at least one LOCAL (stock key) duration, limited to those durations.
++  // Decided per duration, not per product: a product can mix Seller and Local durations.
+   const inventoryProducts = useMemo(
+-    () => allProducts.filter((product) => product.fulfillmentType !== "API"),
++    () =>
++      allProducts
++        .map((product) => ({
++          ...product,
++          prices: product.prices.filter(
++            (tier) => deliveryModeForTier(tier as any, product.fulfillmentType) === "LOCAL"
++          ),
++        }))
++        .filter((product) => product.prices.length > 0),
+     [allProducts]
+   );
++  // Unused keys that match no catalogue product/duration (read-only diagnostics from the server).
++  const [unmatchedStock, setUnmatchedStock] = useState<
++    { product_name: string; duration: string; count: number }[]
++  >([]);
+   const [keys, setKeys] = useState<any[]>([]);
+   const [users, setUsers] = useState<ManagedUser[]>([]);
+   const [purchases, setPurchases] = useState<any[]>([]);
+@@ -300,6 +316,7 @@ export default function AdminPage() {
+     }
+ 
+     const stockData: any[] = json.keys || [];
++    setUnmatchedStock(Array.isArray(json.unmatchedStock) ? json.unmatchedStock : []);
+     const usersData: any[] = json.users || [];
+     const walletsData: any[] = json.wallets || [];
+     const purchaseData: any[] = json.purchases || [];
+@@ -484,25 +501,31 @@ export default function AdminPage() {
+ 
+   // ---- derived data ----
+ 
++  // One counting rule everywhere (lib/delivery.ts): unused keys, ignoring letter case and extra spaces.
++  const stockCounts = useMemo(() => buildStockCountMap(keys), [keys]);
++
+   const stockMatrix = useMemo(() => {
+-    return inventoryProducts.map((product) => ({
++    return allProducts.map((product) => ({
+       id: product.id,
+       name: product.name,
+-      rows: product.prices.map((tier) => ({
+-        duration: tier.duration,
+-        count: keys.filter(
+-          (k) => k.product_name === product.name && k.duration === tier.duration
+-        ).length,
+-      })),
++      rows: product.prices.map((tier) => {
++        const mode = deliveryModeForTier(tier as any, product.fulfillmentType);
++        return {
++          duration: tier.duration,
++          mode,
++          count: stockCounts.get(stockCountKey(product.name, tier.duration)) ?? 0,
++        };
++      }),
+     }));
+-  }, [keys, inventoryProducts]);
++  }, [stockCounts, allProducts]);
+ 
++  // Only LOCAL durations can run out of keys; API durations are supplied by the seller.
+   const lowStockAlerts = useMemo(() => {
+     const threshold = 3;
+     const list: { product: string; duration: string; count: number }[] = [];
+     stockMatrix.forEach((p) =>
+       p.rows.forEach((r) => {
+-        if (r.count <= threshold) list.push({ product: p.name, duration: r.duration, count: r.count });
++        if (r.mode === "LOCAL" && r.count <= threshold) list.push({ product: p.name, duration: r.duration, count: r.count });
+       })
+     );
+     return list.sort((a, b) => a.count - b.count).slice(0, 8);
+@@ -814,12 +837,27 @@ export default function AdminPage() {
+                         <p className="text-xs font-bold text-white truncate">{product.name}</p>
+                         <div className="grid grid-cols-3 gap-2">
+                           {product.rows.map((row) => (
+-                            <StockBox key={row.duration} duration={row.duration} count={row.count} />
++                            <StockBox key={row.duration} duration={row.duration} count={row.count} api={row.mode === "API"} />
+                           ))}
+                         </div>
+                       </div>
+                     ))}
+                   </div>
++                  <p className="mt-3 text-[11px] text-slate-500">
++                    API = delivered by Seller 1 / Seller 2, no local keys needed.
++                  </p>
++                  {unmatchedStock.length > 0 && (
++                    <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-1.5">
++                      <p className="text-[11px] font-semibold text-amber-300">
++                        {unmatchedStock.reduce((n, g) => n + g.count, 0)} unused key(s) match no product / duration in your catalogue, so customers can never receive them:
++                      </p>
++                      {unmatchedStock.slice(0, 10).map((g) => (
++                        <p key={`${g.product_name}::${g.duration}`} className="text-[11px] text-amber-200/80 break-words">
++                          {g.product_name} — {g.duration} ({g.count})
++                        </p>
++                      ))}
++                    </div>
++                  )}
+                 </SectionCard>
+               </div>
+             </div>
+diff --git a/app/api/admin/data/route.ts b/app/api/admin/data/route.ts
+index 617a1e1..f1f432c 100644
+--- a/app/api/admin/data/route.ts
++++ b/app/api/admin/data/route.ts
+@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
+ import { supabaseAdmin } from "@/lib/supabase-admin";
+ import { requireAdmin } from "@/lib/auth";
+ import { allProducts } from "@/lib/products";
++import { countLocalStock, fetchAllUnusedStock } from "@/lib/stock";
++import { stockCountKey } from "@/lib/delivery";
+ import { creditWallet, debitWallet, getBalance, logWalletTransaction } from "@/lib/wallet";
+ 
+ export const dynamic = "force-dynamic";
+@@ -24,8 +26,10 @@ export async function GET(request: NextRequest) {
+   if (!auth.ok) return auth.response;
+ 
+   try {
++    // Stock is read page by page: a plain select() stops at the database's 1000-row response cap,
++    // which silently hid keys from the Stock Keys list and the Stock Matrix.
+     const [stock, users, wallets, purchases, prices, catalog] = await Promise.all([
+-      supabaseAdmin.from("stock_keys").select("*").eq("is_used", false),
++      fetchAllUnusedStock(),
+       supabaseAdmin.from("users").select("*"),
+       supabaseAdmin.from("wallets").select("username, balance"),
+       supabaseAdmin.from("purchase_history").select("*").order("id", { ascending: false }).limit(5000),
+@@ -33,12 +37,20 @@ export async function GET(request: NextRequest) {
+       supabaseAdmin.from("products_catalog").select("product_id, name, data").order("id", { ascending: true }),
+     ]);
+ 
+-    const firstError = stock.error || users.error || wallets.error || purchases.error || prices.error || catalog.error;
++    const firstError =
++      (stock.ok ? null : { message: stock.error }) ||
++      users.error ||
++      wallets.error ||
++      purchases.error ||
++      prices.error ||
++      catalog.error;
+     if (firstError) {
+       console.error("ADMIN DATA ERROR:", firstError.message);
+       return fail("Could not load admin data.", 500);
+     }
+ 
++    const stockKeys = stock.ok ? stock.data : [];
++
+     const safeUsers = (users.data || []).map((u: any) => {
+       const { password, ...rest } = u;
+       return rest;
+@@ -56,10 +68,28 @@ export async function GET(request: NextRequest) {
+     // for an empty catalog; importing it is handled separately by /api/admin/legacy-products.
+     const dashboardProducts = catalogProducts.length ? catalogProducts : allProducts;
+ 
++    // Diagnostics only (read-only): unused keys whose product + duration match NO catalogue entry,
++    // even after ignoring letter case and extra spaces. These are the keys a customer can never receive.
++    const knownPairs = new Set<string>();
++    for (const product of dashboardProducts as any[]) {
++      for (const tier of Array.isArray(product?.prices) ? product.prices : []) {
++        knownPairs.add(stockCountKey(product?.name, tier?.duration));
++      }
++    }
++    const unmatched = new Map<string, { product_name: string; duration: string; count: number }>();
++    for (const row of stockKeys as any[]) {
++      if (knownPairs.has(stockCountKey(row.product_name, row.duration))) continue;
++      const k = `${row.product_name}::${row.duration}`;
++      const entry = unmatched.get(k);
++      if (entry) entry.count += 1;
++      else unmatched.set(k, { product_name: String(row.product_name ?? ""), duration: String(row.duration ?? ""), count: 1 });
++    }
++
+     return NextResponse.json(
+       {
+         success: true,
+-        keys: stock.data || [],
++        keys: stockKeys,
++        unmatchedStock: Array.from(unmatched.values()).slice(0, 100),
+         users: safeUsers,
+         wallets: wallets.data || [],
+         purchases: purchases.data || [],
+@@ -85,14 +115,9 @@ export async function POST(request: NextRequest) {
+ 
+     /* ---------- stock ---------- */
+     if (action === "stock_count") {
+-      const { count, error } = await supabaseAdmin
+-        .from("stock_keys")
+-        .select("id", { count: "exact", head: true })
+-        .eq("product_name", String(body.product_name || ""))
+-        .eq("duration", String(body.duration || ""))
+-        .eq("is_used", false);
+-      if (error) return fail("Could not count stock.", 500);
+-      return NextResponse.json({ success: true, count: count ?? 0 }, { headers: NO_STORE });
++      const result = await countLocalStock(String(body.product_name || ""), String(body.duration || ""), { fresh: true });
++      if (!result.ok) return fail("Could not count stock.", 500);
++      return NextResponse.json({ success: true, count: result.data }, { headers: NO_STORE });
+     }
+ 
+     if (action === "add_stock") {
+diff --git a/app/api/catalog/route.ts b/app/api/catalog/route.ts
+index 8fae423..adc982b 100644
+--- a/app/api/catalog/route.ts
++++ b/app/api/catalog/route.ts
+@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
+ import { supabaseAdmin } from "@/lib/supabase-admin";
+ import { allProducts } from "@/lib/products";
+ import type { Product, PriceTier } from "@/lib/products";
++import { deliveryModeForTier, summarizeFulfillment } from "@/lib/delivery";
+ 
+ export const dynamic = "force-dynamic";
+ 
+@@ -42,9 +43,12 @@ function toPublicProduct(
+         return null;
+       }
+ 
++      // Safe, public delivery flag only. The supplier, seller product ids and variant ids
++      // are read here to decide it and are NEVER copied into the response.
+       const tier: PriceTier = {
+         duration,
+         priceINR,
++        deliveryMode: deliveryModeForTier(p ?? {}, d.fulfillmentType),
+       };
+ 
+       const reseller = formatRupees(
+@@ -107,13 +111,11 @@ function toPublicProduct(
+         : "ONLINE",
+   };
+ 
+-  if (
+-    d.fulfillmentType === "API" ||
+-    d.fulfillmentType === "LOCAL"
+-  ) {
+-    product.fulfillmentType =
+-      d.fulfillmentType;
+-  }
++  // Product-level summary derived from the durations (kept for older code). The storefront
++  // decides stock handling per duration using tier.deliveryMode.
++  product.fulfillmentType = summarizeFulfillment(
++    prices.map((t) => t.deliveryMode ?? "LOCAL")
++  );
+ 
+   if (
+     typeof d.videoUrl === "string" &&
+@@ -135,7 +137,14 @@ function fallbackProducts(): Product[] {
+       name: p.name,
+       category: p.category,
+       prices: p.prices.map((t) => {
+-        const tier: PriceTier = { duration: t.duration, priceINR: t.priceINR };
++        const tier: PriceTier = {
++          duration: t.duration,
++          priceINR: t.priceINR,
++          deliveryMode: deliveryModeForTier(
++            { seller1Pid: p.sellerPid, sellerDuration: t.sellerDuration, seller2VariantId: t.seller2VariantId },
++            p.fulfillmentType
++          ),
++        };
+         if (t.resellerPrice) tier.resellerPrice = t.resellerPrice;
+         return tier;
+       }),
+@@ -143,7 +152,7 @@ function fallbackProducts(): Product[] {
+       features: [...p.features],
+       status: p.status,
+     };
+-    if (p.fulfillmentType) safe.fulfillmentType = p.fulfillmentType;
++    safe.fulfillmentType = summarizeFulfillment(safe.prices.map((t) => t.deliveryMode ?? "LOCAL"));
+     if (p.videoUrl) safe.videoUrl = p.videoUrl;
+     return safe;
+   });
+diff --git a/app/api/stock-count/route.ts b/app/api/stock-count/route.ts
+index b0f1758..96ddc5e 100644
+--- a/app/api/stock-count/route.ts
++++ b/app/api/stock-count/route.ts
+@@ -1,11 +1,13 @@
+ import { NextRequest, NextResponse } from "next/server";
+-import { supabaseAdmin } from "@/lib/supabase-admin";
++import { countLocalStock } from "@/lib/stock";
+ 
+ export const dynamic = "force-dynamic";
+ 
+ const NO_STORE = { "Cache-Control": "no-store" };
+ 
+ // Public, customer-safe: only a number. The stock_keys table itself is never exposed.
++// Uses the SAME matching rule as the admin Stock Matrix and the real key reservation
++// (lib/stock.ts): unused keys only, case / spacing insensitive.
+ export async function GET(request: NextRequest) {
+   const product = String(request.nextUrl.searchParams.get("product") || "").trim();
+   const duration = String(request.nextUrl.searchParams.get("duration") || "").trim();
+@@ -14,17 +16,11 @@ export async function GET(request: NextRequest) {
+     return NextResponse.json({ count: null }, { status: 400, headers: NO_STORE });
+   }
+ 
+-  const { count, error } = await supabaseAdmin
+-    .from("stock_keys")
+-    .select("id", { count: "exact", head: true })
+-    .eq("product_name", product)
+-    .eq("duration", duration)
+-    .eq("is_used", false);
++  const result = await countLocalStock(product, duration);
+ 
+-  if (error) {
+-    console.error("STOCK COUNT ERROR:", error.message);
++  if (!result.ok) {
+     return NextResponse.json({ count: null }, { headers: NO_STORE });
+   }
+ 
+-  return NextResponse.json({ count: count ?? 0 }, { headers: NO_STORE });
++  return NextResponse.json({ count: result.data }, { headers: NO_STORE });
+ }
+diff --git a/components/admin/ProductManager.tsx b/components/admin/ProductManager.tsx
+index c14f035..4b139b1 100644
+--- a/components/admin/ProductManager.tsx
++++ b/components/admin/ProductManager.tsx
+@@ -11,45 +11,23 @@ import {
+   ChevronDown,
+   ChevronUp,
+ } from "lucide-react";
++import {
++  deliveryModeForTier,
++  hasSeller1Config,
++  hasSeller2Config,
++  normalizeStockText,
++  normalizeSupplier,
++  summarizeFulfillment,
++} from "@/lib/delivery";
++import {
++  legacyToCatalogProduct,
++  normalizeProduct,
++  routingProblems,
++  type CatalogProduct as Product,
++  type CatalogTier as PriceTier,
++} from "@/lib/catalog-edit";
+ 
+ 
+-type Supplier = "SELLER1" | "SELLER2" | "LOCAL";
+-
+-interface PriceTier {
+-  duration: string;
+-  priceINR: string;
+-  resellerPrice?: string;
+-  priceUSD?: string;
+-  sellerDuration?: string;
+-
+-  supplier?: Supplier;
+-
+-  seller1Pid?: string;
+-  seller1Duration?: string;
+-
+-  seller2VariantId?: string;
+-}
+-
+-interface Product {
+-  id: string;
+-  name: string;
+-  category: "mobile" | "pc" | "ios";
+-  fulfillmentType?: "API" | "LOCAL";
+-  updateChannel: string;
+-  features: string[];
+-  videoPlaceholder?: string;
+-  videoUrl?: string;
+-  status: "ONLINE" | "MAINTENANCE";
+-  prices: PriceTier[];
+-}
+-
+-interface CatalogRow {
+-  id: number;
+-  product_id: string;
+-  name: string;
+-  data: Product;
+-}
+-
+ const emptyProduct: Product = {
+   id: "",
+   name: "",
+@@ -65,7 +43,7 @@ const emptyProduct: Product = {
+       duration: "1 day",
+       priceINR: "",
+       resellerPrice: "",
+-      supplier: "LOCAL",
++      supplier: "",
+       seller1Pid: "",
+       seller1Duration: "",
+       seller2VariantId: "",
+@@ -73,43 +51,6 @@ const emptyProduct: Product = {
+   ],
+ };
+ 
+-function normalizeProduct(product: any): Product {
+-  return {
+-    id: String(product.id || ""),
+-    name: String(product.name || ""),
+-    category: product.category || "mobile",
+-    fulfillmentType: product.fulfillmentType || "LOCAL",
+-    updateChannel: String(product.updateChannel || ""),
+-    features:
+-      Array.isArray(product.features) && product.features.length
+-        ? product.features
+-        : [""],
+-    videoPlaceholder: String(product.videoPlaceholder || ""),
+-    videoUrl: String(product.videoUrl || ""),
+-    status: product.status === "MAINTENANCE" ? "MAINTENANCE" : "ONLINE",
+-
+-    prices:
+-      Array.isArray(product.prices) && product.prices.length
+-        ? product.prices.map((tier: any) => ({
+-            duration: String(tier.duration || ""),
+-            priceINR: String(tier.priceINR || ""),
+-            resellerPrice: String(tier.resellerPrice || ""),
+-            priceUSD: String(tier.priceUSD || ""),
+-            sellerDuration: String(tier.sellerDuration || ""),
+-
+-            supplier: tier.supplier || "LOCAL",
+-
+-            seller1Pid: String(tier.seller1Pid || ""),
+-            seller1Duration: String(
+-              tier.seller1Duration || tier.sellerDuration || ""
+-            ),
+-
+-            seller2VariantId: String(tier.seller2VariantId || ""),
+-          }))
+-        : [],
+-  };
+-}
+-
+ async function adminCatalogRequest(
+   path: string,
+   options: RequestInit = {}
+@@ -183,7 +124,11 @@ export default function ProductManager() {
+       }
+ 
+       const mergedProducts = rows.map((row: any) => {
+-        const product = normalizeProduct(row.data);
++        const product = normalizeProduct({
++          ...(row.data || {}),
++          id: row.data?.id || row.product_id,
++          name: row.data?.name || row.name,
++        });
+         return {
+           ...product,
+           status: statusesByName.get(product.name) ?? product.status,
+@@ -217,7 +162,7 @@ export default function ProductManager() {
+           duration: "1 day",
+           priceINR: "",
+           resellerPrice: "",
+-          supplier: "LOCAL",
++          supplier: "",
+           seller1Pid: "",
+           seller1Duration: "",
+           seller2VariantId: "",
+@@ -254,6 +199,22 @@ export default function ProductManager() {
+       return;
+     }
+ 
++    // Every duration needs an explicit supplier. Nothing is ever defaulted to LOCAL.
++    const problems = routingProblems(selected);
++    const blocking = problems.filter((p) => p.includes("no supplier chosen"));
++
++    if (blocking.length) {
++      alert("Choose a supplier for every duration before saving:\n\n" + blocking.join("\n"));
++      return;
++    }
++
++    if (problems.length) {
++      const goOn = window.confirm(
++        "Please check these supplier settings:\n\n" + problems.join("\n") + "\n\nSave anyway?"
++      );
++      if (!goOn) return;
++    }
++
+     const cleaned: Product = {
+       ...selected,
+ 
+@@ -273,7 +234,7 @@ export default function ProductManager() {
+           resellerPrice: String(x.resellerPrice || "").trim(),
+           priceUSD: String(x.priceUSD || "").trim(),
+ 
+-          supplier: x.supplier || "LOCAL",
++          supplier: normalizeSupplier(x.supplier) ?? "",
+ 
+           seller1Pid: String(x.seller1Pid || "").trim(),
+           seller1Duration: String(
+@@ -286,6 +247,11 @@ export default function ProductManager() {
+         })),
+     };
+ 
++    // Product-level flag is only a summary of the durations (kept for older code).
++    cleaned.fulfillmentType = summarizeFulfillment(
++      cleaned.prices.map((t) => deliveryModeForTier(t, undefined))
++    );
++
+     setSaving(true);
+ 
+     try {
+@@ -389,75 +355,70 @@ export default function ProductManager() {
+       return;
+     }
+ 
+-    const confirmed = window.confirm(
+-      `Import ${allProducts.length} existing products into the new Product Catalog?`
+-    );
+-
+-    if (!confirmed) return;
+-
+     setImporting(true);
+ 
+-    const rows = allProducts.map((product: any) => {
+-      const normalized = normalizeProduct(product);
+-
+-      /*
+-       * Existing Seller 1 products:
+-       * sellerPid belongs to the product currently.
+-       *
+-       * We copy it into every duration so the new system
+-       * has a per-duration PID.
+-       */
+-      normalized.prices = normalized.prices.map(
+-        (tier) => ({
+-          ...tier,
+-
+-          supplier:
+-            normalized.fulfillmentType === "API"
+-              ? "SELLER1"
+-              : "LOCAL",
++    try {
++      // Read the LIVE catalogue first so nothing that already exists is ever overwritten.
++      const live = await adminCatalogRequest("/api/admin/catalog");
++      const liveRows: any[] = Array.isArray(live.products) ? live.products : [];
+ 
+-          seller1Pid:
+-            product.sellerPid
+-              ? String(product.sellerPid)
+-              : "",
++      const existingIds = new Set(
++        liveRows.map((r) => String(r?.product_id ?? r?.data?.id ?? "").trim().toLowerCase())
++      );
++      const existingNames = new Set(
++        liveRows.map((r) => normalizeStockText(r?.name ?? r?.data?.name))
++      );
+ 
+-          seller1Duration:
+-            tier.sellerDuration || "",
+-        })
++      const toImport = allProducts.filter(
++        (p: any) =>
++          !existingIds.has(String(p.id ?? "").trim().toLowerCase()) &&
++          !existingNames.has(normalizeStockText(p.name))
+       );
++      const skipped = allProducts.length - toImport.length;
++
++      if (toImport.length === 0) {
++        setImporting(false);
++        alert(
++          `Nothing to import. All ${allProducts.length} built-in products already exist in your catalogue and were left untouched.`
++        );
++        return;
++      }
+ 
+-      return {
+-        product_id: normalized.id,
+-        name: normalized.name,
+-        data: normalized,
+-        updated_at: new Date().toISOString(),
+-      };
+-    });
++      const confirmed = window.confirm(
++        `Import ${toImport.length} built-in product(s) that are not in your catalogue yet?\n\n` +
++          `${skipped} product(s) already in the catalogue will NOT be changed.\n` +
++          `Supplier is detected from each product's real configuration.`
++      );
+ 
+-    try {
+-      for (const row of rows) {
++      if (!confirmed) {
++        setImporting(false);
++        return;
++      }
++
++      const notes: string[] = [];
++
++      for (const legacy of toImport) {
++        const converted = legacyToCatalogProduct(legacy, notes);
+         await adminCatalogRequest("/api/admin/catalog", {
+           method: "POST",
+-          body: JSON.stringify({
+-            product: row.data,
+-          }),
++          body: JSON.stringify({ product: converted }),
+         });
+       }
++
++      setImporting(false);
++
++      alert(
++        `${toImport.length} product(s) imported. ${skipped} existing product(s) were left untouched.` +
++          (notes.length ? `\n\nPlease review:\n\n${notes.slice(0, 15).join("\n")}` : "")
++      );
++
++      window.dispatchEvent(new Event("jprime-catalog-updated"));
++      await loadProducts();
+     } catch (error: any) {
+       console.error(error);
+       setImporting(false);
+       alert("Import failed: " + (error?.message || "Unknown error"));
+-      return;
+     }
+-    
+-    setImporting(false);
+-
+-    alert(
+-      `${rows.length} existing products imported successfully.`
+-    );
+-
+-    window.dispatchEvent(new Event("jprime-catalog-updated"));
+-    await loadProducts();
+   }
+ 
+   function updateSelected(
+@@ -537,6 +498,11 @@ export default function ProductManager() {
+   function addDuration() {
+     if (!selected) return;
+ 
++    // Inherit the routing of the last duration (same product, same supplier is the usual case).
++    // Seller IDs are NOT copied: each duration has its own, so they must be entered explicitly.
++    const last = selected.prices[selected.prices.length - 1];
++    const inheritedSupplier = normalizeSupplier(last?.supplier) ?? "";
++
+     setSelected({
+       ...selected,
+ 
+@@ -548,9 +514,11 @@ export default function ProductManager() {
+           priceINR: "",
+           resellerPrice: "",
+ 
+-          supplier: "LOCAL",
++          supplier: inheritedSupplier,
+ 
+-          seller1Pid: "",
++          // Seller 1 product id is the same for every duration of a product, so inherit it.
++          seller1Pid:
++            inheritedSupplier === "SELLER1" ? String(last?.seller1Pid || "") : "",
+           seller1Duration: "",
+ 
+           seller2VariantId: "",
+@@ -769,7 +737,11 @@ export default function ProductManager() {
+                           <div className="text-xs text-zinc-500 mt-1">
+                             ₹{tier.priceINR} • Reseller ₹
+                             {tier.resellerPrice || "0"} •{" "}
+-                            {tier.supplier || "LOCAL"}
++                            {tier.supplier || "SUPPLIER NOT SET"}
++                            {tier.supplier === "LOCAL" &&
++                            (hasSeller1Config(tier) || hasSeller2Config(tier))
++                              ? " ⚠ Seller IDs saved"
++                              : ""}
+                           </div>
+                         </div>
+                       )
+@@ -900,30 +872,22 @@ export default function ProductManager() {
+ 
+                   <div>
+                     <label className="text-xs text-zinc-400">
+-                      Fulfillment
++                      Delivery (from durations)
+                     </label>
+ 
+-                    <select
+-                      value={
+-                        selected.fulfillmentType ||
+-                        "LOCAL"
+-                      }
+-                      onChange={(e) =>
+-                        updateSelected(
+-                          "fulfillmentType",
+-                          e.target.value
+-                        )
+-                      }
+-                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
+-                    >
+-                      <option value="API">
+-                        API
+-                      </option>
+-
+-                      <option value="LOCAL">
+-                        LOCAL STOCK
+-                      </option>
+-                    </select>
++                    <div className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-300">
++                      {selected.prices.length === 0
++                        ? "No durations yet"
++                        : (() => {
++                            const modes = selected.prices.map((t) =>
++                              deliveryModeForTier(t, undefined)
++                            );
++                            const api = modes.filter((m) => m === "API").length;
++                            if (api === modes.length) return "API (Seller 1 / Seller 2)";
++                            if (api === 0) return "LOCAL STOCK";
++                            return "MIXED (set per duration below)";
++                          })()}
++                    </div>
+                   </div>
+ 
+                   <div>
+@@ -1186,10 +1150,7 @@ export default function ProductManager() {
+                           </label>
+ 
+                           <select
+-                            value={
+-                              tier.supplier ||
+-                              "LOCAL"
+-                            }
++                            value={tier.supplier || ""}
+                             onChange={(e) =>
+                               updateTier(
+                                 index,
+@@ -1197,8 +1158,16 @@ export default function ProductManager() {
+                                 e.target.value
+                               )
+                             }
+-                            className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
++                            className={`w-full mt-1 p-3 rounded-xl bg-zinc-950 border ${
++                              tier.supplier
++                                ? "border-zinc-800"
++                                : "border-amber-500/60"
++                            }`}
+                           >
++                            <option value="" disabled>
++                              Select supplier...
++                            </option>
++
+                             <option value="LOCAL">
+                               Local Stock
+                             </option>
+diff --git a/components/product-card.tsx b/components/product-card.tsx
+index 1caba0c..5a667f0 100644
+--- a/components/product-card.tsx
++++ b/components/product-card.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useEffect, useMemo, useState } from "react";
++import { useEffect, useMemo, useRef, useState } from "react";
+ import {
+   Check,
+   Play,
+@@ -18,6 +18,7 @@ import {
+ import { Button } from "@/components/ui/button";
+ import { Card } from "@/components/ui/card";
+ import { Badge } from "@/components/ui/badge";
++import { parseVideoSource } from "@/lib/video";
+ import {
+   Dialog,
+   DialogContent,
+@@ -120,13 +121,33 @@ export function ProductCard({ product, index }: ProductCardProps) {
+       (price) => price.duration === selectedDuration
+     ) ?? effectivePrices[0];
+ 
++  /*
++   * Stock handling follows how the SELECTED duration is actually delivered:
++   *   API   -> supplier API, never blocked by local stock counts
++   *   LOCAL -> local stock keys, blocked when the count is 0
++   * (tier.deliveryMode comes from /api/catalog; the product-level flag is only a fallback.)
++   */
++  const selectedDeliveryMode: "API" | "LOCAL" =
++    selectedPrice?.deliveryMode ??
++    (product.fulfillmentType === "API" ? "API" : "LOCAL");
++  const usesLocalStock = selectedDeliveryMode === "LOCAL";
++
++  // Demo video: YouTube (watch / youtu.be / Shorts) or a direct file. Unsafe URLs render nothing.
++  const videoSource = useMemo(
++    () => parseVideoSource(product.videoUrl),
++    [product.videoUrl]
++  );
++
++  // Ignore stock answers from a previously selected duration that arrive late.
++  const stockRequestId = useRef(0);
++
+   /*
+    * Load stock whenever the selected duration changes. Role is loaded separately
+    * below because wallet reads can fail independently of authentication.
+    */
+   useEffect(() => {
+     loadStock();
+-  }, [selectedDuration]);
++  }, [selectedDuration, selectedDeliveryMode]);
+ 
+   useEffect(() => {
+     loadUserData();
+@@ -238,8 +259,10 @@ export function ProductCard({ product, index }: ProductCardProps) {
+    * Load product stock.
+    */
+   async function loadStock() {
+-    // API products are delivered via supplier API, so skip local database stock check
+-    if (product.fulfillmentType === "API") {
++    const requestId = ++stockRequestId.current;
++
++    // API durations are delivered via the supplier API, so the local stock count is irrelevant.
++    if (!usesLocalStock) {
+       setAvailableStock(999);
+       return;
+     }
+@@ -254,6 +277,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
+ 
+       const json = await res.json();
+ 
++      if (requestId !== stockRequestId.current) return;
++
+       if (!res.ok || typeof json?.count !== "number") {
+         setAvailableStock(null);
+         return;
+@@ -262,7 +287,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
+       setAvailableStock(json.count);
+     } catch (error) {
+       console.error("Stock loading error:", error);
+-      setAvailableStock(null);
++      if (requestId === stockRequestId.current) setAvailableStock(null);
+     }
+   }
+ 
+@@ -370,7 +395,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
+       return;
+     }
+ 
+-    if (product.fulfillmentType !== "API" && availableStock === 0) {
++    if (usesLocalStock && availableStock === 0) {
+       alert("This product is currently out of stock.");
+       return;
+     }
+@@ -609,13 +634,24 @@ export function ProductCard({ product, index }: ProductCardProps) {
+             </span>
+           </div>
+ 
+-          {product.videoUrl ? (
++          {videoSource?.kind === "youtube" ? (
++            <iframe
++              src={videoSource.embedUrl}
++              title={`${product.name} demo video`}
++              className="h-full w-full border-0"
++              loading="lazy"
++              allow="accelerometer; encrypted-media; picture-in-picture; fullscreen"
++              allowFullScreen
++              referrerPolicy="strict-origin-when-cross-origin"
++              sandbox="allow-scripts allow-same-origin allow-presentation"
++            />
++          ) : videoSource?.kind === "file" ? (
+             <video
+               controls
+               className="h-full w-full object-cover"
+             >
+               <source
+-                src={product.videoUrl}
++                src={videoSource.src}
+                 type="video/mp4"
+               />
+             </video>
+@@ -721,7 +757,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
+               disabled={
+                 !pricingReady ||
+                 effectiveStatus === "MAINTENANCE" ||
+-                (product.fulfillmentType !== "API" && availableStock === 0)
++                (usesLocalStock && availableStock === 0)
+               }
+               className="flex-1 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold text-xs tracking-wider uppercase py-5 rounded-xl shadow-[0_4px_20px_rgba(192,38,211,0.4)] transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+               onClick={handleInitialBuyClick}
+@@ -729,7 +765,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
+               <ShoppingCart className="mr-2 h-4 w-4" />
+               {effectiveStatus === "MAINTENANCE"
+                 ? "MAINTENANCE"
+-                : product.fulfillmentType !== "API" && availableStock === 0
++                : usesLocalStock && availableStock === 0
+                 ? "OUT OF STOCK"
+                 : "BUY NOW"}
+             </Button>
+diff --git a/lib/catalog-edit.ts b/lib/catalog-edit.ts
+new file mode 100644
+index 0000000..3ee3206
+--- /dev/null
++++ b/lib/catalog-edit.ts
+@@ -0,0 +1,182 @@
++import {
++  deliveryModeForTier,
++  hasSeller1Config,
++  hasSeller2Config,
++  inferSupplier,
++  isAmbiguousSupplier,
++  normalizeSupplier,
++  summarizeFulfillment,
++  type Supplier,
++} from "@/lib/delivery";
++
++/**
++ * Pure catalogue-editing rules used by the admin Product Manager (kept out of the component so
++ * they can be unit tested). Nothing here talks to the network or the database.
++ */
++
++
++export interface CatalogTier {
++  duration: string;
++  priceINR: string;
++  resellerPrice?: string;
++  priceUSD?: string;
++  sellerDuration?: string;
++
++  // "" = not chosen yet. It is NEVER silently treated as LOCAL.
++  supplier?: Supplier | "";
++
++  seller1Pid?: string;
++  seller1Duration?: string;
++
++  seller2VariantId?: string;
++}
++
++export interface CatalogProduct {
++  id: string;
++  name: string;
++  category: "mobile" | "pc" | "ios";
++  fulfillmentType?: "API" | "LOCAL";
++  updateChannel: string;
++  features: string[];
++  videoPlaceholder?: string;
++  videoUrl?: string;
++  status: "ONLINE" | "MAINTENANCE";
++  prices: CatalogTier[];
++}
++
++
++
++/**
++ * Loads a stored catalogue product into the editor WITHOUT changing its routing.
++ *  - every stored field is kept (the spread), including ones this screen does not edit
++ *  - a missing / unrecognised supplier becomes "" (not chosen), never "LOCAL"
++ *  - a missing supplier is only pre-filled when the stored config clearly says which one
++ *    (exactly one of Seller 1 / Seller 2 configured); ambiguous or empty stays "not chosen"
++ */
++export function normalizeProduct(product: any): CatalogProduct {
++  const fulfillmentType =
++    product.fulfillmentType === "API" || product.fulfillmentType === "LOCAL"
++      ? product.fulfillmentType
++      : undefined;
++
++  return {
++    ...product,
++    id: String(product.id || ""),
++    name: String(product.name || ""),
++    category: product.category || "mobile",
++    fulfillmentType,
++    updateChannel: String(product.updateChannel || ""),
++    features:
++      Array.isArray(product.features) && product.features.length
++        ? product.features
++        : [""],
++    videoPlaceholder: String(product.videoPlaceholder || ""),
++    videoUrl: String(product.videoUrl || ""),
++    status: product.status === "MAINTENANCE" ? "MAINTENANCE" : "ONLINE",
++
++    prices:
++      Array.isArray(product.prices) && product.prices.length
++        ? product.prices.map((tier: any) => {
++            const explicit = normalizeSupplier(tier.supplier);
++            const detected = explicit
++              ? null
++              : isAmbiguousSupplier(tier, product)
++              ? null
++              : inferSupplier(tier, product);
++
++            return {
++              ...tier,
++              duration: String(tier.duration || ""),
++              priceINR: String(tier.priceINR || ""),
++              resellerPrice: String(tier.resellerPrice || ""),
++              priceUSD: String(tier.priceUSD || ""),
++              sellerDuration: String(tier.sellerDuration || ""),
++
++              supplier: explicit ?? detected ?? "",
++
++              seller1Pid: String(tier.seller1Pid || ""),
++              seller1Duration: String(
++                tier.seller1Duration || tier.sellerDuration || ""
++              ),
++
++              seller2VariantId: String(tier.seller2VariantId || ""),
++            };
++          })
++        : [],
++  };
++}
++
++/** Plain-language routing problems for one product (shown in the list and before saving). */
++export function routingProblems(product: CatalogProduct): string[] {
++  const problems: string[] = [];
++
++  for (const tier of product.prices) {
++    if (!String(tier.duration || "").trim()) continue;
++    const label = `"${String(tier.duration).trim()}"`;
++    const supplier = normalizeSupplier(tier.supplier);
++
++    if (!supplier) {
++      problems.push(`${label}: no supplier chosen.`);
++    } else if (supplier === "SELLER1") {
++      if (!String(tier.seller1Pid || "").trim()) problems.push(`${label}: Seller 1 product ID is empty.`);
++      if (!String(tier.seller1Duration || "").trim()) problems.push(`${label}: Seller 1 duration is empty.`);
++    } else if (supplier === "SELLER2") {
++      if (!String(tier.seller2VariantId || "").trim()) problems.push(`${label}: Seller 2 variant ID is empty.`);
++    } else if (supplier === "LOCAL" && (hasSeller1Config(tier) || hasSeller2Config(tier))) {
++      problems.push(`${label}: set to LOCAL but has Seller IDs saved. Check this is intended.`);
++    }
++  }
++
++  return problems;
++}
++
++/**
++ * Converts a built-in (lib/products.ts) product to a catalogue product from what it REALLY has
++ * configured, instead of assuming "API means Seller 1".
++ */
++export function legacyToCatalogProduct(product: any, notes: string[]): CatalogProduct {
++  const base = normalizeProduct(product);
++  const sourceTiers: any[] = Array.isArray(product.prices) ? product.prices : [];
++  let unresolved = false;
++
++  base.prices = base.prices.map((tier) => {
++    const source =
++      sourceTiers.find(
++        (t) => String(t?.duration ?? "").trim() === String(tier.duration).trim()
++      ) || {};
++
++    const config = {
++      seller1Pid: product.sellerPid,
++      sellerDuration: source.sellerDuration,
++      seller2VariantId: source.seller2VariantId,
++    };
++    const context = { fulfillmentType: product.fulfillmentType, sellerPid: product.sellerPid };
++    const supplier = inferSupplier(config, context);
++
++    if (!supplier) {
++      unresolved = true;
++      notes.push(`${base.name} / ${tier.duration}: no supplier configuration found. Choose a supplier in Product Manager.`);
++    } else if (isAmbiguousSupplier(config, context)) {
++      notes.push(`${base.name} / ${tier.duration}: Seller 1 AND Seller 2 are both configured. Imported as Seller 1 (what the old purchase code used). Please confirm.`);
++    }
++
++    return {
++      ...tier,
++      supplier: supplier ?? "",
++      seller1Pid: product.sellerPid ? String(product.sellerPid) : "",
++      seller1Duration: source.sellerDuration ? String(source.sellerDuration) : "",
++      seller2VariantId:
++        source.seller2VariantId != null ? String(source.seller2VariantId) : "",
++    };
++  });
++
++  base.fulfillmentType = summarizeFulfillment(
++    base.prices.map((t) => deliveryModeForTier(t, product.fulfillmentType))
++  );
++
++  // A product whose supplier could not be determined must not be sold until someone chooses one.
++  if (unresolved) base.status = "MAINTENANCE";
++
++  return base;
++}
++
+diff --git a/lib/delivery.ts b/lib/delivery.ts
+new file mode 100644
+index 0000000..b9c496e
+--- /dev/null
++++ b/lib/delivery.ts
+@@ -0,0 +1,159 @@
++/**
++ * Pure helpers (no imports, no I/O) shared by the admin Product Manager, the public
++ * catalogue, the storefront card, stock counting and purchase routing.
++ *
++ * Keeping the rules in ONE place is what guarantees that the admin Stock Matrix, the
++ * customer stock counter and the real key reservation all agree with each other.
++ */
++
++export type Supplier = "LOCAL" | "SELLER1" | "SELLER2";
++export type DeliveryMode = "API" | "LOCAL";
++
++type TierLike = {
++  supplier?: unknown;
++  seller1Pid?: unknown;
++  seller1Duration?: unknown;
++  sellerDuration?: unknown;
++  seller2VariantId?: unknown;
++};
++
++type ProductLike = {
++  fulfillmentType?: unknown;
++  sellerPid?: unknown;
++};
++
++const filled = (value: unknown): boolean => String(value ?? "").trim().length > 0;
++
++/* ---------------------------------------------------------------------------
++   SUPPLIER ROUTING
++   --------------------------------------------------------------------------- */
++
++/** "seller1", "Seller 1", "SELLER_1" -> "SELLER1". Anything unknown -> null (never guessed as LOCAL). */
++export function normalizeSupplier(value: unknown): Supplier | null {
++  const s = String(value ?? "")
++    .toUpperCase()
++    .replace(/[\s_-]+/g, "");
++  if (s === "SELLER1") return "SELLER1";
++  if (s === "SELLER2") return "SELLER2";
++  if (s === "LOCAL" || s === "LOCALSTOCK") return "LOCAL";
++  return null;
++}
++
++export function hasSeller1Config(tier: TierLike, product?: ProductLike): boolean {
++  return (
++    (filled(tier.seller1Pid) || filled(product?.sellerPid)) &&
++    (filled(tier.seller1Duration) || filled(tier.sellerDuration))
++  );
++}
++
++export function hasSeller2Config(tier: TierLike): boolean {
++  return filled(tier.seller2VariantId);
++}
++
++/**
++ * Best-effort supplier for OLD data that has no explicit `supplier` field
++ * (lib/products.ts entries and very old catalogue rows). Used by "Import Existing" and by the
++ * legacy purchase fallback only. Returns null when the configuration does not say anything,
++ * so callers must treat that as "needs an explicit choice" and NEVER as LOCAL.
++ *
++ * Both configured: SELLER1 is returned because that is what the old purchase code did
++ * (it only ever looked at the product-level sellerPid). Use `isAmbiguousSupplier` to flag it.
++ */
++export function inferSupplier(tier: TierLike, product?: ProductLike): Supplier | null {
++  const s1 = hasSeller1Config(tier, product);
++  const s2 = hasSeller2Config(tier);
++  if (s1) return "SELLER1";
++  if (s2) return "SELLER2";
++  if (String(product?.fulfillmentType ?? "").toUpperCase() === "LOCAL") return "LOCAL";
++  return null;
++}
++
++export function isAmbiguousSupplier(tier: TierLike, product?: ProductLike): boolean {
++  return hasSeller1Config(tier, product) && hasSeller2Config(tier);
++}
++
++export type SupplierResolution =
++  | { ok: true; supplier: Supplier }
++  | { ok: false; reason: "missing" | "invalid" };
++
++/**
++ * Strict supplier lookup for a catalogue duration at purchase time.
++ * Only the explicit `supplier` field counts. Missing/unknown is an error, never LOCAL,
++ * so a Seller product can never be silently served from local stock.
++ */
++export function resolveCatalogSupplier(tier: TierLike): SupplierResolution {
++  if (!filled(tier.supplier)) return { ok: false, reason: "missing" };
++  const supplier = normalizeSupplier(tier.supplier);
++  return supplier ? { ok: true, supplier } : { ok: false, reason: "invalid" };
++}
++
++/**
++ * Delivery mode of ONE duration: "API" (Seller 1 / Seller 2) or "LOCAL" (stock_keys).
++ * Safe to expose publicly: it carries no supplier, product id or variant id.
++ */
++export function deliveryModeForTier(tier: TierLike, productFulfillmentType?: unknown): DeliveryMode {
++  const supplier = normalizeSupplier(tier.supplier);
++  if (supplier === "SELLER1" || supplier === "SELLER2") return "API";
++  if (supplier === "LOCAL") return "LOCAL";
++
++  // No explicit supplier (old data): read what the configuration says.
++  const inferred = inferSupplier(tier, { fulfillmentType: productFulfillmentType });
++  if (inferred === "SELLER1" || inferred === "SELLER2") return "API";
++  if (inferred === "LOCAL") return "LOCAL";
++
++  // Nothing configured: trust the product-level flag, defaulting to local stock.
++  return String(productFulfillmentType ?? "").toUpperCase() === "API" ? "API" : "LOCAL";
++}
++
++/** Product-level summary kept for old consumers: "API" only when every duration is API. */
++export function summarizeFulfillment(modes: DeliveryMode[]): DeliveryMode {
++  return modes.length > 0 && modes.every((mode) => mode === "API") ? "API" : "LOCAL";
++}
++
++/* ---------------------------------------------------------------------------
++   LOCAL STOCK MATCHING (one rule for admin count, customer count and reservation)
++   --------------------------------------------------------------------------- */
++
++/** Case-insensitive, whitespace-insensitive comparison key. Never changes stored data. */
++export function normalizeStockText(value: unknown): string {
++  return String(value ?? "")
++    .normalize("NFKC")
++    .replace(/[\u200B-\u200D\uFEFF]/g, "")
++    .replace(/\s+/g, " ")
++    .trim()
++    .toLowerCase();
++}
++
++export function stockCountKey(productName: unknown, duration: unknown): string {
++  return `${normalizeStockText(productName)}::${normalizeStockText(duration)}`;
++}
++
++type StockRowLike = { product_name?: unknown; duration?: unknown; is_used?: unknown };
++
++export function stockRowMatches(row: StockRowLike, productName: unknown, duration: unknown): boolean {
++  return (
++    normalizeStockText(row.product_name) === normalizeStockText(productName) &&
++    normalizeStockText(row.duration) === normalizeStockText(duration)
++  );
++}
++
++/** Counts UNUSED rows only (is_used must not be true). */
++export function countAvailableStock(rows: StockRowLike[], productName: unknown, duration: unknown): number {
++  let count = 0;
++  for (const row of rows) {
++    if (row.is_used === true) continue;
++    if (stockRowMatches(row, productName, duration)) count += 1;
++  }
++  return count;
++}
++
++/** One pass over all unused rows -> Map keyed by stockCountKey(product, duration). */
++export function buildStockCountMap(rows: StockRowLike[]): Map<string, number> {
++  const map = new Map<string, number>();
++  for (const row of rows) {
++    if (row.is_used === true) continue;
++    const key = stockCountKey(row.product_name, row.duration);
++    map.set(key, (map.get(key) ?? 0) + 1);
++  }
++  return map;
++}
+diff --git a/lib/products.ts b/lib/products.ts
+index dde027a..17fc7ef 100644
+--- a/lib/products.ts
++++ b/lib/products.ts
+@@ -8,6 +8,10 @@ export interface PriceTier {
+   // Only used for products that have a sellerPid.
+   sellerDuration?: string;
+   seller2VariantId?: number;
++
++  // How THIS duration is delivered: "API" (Seller 1 / Seller 2) or "LOCAL" (stock keys).
++  // Set by the public catalogue (/api/catalog) and safe to show: it carries no supplier details.
++  deliveryMode?: "API" | "LOCAL";
+ }
+ 
+ export interface Product {
+diff --git a/lib/release-product.ts b/lib/release-product.ts
+index 77c81af..44bc016 100644
+--- a/lib/release-product.ts
++++ b/lib/release-product.ts
+@@ -7,6 +7,13 @@ import {
+   type Product,
+   type PriceTier,
+ } from "@/lib/products";
++import {
++  inferSupplier,
++  normalizeStockText,
++  resolveCatalogSupplier,
++  type Supplier,
++} from "@/lib/delivery";
++import { claimLocalStockKey } from "@/lib/stock";
+ 
+ interface ReleaseProductParams {
+   username: string;
+@@ -14,11 +21,6 @@ interface ReleaseProductParams {
+   duration: string;
+ }
+ 
+-type Supplier =
+-  | "LOCAL"
+-  | "SELLER1"
+-  | "SELLER2";
+-
+ interface CatalogPrice {
+   duration?: unknown;
+   priceINR?: unknown;
+@@ -51,64 +53,107 @@ const SELLER2_API_URL =
+    CATALOG
+    ========================================================= */
+ 
++/*
++ * A catalogue lookup has THREE outcomes and they must never be confused:
++ *   found      -> use the catalogue configuration
++ *   not_found  -> the product genuinely is not in products_catalog (legacy fallback allowed)
++ *   error      -> the database/query failed or the data is ambiguous. We do NOT know what the
++ *                 product is, so the purchase is stopped. It must never be treated as
++ *                 "not found" and quietly served from local stock.
++ */
++type CatalogLookup =
++  | { status: "found"; product: CatalogProduct }
++  | { status: "not_found" }
++  | { status: "error"; message: string };
++
++function toCatalogProduct(row: any): CatalogProduct {
++  const catalogData =
++    row?.data && typeof row.data === "object" ? row.data : {};
++
++  return {
++    ...catalogData,
++    id: catalogData.id || row?.product_id,
++    name: catalogData.name || row?.name,
++  };
++}
++
+ async function findCatalogProduct(
+   productName: string
+-): Promise<CatalogProduct | null> {
+-  const { data, error } =
+-    await supabaseAdmin
+-      .from("products_catalog")
+-      .select("product_id, name, data")
+-      .eq("name", productName)
+-      .maybeSingle();
+-
+-  if (error) {
+-    console.error(
+-      "CATALOG PRODUCT LOOKUP ERROR:",
+-      error
+-    );
++): Promise<CatalogLookup> {
++  const wanted = normalizeStockText(productName);
++
++  // 1) Exact name (the normal case).
++  const exact = await supabaseAdmin
++    .from("products_catalog")
++    .select("product_id, name, data")
++    .eq("name", productName)
++    .limit(2);
++
++  if (exact.error) {
++    console.error("CATALOG PRODUCT LOOKUP ERROR:", exact.error.message);
++    return { status: "error", message: exact.error.message };
++  }
+ 
+-    return null;
++  if ((exact.data || []).length > 1) {
++    console.error("CATALOG DUPLICATE PRODUCT NAME:", productName);
++    return {
++      status: "error",
++      message: "Duplicate catalogue entries for this product name.",
++    };
+   }
+ 
+-  if (!data) {
+-    return null;
++  if ((exact.data || []).length === 1) {
++    return { status: "found", product: toCatalogProduct(exact.data![0]) };
+   }
+ 
+-  const catalogData =
+-    data.data &&
+-    typeof data.data === "object"
+-      ? data.data
+-      : {};
++  // 2) Same name with different letter case / spacing. Read-only, tolerant match.
++  if (!wanted) return { status: "not_found" };
+ 
+-  return {
+-    ...catalogData,
+-    id:
+-      catalogData.id ||
+-      data.product_id,
+-    name:
+-      catalogData.name ||
+-      data.name,
+-  };
++  const loose = await supabaseAdmin
++    .from("products_catalog")
++    .select("product_id, name, data");
++
++  if (loose.error) {
++    console.error("CATALOG LOOSE LOOKUP ERROR:", loose.error.message);
++    return { status: "error", message: loose.error.message };
++  }
++
++  const matches = (loose.data || []).filter(
++    (row: any) => normalizeStockText(row?.name) === wanted
++  );
++
++  if (matches.length > 1) {
++    return {
++      status: "error",
++      message: "Duplicate catalogue entries for this product name.",
++    };
++  }
++
++  if (matches.length === 1) {
++    return { status: "found", product: toCatalogProduct(matches[0]) };
++  }
++
++  return { status: "not_found" };
+ }
+ 
+ function findCatalogPrice(
+   product: CatalogProduct,
+   duration: string
+ ): CatalogPrice | null {
+-  const prices = Array.isArray(
+-    product.prices
+-  )
+-    ? product.prices
+-    : [];
++  const prices = Array.isArray(product.prices) ? product.prices : [];
++  const wanted = String(duration ?? "").trim();
+ 
+-  const found = prices.find(
++  const exact = prices.find(
++    (price) => String(price?.duration ?? "").trim() === wanted
++  );
++  if (exact) return exact;
++
++  const loose = prices.filter(
+     (price) =>
+-      String(
+-        price?.duration ?? ""
+-      ).trim() === duration
++      normalizeStockText(price?.duration) === normalizeStockText(wanted)
+   );
+ 
+-  return found || null;
++  return loose.length === 1 ? loose[0] : null;
+ }
+ 
+ /* =========================================================
+@@ -473,83 +518,32 @@ async function purchaseFromSeller2(
+    LOCAL STOCK
+    ========================================================= */
+ 
+-async function getLocalStockKey(
++/*
++ * Local delivery: one shared implementation (lib/stock.ts) used by catalogue and legacy paths.
++ */
++async function deliverFromLocalStock(
+   productName: string,
+   duration: string
+ ) {
+-  const { data, error } =
+-    await supabase
+-      .from("stock_keys")
+-      .select("*")
+-      .eq(
+-        "product_name",
+-        productName
+-      )
+-      .eq(
+-        "duration",
+-        duration
+-      )
+-      .eq(
+-        "is_used",
+-        false
+-      )
+-      .order("id", {
+-        ascending: true,
+-      })
+-      .limit(1)
+-      .maybeSingle();
+-
+-  if (error) {
+-    console.error(
+-      "LOCAL STOCK LOOKUP ERROR:",
+-      error
+-    );
++  const claimed = await claimLocalStockKey(productName, duration);
+ 
+-    return {
+-      success: false,
+-      stockKey: null,
+-    };
++  if (claimed.status === "ok") {
++    return { success: true as const, key: claimed.key };
+   }
+ 
+-  if (!data) {
++  if (claimed.status === "error") {
+     return {
+-      success: false,
+-      stockKey: null,
++      success: false as const,
++      error: "Stock could not be checked right now. Please contact support.",
+     };
+   }
+ 
+   return {
+-    success: true,
+-    stockKey: data,
++    success: false as const,
++    error: "Payment received, but no stock key is currently available.",
+   };
+ }
+ 
+-async function reserveLocalStockKey(
+-  id: number
+-) {
+-  const { data, error } =
+-    await supabase
+-      .from("stock_keys")
+-      .update({
+-        is_used: true,
+-      })
+-      .eq("id", id)
+-      .eq("is_used", false)
+-      .select("id")
+-      .maybeSingle();
+-
+-  if (error) {
+-    console.error(
+-      "LOCAL STOCK RESERVE ERROR:",
+-      error
+-    );
+-
+-    return false;
+-  }
+-
+-  return Boolean(data);
+-}
+-
+ /* =========================================================
+    OLD CATALOG FALLBACK
+    ========================================================= */
+@@ -575,135 +569,6 @@ function findOldPrice(
+   );
+ }
+ 
+-/*
+- * Backward-compatible Seller 1
+- * fallback for products that haven't
+- * been moved/configured in catalog yet.
+- */
+-
+-async function oldSeller1Fallback(
+-  product: Product,
+-  price: PriceTier
+-) {
+-  const apiKey =
+-    process.env.RESELLER_API_KEY;
+-
+-  const masterKey =
+-    process.env.RESELLER_MASTER_KEY;
+-
+-  if (!apiKey || !masterKey) {
+-    return {
+-      success: false,
+-      error:
+-        "Seller 1 is not configured.",
+-    };
+-  }
+-
+-  if (!product.sellerPid) {
+-    return {
+-      success: false,
+-      error:
+-        "Product has no supplier configuration.",
+-    };
+-  }
+-
+-  if (!price.sellerDuration) {
+-    return {
+-      success: false,
+-      error:
+-        "Seller duration is not configured.",
+-    };
+-  }
+-
+-  try {
+-    const params =
+-      new URLSearchParams({
+-        api_key: apiKey,
+-        action: "buy",
+-        product_id:
+-          String(
+-            product.sellerPid
+-          ),
+-        duration:
+-          price.sellerDuration,
+-      });
+-
+-    const response =
+-      await fetch(
+-        SELLER1_API_URL,
+-        {
+-          method: "POST",
+-          headers: {
+-            "Content-Type":
+-              "application/x-www-form-urlencoded",
+-            "x-master-key":
+-              masterKey,
+-          },
+-          body:
+-            params.toString(),
+-          cache: "no-store",
+-        }
+-      );
+-
+-    const text =
+-      await response.text();
+-
+-    let result: any;
+-
+-    try {
+-      result =
+-        JSON.parse(text);
+-    } catch {
+-      return {
+-        success: false,
+-        error:
+-          "Seller 1 returned invalid data.",
+-      };
+-    }
+-
+-    if (
+-      !response.ok ||
+-      result?.status !==
+-        "success"
+-    ) {
+-      return {
+-        success: false,
+-        error:
+-          result?.msg ||
+-          result?.message ||
+-          "Seller 1 purchase failed.",
+-      };
+-    }
+-
+-    const key =
+-      result?.data?.key ??
+-      result?.data?.key_code ??
+-      result?.key ??
+-      result?.key_code;
+-
+-    if (!key) {
+-      return {
+-        success: false,
+-        error:
+-          "Seller 1 returned no key.",
+-      };
+-    }
+-
+-    return {
+-      success: true,
+-      key: String(key),
+-    };
+-  } catch (error) {
+-    return {
+-      success: false,
+-      error:
+-        error instanceof Error
+-          ? error.message
+-          : "Seller 1 request failed.",
+-    };
+-  }
+-}
+-
+ /* =========================================================
+    MAIN RELEASE FUNCTION
+    ========================================================= */
+@@ -713,263 +578,133 @@ export async function releaseProduct({
+   product_name,
+   duration,
+ }: ReleaseProductParams) {
+-  console.log(
+-    "================================="
+-  );
++  console.log("RELEASE PRODUCT:", product_name, duration);
+ 
+-  console.log(
+-    "RELEASE PRODUCT:",
+-    product_name,
+-    duration
+-  );
+-
+-  console.log(
+-    "================================="
+-  );
++  const lookup = await findCatalogProduct(product_name);
+ 
+   /*
+-   * First use products_catalog.
++   * A failed catalogue read is NOT "product not found". We do not know how this product is
++   * supplied, so we stop here instead of guessing (and possibly handing out a local key for a
++   * Seller product, or buying from the wrong supplier).
+    */
+-
+-  let catalogProduct:
+-    | CatalogProduct
+-    | null = null;
+-
+-  try {
+-    catalogProduct =
+-      await findCatalogProduct(
+-        product_name
+-      );
+-  } catch (error) {
+-    console.error(
+-      "CATALOG READ FAILED:",
+-      error
+-    );
++  if (lookup.status === "error") {
++    return {
++      success: false,
++      error:
++        "Product catalogue could not be read right now. Please contact support.",
++    };
+   }
+ 
+-  if (catalogProduct) {
+-    const catalogPrice =
+-      findCatalogPrice(
+-        catalogProduct,
+-        duration
+-      );
++  /* ---------------------------------------------------------
++     PRODUCT FOUND IN THE CATALOGUE
++     --------------------------------------------------------- */
++  if (lookup.status === "found") {
++    const catalogProduct = lookup.product;
++
++    const catalogPrice = findCatalogPrice(catalogProduct, duration);
+ 
+     if (!catalogPrice) {
+       return {
+         success: false,
+-        error:
+-          `Duration "${duration}" is not configured for "${product_name}" in Product Catalog.`,
+-      };
+-    }
+-
+-    const supplier =
+-      String(
+-        catalogPrice.supplier ??
+-          ""
+-      )
+-        .trim()
+-        .toUpperCase() as Supplier;
+-
+-    console.log(
+-      "CATALOG SUPPLIER:",
+-      supplier
+-    );
+-
+-    /*
+-     * SELLER 1
+-     */
+-
+-    if (
+-      supplier === "SELLER1"
+-    ) {
+-      const result =
+-        await purchaseFromSeller1(
+-          catalogPrice,
+-          product_name,
+-          duration
+-        );
+-
+-      if (!result.success) {
+-        return result;
+-      }
+-
+-      return {
+-        success: true,
+-        key: result.key,
++        error: `Duration "${duration}" is not configured for "${product_name}" in Product Catalog.`,
+       };
+     }
+ 
+-    /*
+-     * SELLER 2
+-     */
++    const resolved = resolveCatalogSupplier(catalogPrice);
+ 
+-    if (
+-      supplier === "SELLER2"
+-    ) {
+-      const result =
+-        await purchaseFromSeller2(
+-          catalogPrice,
+-          product_name,
+-          duration
+-        );
+-
+-      if (!result.success) {
+-        return result;
+-      }
+-
+-      return {
+-        success: true,
+-        key: result.key,
+-      };
+-    }
+-
+-    /*
+-     * LOCAL
+-     */
+-
+-    if (
+-      supplier === "LOCAL"
+-    ) {
+-      const stock =
+-        await getLocalStockKey(
+-          product_name,
+-          duration
+-        );
+-
+-      if (
+-        !stock.success ||
+-        !stock.stockKey
+-      ) {
+-        return {
+-          success: false,
+-          error:
+-            "Payment received, but no stock key is currently available.",
+-        };
+-      }
+-
+-      const reserved =
+-        await reserveLocalStockKey(
+-          stock.stockKey.id
+-        );
+-
+-      if (!reserved) {
+-        return {
+-          success: false,
+-          error:
+-            "Stock key was taken by another purchase. Please try again.",
+-        };
+-      }
++    if (!resolved.ok) {
++      console.error("CATALOG SUPPLIER NOT USABLE:", {
++        product: product_name,
++        duration,
++        reason: resolved.reason,
++      });
+ 
+       return {
+-        success: true,
+-        key: String(
+-          stock.stockKey.key_code
+-        ),
++        success: false,
++        error: `Supplier is not configured for "${product_name}" - "${duration}". Set it in Product Manager.`,
+       };
+     }
+ 
+-    return {
+-      success: false,
+-      error:
+-        `Invalid supplier configuration for "${product_name}" - "${duration}".`,
+-    };
++    return deliverBySupplier(
++      resolved.supplier,
++      catalogPrice,
++      product_name,
++      duration
++    );
+   }
+ 
+-  /*
+-   * =======================================================
+-   * LEGACY FALLBACK
+-   * =======================================================
+-   *
+-   * If the catalog has not been configured for a product yet,
+-   * preserve the old behavior so the existing store does not
+-   * suddenly stop working.
+-   */
+-
++  /* ---------------------------------------------------------
++     NOT IN THE CATALOGUE (genuinely missing) -> legacy list
++     --------------------------------------------------------- */
+   console.warn(
+     "CATALOG PRODUCT NOT FOUND. USING LEGACY PRODUCT CONFIG:",
+     product_name
+   );
+ 
+-  const oldProduct =
+-    findOldProduct(
+-      product_name
+-    );
++  const oldProduct = findOldProduct(product_name);
+ 
+   if (!oldProduct) {
+     return {
+       success: false,
+-      error:
+-        "Product not found in Product Catalog.",
++      error: "Product not found in Product Catalog.",
+     };
+   }
+ 
+-  const oldPrice =
+-    findOldPrice(
+-      oldProduct,
+-      duration
+-    );
++  const oldPrice = findOldPrice(oldProduct, duration);
+ 
+   if (!oldPrice) {
+     return {
+       success: false,
+-      error:
+-        `Duration "${duration}" is not available for this product.`,
++      error: `Duration "${duration}" is not available for this product.`,
+     };
+   }
+ 
+-  if (
+-    oldProduct.sellerPid
+-  ) {
+-    const result =
+-      await oldSeller1Fallback(
+-        oldProduct,
+-        oldPrice
+-      );
++  // Express the old configuration in the catalogue shape so both paths share one implementation.
++  const legacyPrice: CatalogPrice = {
++    duration: oldPrice.duration,
++    seller1Pid: oldProduct.sellerPid,
++    seller1Duration: oldPrice.sellerDuration,
++    seller2VariantId: (oldPrice as any).seller2VariantId,
++  };
+ 
+-    if (!result.success) {
+-      return result;
+-    }
++  const legacySupplier = inferSupplier(legacyPrice, {
++    fulfillmentType: oldProduct.fulfillmentType,
++    sellerPid: oldProduct.sellerPid,
++  });
+ 
++  if (!legacySupplier) {
+     return {
+-      success: true,
+-      key: result.key,
++      success: false,
++      error: "Product has no supplier configuration.",
+     };
+   }
+ 
+-  const stock =
+-    await getLocalStockKey(
+-      product_name,
+-      duration
+-    );
++  return deliverBySupplier(
++    legacySupplier,
++    legacyPrice,
++    product_name,
++    duration
++  );
++}
+ 
+-  if (
+-    !stock.success ||
+-    !stock.stockKey
+-  ) {
+-    return {
+-      success: false,
+-      error:
+-        "Payment received, but no stock key is currently available.",
+-    };
+-  }
++/**
++ * One switch for all deliveries. LOCAL is only reached when the supplier really is LOCAL.
++ */
++async function deliverBySupplier(
++  supplier: Supplier,
++  price: CatalogPrice,
++  productName: string,
++  duration: string
++) {
++  console.log("DELIVERY SUPPLIER:", supplier);
+ 
+-  const reserved =
+-    await reserveLocalStockKey(
+-      stock.stockKey.id
+-    );
++  if (supplier === "SELLER1") {
++    return purchaseFromSeller1(price, productName, duration);
++  }
+ 
+-  if (!reserved) {
+-    return {
+-      success: false,
+-      error:
+-        "Stock key was taken by another purchase. Please try again.",
+-    };
++  if (supplier === "SELLER2") {
++    return purchaseFromSeller2(price, productName, duration);
+   }
+ 
+-  return {
+-    success: true,
+-    key: String(
+-      stock.stockKey.key_code
+-    ),
+-  };
+-}
+\ No newline at end of file
++  return deliverFromLocalStock(productName, duration);
++}
+diff --git a/lib/stock.ts b/lib/stock.ts
+new file mode 100644
+index 0000000..af9d7cb
+--- /dev/null
++++ b/lib/stock.ts
+@@ -0,0 +1,127 @@
++import { supabaseAdmin } from "@/lib/supabase-admin";
++import {
++  buildStockCountMap,
++  normalizeStockText,
++  stockCountKey,
++  stockRowMatches,
++} from "@/lib/delivery";
++
++/**
++ * Server-side local stock access. EVERY count and every reservation goes through here so the
++ * admin matrix, the customer counter and the real purchase all use the same matching rule
++ * (unused keys only; letter case, extra spaces and styled Unicode letters such as
++ * "𝗣𝗛𝗔𝗡𝗧𝗢𝗠" vs "PHANTOM" are treated as the same name) and none of them is limited by the
++ * database's default 1000-row response cap.
++ *
++ * The comparison is done in code, not with SQL text filters, because the database cannot
++ * normalise styled Unicode letters.
++ *
++ * Nothing here deletes, merges, recreates or rewrites stored keys. The only write is the
++ * reservation, which flips is_used on ONE key at the moment of a real purchase.
++ */
++
++const PAGE_SIZE = 1000;
++const MAX_PAGES = 50; // hard safety stop (50,000 rows)
++
++type Result<T> = { ok: true; data: T } | { ok: false; error: string };
++
++/** All unused rows (oldest id first), read page by page. */
++async function fetchUnusedPages(columns: string): Promise<Result<any[]>> {
++  const rows: any[] = [];
++
++  for (let page = 0; page < MAX_PAGES; page += 1) {
++    const from = page * PAGE_SIZE;
++
++    const { data, error } = await supabaseAdmin
++      .from("stock_keys")
++      .select(columns)
++      .eq("is_used", false)
++      .order("id", { ascending: true })
++      .range(from, from + PAGE_SIZE - 1);
++
++    if (error) {
++      console.error("STOCK LOOKUP ERROR:", error.message);
++      return { ok: false, error: error.message };
++    }
++
++    const batch = data || [];
++    rows.push(...batch);
++    if (batch.length < PAGE_SIZE) break;
++  }
++
++  return { ok: true, data: rows };
++}
++
++/**
++ * Every unused key (all columns). Used by the admin dashboard so the Stock Keys list and the
++ * Stock Matrix are built from the SAME complete data instead of a truncated first page.
++ */
++export async function fetchAllUnusedStock(): Promise<Result<any[]>> {
++  return fetchUnusedPages("*");
++}
++
++/* Customer counters ask for the same numbers many times per page view (one per product card),
++   so a very short in-memory snapshot is shared. Reservations and admin counts never use it. */
++const SNAPSHOT_MS = 10_000;
++let snapshot: { at: number; counts: Map<string, number> } | null = null;
++
++export async function countLocalStock(
++  productName: string,
++  duration: string,
++  options: { fresh?: boolean } = {}
++): Promise<Result<number>> {
++  if (!normalizeStockText(productName) || !normalizeStockText(duration)) {
++    return { ok: true, data: 0 };
++  }
++
++  const now = Date.now();
++
++  if (options.fresh || !snapshot || now - snapshot.at > SNAPSHOT_MS) {
++    const rows = await fetchUnusedPages("id, product_name, duration");
++    if (!rows.ok) return rows;
++    snapshot = { at: now, counts: buildStockCountMap(rows.data) };
++  }
++
++  return { ok: true, data: snapshot.counts.get(stockCountKey(productName, duration)) ?? 0 };
++}
++
++export type ClaimResult =
++  | { status: "ok"; key: string }
++  | { status: "empty" }
++  | { status: "error"; message: string };
++
++/**
++ * Reserves the oldest matching unused key. If another buyer grabs a candidate first
++ * (compare-and-set on is_used=false fails) the next candidate is tried, so two simultaneous
++ * purchases never fail just because they raced for the same row.
++ */
++export async function claimLocalStockKey(productName: string, duration: string): Promise<ClaimResult> {
++  const rows = await fetchUnusedPages("id, product_name, duration, key_code");
++  if (!rows.ok) return { status: "error", message: rows.error };
++
++  const candidates = rows.data.filter(
++    (row) => stockRowMatches(row, productName, duration) && String(row.key_code ?? "").trim() !== ""
++  );
++
++  for (const candidate of candidates.slice(0, 25)) {
++    const { data, error } = await supabaseAdmin
++      .from("stock_keys")
++      .update({ is_used: true })
++      .eq("id", candidate.id)
++      .eq("is_used", false)
++      .select("id")
++      .maybeSingle();
++
++    if (error) {
++      console.error("LOCAL STOCK RESERVE ERROR:", error.message);
++      return { status: "error", message: error.message };
++    }
++
++    if (data) {
++      snapshot = null; // counts changed
++      return { status: "ok", key: String(candidate.key_code) };
++    }
++  }
++
++  return { status: "empty" };
++}
+diff --git a/lib/video.ts b/lib/video.ts
+new file mode 100644
+index 0000000..507b41e
+--- /dev/null
++++ b/lib/video.ts
+@@ -0,0 +1,84 @@
++/**
++ * Product video source parser. Pure (no imports). Decides what the storefront may render.
++ *
++ *  - YouTube watch / youtu.be / Shorts / embed / live URLs -> a fixed, privacy-friendly embed URL
++ *    built from the validated 11-character video id (the original URL is never put in an iframe).
++ *  - Direct video files (e.g. Cloudinary MP4) -> played with <video>.
++ *  - Anything else (javascript:, data:, blob:, file:, ftp: ...) -> null, nothing is rendered.
++ */
++
++export type VideoSource =
++  | { kind: "youtube"; id: string; embedUrl: string }
++  | { kind: "file"; src: string }
++  | null;
++
++const YOUTUBE_HOSTS = new Set([
++  "youtube.com",
++  "www.youtube.com",
++  "m.youtube.com",
++  "music.youtube.com",
++  "youtube-nocookie.com",
++  "www.youtube-nocookie.com",
++]);
++
++const YOUTU_BE_HOSTS = new Set(["youtu.be", "www.youtu.be"]);
++
++const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
++
++function parseStartSeconds(value: string | null): number | null {
++  if (!value) return null;
++  if (/^\d{1,6}$/.test(value)) return Number(value);
++  const match = /^(?:(\d{1,3})h)?(?:(\d{1,3})m)?(?:(\d{1,5})s)?$/i.exec(value);
++  if (!match || (!match[1] && !match[2] && !match[3])) return null;
++  return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
++}
++
++function buildEmbedUrl(id: string, start: number | null): string {
++  const params = new URLSearchParams({ rel: "0", modestbranding: "1", playsinline: "1" });
++  if (start && start > 0) params.set("start", String(start));
++  return `https://www.youtube-nocookie.com/embed/${id}?${params.toString()}`;
++}
++
++export function parseVideoSource(input: unknown): VideoSource {
++  const raw = String(input ?? "").trim();
++  if (!raw || raw.length > 2048) return null;
++
++  // Same-site relative file (e.g. /videos/demo.mp4). "//host/..." is NOT accepted.
++  if (raw.startsWith("/") && !raw.startsWith("//") && !raw.includes("\\")) {
++    return { kind: "file", src: raw };
++  }
++
++  let url: URL;
++  try {
++    url = new URL(raw);
++  } catch {
++    return null;
++  }
++
++  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
++  if (url.username || url.password) return null;
++
++  const host = url.hostname.toLowerCase();
++
++  if (YOUTU_BE_HOSTS.has(host)) {
++    const id = url.pathname.split("/").filter(Boolean)[0] || "";
++    return VIDEO_ID.test(id)
++      ? { kind: "youtube", id, embedUrl: buildEmbedUrl(id, parseStartSeconds(url.searchParams.get("t") || url.searchParams.get("start"))) }
++      : null;
++  }
++
++  if (YOUTUBE_HOSTS.has(host)) {
++    const parts = url.pathname.split("/").filter(Boolean);
++    let id = "";
++
++    if (parts[0] === "watch") id = url.searchParams.get("v") || "";
++    else if (["shorts", "embed", "live", "v"].includes(parts[0] || "")) id = parts[1] || "";
++
++    if (!VIDEO_ID.test(id)) return null;
++    const start = parseStartSeconds(url.searchParams.get("t") || url.searchParams.get("start"));
++    return { kind: "youtube", id, embedUrl: buildEmbedUrl(id, start) };
++  }
++
++  // Any other http(s) URL is treated as a direct video file, exactly like before.
++  return { kind: "file", src: url.toString() };
++}
+diff --git a/package.json b/package.json
+index 9edf045..820a8ce 100644
+--- a/package.json
++++ b/package.json
+@@ -6,7 +6,8 @@
+     "dev": "next dev",
+     "build": "next build",
+     "start": "next start",
+-    "lint": "eslint ."
++    "lint": "eslint .",
++    "test:logic": "node --import ./tests/register.mjs --test tests/logic.test.mjs tests/release-routing.test.mjs"
+   },
+   "dependencies": {
+     "@hookform/resolvers": "^3.9.1",
+diff --git a/supabase/STOCK_MATCHING_REVIEW.sql b/supabase/STOCK_MATCHING_REVIEW.sql
+new file mode 100644
+index 0000000..bbc9b9b
+--- /dev/null
++++ b/supabase/STOCK_MATCHING_REVIEW.sql
+@@ -0,0 +1,39 @@
++-- =====================================================================================
++-- JPRIME STORE - stock diagnostics. READ-ONLY (SELECT only). Nothing here changes data.
++-- Your stock_keys.is_used column is stored as TEXT (not true/false), so every query below
++-- compares it as text.
++-- =====================================================================================
++
++-- 1) What values does is_used hold? Expected: 'false' (unused) and 'true' (sold).
++--    Anything else (empty, NULL, 'FALSE', '0', 'f') is NOT counted as unused by the website.
++select is_used, count(*) as keys
++from public.stock_keys
++group by is_used
++order by keys desc;
++
++-- 2) Unused keys whose product + duration match NO catalogue product/duration.
++--    (Compares ignoring letter case, extra spaces and styled letters like 𝗣𝗛𝗔𝗡𝗧𝗢𝗠 via NFKC.)
++with catalog as (
++  select normalize(lower(regexp_replace(btrim(c.name), '\s+', ' ', 'g')), NFKC)               as p,
++         normalize(lower(regexp_replace(btrim(t->>'duration'), '\s+', ' ', 'g')), NFKC)       as d
++  from public.products_catalog c,
++       jsonb_array_elements(coalesce(c.data::jsonb->'prices', '[]'::jsonb)) t
++)
++select s.product_name, s.duration, count(*) as unused_keys
++from public.stock_keys s
++where s.is_used::text = 'false'
++  and not exists (
++    select 1 from catalog k
++    where k.p = normalize(lower(regexp_replace(btrim(s.product_name), '\s+', ' ', 'g')), NFKC)
++      and k.d = normalize(lower(regexp_replace(btrim(s.duration),     '\s+', ' ', 'g')), NFKC)
++  )
++group by s.product_name, s.duration
++order by s.product_name, s.duration;
++
++-- 3) All catalogue product names with their durations (to compare with the list above).
++select c.name,
++       string_agg(t->>'duration', ' | ' order by ord) as durations
++from public.products_catalog c,
++     jsonb_array_elements(coalesce(c.data::jsonb->'prices', '[]'::jsonb)) with ordinality as x(t, ord)
++group by c.name
++order by c.name;
+diff --git a/tests/logic.test.mjs b/tests/logic.test.mjs
+new file mode 100644
+index 0000000..dd8a3eb
+--- /dev/null
++++ b/tests/logic.test.mjs
+@@ -0,0 +1,270 @@
++// Run with:  npm run test:logic
++// Pure-logic tests only: no database, no network, no supplier or payment API is ever called.
++import test from "node:test";
++import assert from "node:assert/strict";
++
++import {
++  normalizeSupplier,
++  resolveCatalogSupplier,
++  inferSupplier,
++  isAmbiguousSupplier,
++  deliveryModeForTier,
++  summarizeFulfillment,
++  normalizeStockText,
++  stockRowMatches,
++  countAvailableStock,
++  buildStockCountMap,
++  stockCountKey,
++} from "../lib/delivery.ts";
++import { parseVideoSource } from "../lib/video.ts";
++import { normalizeProduct, routingProblems, legacyToCatalogProduct } from "../lib/catalog-edit.ts";
++
++/* ------------------------------------------------------------------ supplier preservation */
++
++test("normalizeSupplier accepts the stored forms and never invents LOCAL", () => {
++  assert.equal(normalizeSupplier("SELLER1"), "SELLER1");
++  assert.equal(normalizeSupplier(" seller 2 "), "SELLER2");
++  assert.equal(normalizeSupplier("Local Stock"), "LOCAL");
++  assert.equal(normalizeSupplier(""), null);
++  assert.equal(normalizeSupplier(undefined), null);
++  assert.equal(normalizeSupplier("nonsense"), null);
++});
++
++test("loading a stored product keeps SELLER1 / SELLER2 routing and every id", () => {
++  const stored = {
++    id: "p1",
++    name: "Phantom",
++    sellerPid: "legacy-extra-field",
++    prices: [
++      { duration: "1 day", priceINR: "100", supplier: "SELLER1", seller1Pid: "136", seller1Duration: "1day" },
++      { duration: "7 day", priceINR: "400", supplier: "SELLER2", seller2VariantId: 167, seller1Pid: "62", seller1Duration: "7day" },
++      { duration: "30 day", priceINR: "900", supplier: "LOCAL" },
++    ],
++  };
++  const loaded = normalizeProduct(stored);
++  assert.deepEqual(loaded.prices.map((t) => t.supplier), ["SELLER1", "SELLER2", "LOCAL"]);
++  assert.equal(loaded.prices[0].seller1Pid, "136");
++  assert.equal(loaded.prices[0].seller1Duration, "1day");
++  assert.equal(loaded.prices[1].seller2VariantId, "167");
++  // seller 1 data on a SELLER2 duration is not thrown away
++  assert.equal(loaded.prices[1].seller1Pid, "62");
++  // unknown product-level fields survive a load/save round trip
++  assert.equal(loaded.sellerPid, "legacy-extra-field");
++});
++
++test("a missing supplier is NOT turned into LOCAL", () => {
++  const loaded = normalizeProduct({
++    id: "x",
++    name: "X",
++    prices: [
++      { duration: "1 day", priceINR: "1" },
++      { duration: "3 day", priceINR: "1", seller2VariantId: "55" },
++    ],
++  });
++  assert.equal(loaded.prices[0].supplier, ""); // nothing configured -> must be chosen
++  assert.equal(loaded.prices[1].supplier, "SELLER2"); // only Seller 2 configured -> detected
++  assert.ok(routingProblems(loaded).some((p) => p.includes("no supplier chosen")));
++});
++
++test("both sellers configured and no supplier stays 'not chosen' (ambiguous)", () => {
++  const loaded = normalizeProduct({
++    id: "x",
++    name: "X",
++    prices: [{ duration: "1 day", priceINR: "1", seller1Pid: "1", seller1Duration: "1day", seller2VariantId: "9" }],
++  });
++  assert.equal(loaded.prices[0].supplier, "");
++});
++
++test("routing problems flag LOCAL durations that still hold Seller ids", () => {
++  const loaded = normalizeProduct({
++    id: "x",
++    name: "X",
++    prices: [{ duration: "1 day", priceINR: "1", supplier: "LOCAL", seller2VariantId: "9" }],
++  });
++  assert.ok(routingProblems(loaded).some((p) => p.includes("set to LOCAL but has Seller IDs")));
++});
++
++test("strict purchase-time resolution: missing or invalid supplier is an error, never LOCAL", () => {
++  assert.deepEqual(resolveCatalogSupplier({}), { ok: false, reason: "missing" });
++  assert.deepEqual(resolveCatalogSupplier({ supplier: "weird" }), { ok: false, reason: "invalid" });
++  assert.deepEqual(resolveCatalogSupplier({ supplier: "seller2" }), { ok: true, supplier: "SELLER2" });
++  assert.deepEqual(resolveCatalogSupplier({ supplier: "LOCAL" }), { ok: true, supplier: "LOCAL" });
++});
++
++/* ------------------------------------------------------------------ Import Existing mapping */
++
++test("Import Existing maps by real configuration, not 'API = Seller 1'", () => {
++  const notes = [];
++  const imported = legacyToCatalogProduct(
++    {
++      id: "drip",
++      name: "DRIP",
++      fulfillmentType: "API",
++      prices: [
++        { duration: "1 day", priceINR: "₹1", seller2VariantId: 167 }, // Seller 2 only
++        { duration: "7 day", priceINR: "₹7" }, // API with no configuration at all
++      ],
++    },
++    notes
++  );
++  assert.equal(imported.prices[0].supplier, "SELLER2");
++  assert.equal(imported.prices[0].seller2VariantId, "167");
++  assert.equal(imported.prices[1].supplier, ""); // not guessed
++  assert.equal(imported.status, "MAINTENANCE"); // not sellable until someone chooses
++  assert.ok(notes.some((n) => n.includes("no supplier configuration")));
++});
++
++test("Import Existing: Seller 1 product, local product and both-configured product", () => {
++  const notes = [];
++  const s1 = legacyToCatalogProduct(
++    { id: "a", name: "A", fulfillmentType: "API", sellerPid: "136", prices: [{ duration: "1 day", priceINR: "1", sellerDuration: "1" }] },
++    notes
++  );
++  assert.equal(s1.prices[0].supplier, "SELLER1");
++  assert.equal(s1.prices[0].seller1Pid, "136");
++  assert.equal(s1.fulfillmentType, "API");
++
++  const local = legacyToCatalogProduct({ id: "b", name: "B", fulfillmentType: "LOCAL", prices: [{ duration: "1 day", priceINR: "1" }] }, notes);
++  assert.equal(local.prices[0].supplier, "LOCAL");
++  assert.equal(local.fulfillmentType, "LOCAL");
++
++  const both = legacyToCatalogProduct(
++    { id: "c", name: "C", fulfillmentType: "API", sellerPid: "62", prices: [{ duration: "1 day", priceINR: "1", sellerDuration: "1", seller2VariantId: 5 }] },
++    notes
++  );
++  assert.equal(both.prices[0].supplier, "SELLER1"); // what the old purchase code did
++  assert.equal(both.prices[0].seller2VariantId, "5"); // kept, not dropped
++  assert.ok(notes.some((n) => n.includes("both configured")));
++  assert.equal(isAmbiguousSupplier({ seller1Pid: "62", sellerDuration: "1", seller2VariantId: 5 }), true);
++});
++
++test("inferSupplier never answers LOCAL for an API product with no configuration", () => {
++  assert.equal(inferSupplier({}, { fulfillmentType: "API" }), null);
++  assert.equal(inferSupplier({}, { fulfillmentType: "LOCAL" }), "LOCAL");
++});
++
++/* ------------------------------------------------------------------ delivery-mode selection */
++
++test("delivery mode follows the DURATION's supplier, not the product flag", () => {
++  assert.equal(deliveryModeForTier({ supplier: "SELLER1" }, "LOCAL"), "API"); // product flag wrong/stale
++  assert.equal(deliveryModeForTier({ supplier: "SELLER2" }, undefined), "API");
++  assert.equal(deliveryModeForTier({ supplier: "LOCAL" }, "API"), "LOCAL");
++});
++
++test("delivery mode for old data without a supplier field", () => {
++  assert.equal(deliveryModeForTier({ seller2VariantId: 12 }, undefined), "API");
++  assert.equal(deliveryModeForTier({ seller1Pid: "1", sellerDuration: "1" }, "LOCAL"), "API");
++  assert.equal(deliveryModeForTier({}, "LOCAL"), "LOCAL");
++  assert.equal(deliveryModeForTier({}, "API"), "API");
++  assert.equal(deliveryModeForTier({}, undefined), "LOCAL");
++});
++
++test("mixed product: Seller durations are API, Local durations use stock", () => {
++  const tiers = [{ supplier: "SELLER1" }, { supplier: "LOCAL" }, { supplier: "SELLER2" }];
++  const modes = tiers.map((t) => deliveryModeForTier(t, "LOCAL"));
++  assert.deepEqual(modes, ["API", "LOCAL", "API"]);
++  assert.equal(summarizeFulfillment(modes), "LOCAL"); // safest summary for old code
++  assert.equal(summarizeFulfillment(["API", "API"]), "API");
++  assert.equal(summarizeFulfillment([]), "LOCAL");
++});
++
++/* ------------------------------------------------------------------ stock matching */
++
++const rows = [
++  { id: 1, product_name: "Phantom - Non Root", duration: "1 Day", is_used: false },
++  { id: 2, product_name: "phantom - non root ", duration: "1 day", is_used: false }, // case + trailing space
++  { id: 3, product_name: " Phantom -  Non Root", duration: " 1  DAY ", is_used: false }, // leading + double spaces
++  { id: 4, product_name: "Phantom - Non Root", duration: "1 Day", is_used: true }, // already sold
++  { id: 5, product_name: "Phantom - Non Root", duration: "7 Day", is_used: false }, // other duration
++  { id: 6, product_name: "Other Product", duration: "1 Day", is_used: false },
++  { id: 7, product_name: "Phantom\u00a0-\u00a0Non Root", duration: "1\u200b Day", is_used: false }, // NBSP + zero width
++];
++
++test("stock matching ignores letter case, extra spaces and invisible characters", () => {
++  assert.equal(normalizeStockText(" A\u00a0  b\u200b "), "a b");
++  assert.equal(countAvailableStock(rows, "Phantom - Non Root", "1 Day"), 4);
++});
++
++test("stock matching never mixes durations or products, and skips used keys", () => {
++  assert.equal(countAvailableStock(rows, "Phantom - Non Root", "7 Day"), 1);
++  assert.equal(countAvailableStock(rows, "Phantom - Non Root", "30 Day"), 0);
++  assert.equal(countAvailableStock(rows, "Other Product", "1 Day"), 1);
++  assert.equal(stockRowMatches(rows[3], "Phantom - Non Root", "1 Day"), true); // matching is separate from is_used
++  assert.equal(countAvailableStock([rows[3]], "Phantom - Non Root", "1 Day"), 0); // but counting skips it
++});
++
++test("admin matrix map and single count agree (one rule everywhere)", () => {
++  const map = buildStockCountMap(rows);
++  for (const [product, duration] of [["Phantom - Non Root", "1 Day"], ["Phantom - Non Root", "7 Day"], ["Other Product", "1 Day"], ["Nope", "1 Day"]]) {
++    assert.equal(map.get(stockCountKey(product, duration)) ?? 0, countAvailableStock(rows, product, duration));
++  }
++});
++
++test("counting is not capped at 1000 rows", () => {
++  const many = Array.from({ length: 2500 }, (_, i) => ({ id: i, product_name: "Big", duration: "1 Day", is_used: false }));
++  assert.equal(countAvailableStock(many, "big", "1 day"), 2500);
++  assert.equal(buildStockCountMap(many).get(stockCountKey("Big", "1 Day")), 2500);
++});
++
++test("styled Unicode letters match their plain-letter spelling", () => {
++  assert.equal(normalizeStockText("𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧"), "phantom - non root");
++  const styledRows = [
++    { id: 1, product_name: "𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", duration: "1 day", is_used: false },
++    { id: 2, product_name: "PHANTOM - NON ROOT", duration: "1 day", is_used: false },
++    { id: 3, product_name: "𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗜𝗢𝗦", duration: "1 day", is_used: false },
++  ];
++  assert.equal(countAvailableStock(styledRows, "𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", "1 day"), 2);
++  assert.equal(countAvailableStock(styledRows, "𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗜𝗢𝗦", "1 day"), 1);
++});
++
++/* ------------------------------------------------------------------ video */
++
++test("YouTube watch, youtu.be, Shorts and embed URLs become a fixed embed URL", () => {
++  const id = "dQw4w9WgXcQ";
++  for (const url of [
++    `https://www.youtube.com/watch?v=${id}`,
++    `https://youtube.com/watch?v=${id}&feature=share`,
++    `https://m.youtube.com/watch?v=${id}`,
++    `https://youtu.be/${id}`,
++    `https://youtu.be/${id}?si=abc`,
++    `https://www.youtube.com/shorts/${id}`,
++    `https://www.youtube.com/embed/${id}`,
++    `https://www.youtube.com/live/${id}`,
++  ]) {
++    const v = parseVideoSource(url);
++    assert.equal(v?.kind, "youtube", url);
++    assert.ok(v.embedUrl.startsWith(`https://www.youtube-nocookie.com/embed/${id}?`), url);
++  }
++  assert.ok(parseVideoSource(`https://youtu.be/${id}?t=1m30s`).embedUrl.includes("start=90"));
++});
++
++test("direct MP4 URLs keep working", () => {
++  assert.deepEqual(parseVideoSource("https://res.cloudinary.com/demo/video/upload/v1/clip.mp4"), {
++    kind: "file",
++    src: "https://res.cloudinary.com/demo/video/upload/v1/clip.mp4",
++  });
++  assert.equal(parseVideoSource("/videos/clip.mp4")?.kind, "file");
++});
++
++test("unsafe or malformed video URLs render nothing", () => {
++  for (const bad of [
++    "javascript:alert(1)",
++    "data:text/html,<script>alert(1)</script>",
++    "blob:https://x/1",
++    "file:///etc/passwd",
++    "ftp://x/y.mp4",
++    "//evil.example/x.mp4",
++    "https://user:pass@youtube.com/watch?v=dQw4w9WgXcQ",
++    "https://www.youtube.com/watch?v=short",
++    "https://www.youtube.com/watch?v=dQw4w9WgXcQ%22onload%3Dx",
++    "https://www.youtube.com/",
++    "",
++    "   ",
++    undefined,
++    null,
++  ]) {
++    assert.equal(parseVideoSource(bad), null, String(bad));
++  }
++  // lookalike host is not YouTube, so it is only ever a plain <video src>, never an iframe
++  assert.equal(parseVideoSource("https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ")?.kind, "file");
++});
+diff --git a/tests/register.mjs b/tests/register.mjs
+new file mode 100644
+index 0000000..3f0a61e
+--- /dev/null
++++ b/tests/register.mjs
+@@ -0,0 +1,5 @@
++// Lets `node --test` load the project's TypeScript helpers directly (no new dependencies):
++//  - "@/lib/x"          -> <project>/lib/x.ts
++//  - "./x" / "../lib/x" -> the .ts file when no extension is given
++import { register } from "node:module";
++register("./ts-hooks.mjs", import.meta.url);
+diff --git a/tests/release-routing.test.mjs b/tests/release-routing.test.mjs
+new file mode 100644
+index 0000000..39e40d1
+--- /dev/null
++++ b/tests/release-routing.test.mjs
+@@ -0,0 +1,272 @@
++// Run with:  npm run test:logic
++// Exercises lib/release-product.ts end to end against an in-memory database and a fake fetch.
++// No real database, supplier API, payment gateway or network is ever contacted.
++import test, { beforeEach } from "node:test";
++import assert from "node:assert/strict";
++
++import { state } from "./stubs/supabase-admin.mjs";
++
++process.env.RESELLER_API_KEY = "test-reseller-key";
++process.env.RESELLER_MASTER_KEY = "test-master-key";
++process.env.SELLER2_API_TOKEN = "test-seller2-token";
++
++const SELLER1_URL = "https://bantibhaiya.to/api/reseller_v1.php";
++const SELLER2_URL = "https://whitexmodz.store/api/v1/generate_key.php";
++
++let fetchCalls = [];
++globalThis.fetch = async (url, init) => {
++  fetchCalls.push({ url: String(url), body: String(init?.body ?? "") });
++  const body = String(url).includes("bantibhaiya")
++    ? { status: "success", data: { key: "S1-KEY-123" } }
++    : { success: true, keys: ["S2-KEY-456"] };
++  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
++};
++
++const { releaseProduct } = await import("../lib/release-product.ts");
++const { allProducts } = await import("../lib/products.ts");
++const { countLocalStock } = await import("../lib/stock.ts");
++
++/* helpers ------------------------------------------------------------------------------ */
++
++let catalogExact = [];
++let catalogAll = [];
++let catalogError = null;
++let stockRows = [];
++
++const stockSelects = () => state.ops.filter((o) => o.table === "stock_keys" && !o.update);
++const stockUpdates = () => state.ops.filter((o) => o.table === "stock_keys" && o.update);
++
++beforeEach(() => {
++  fetchCalls = [];
++  state.ops = [];
++  catalogExact = [];
++  catalogAll = [];
++  catalogError = null;
++  stockRows = [];
++
++  state.handler = (op) => {
++    if (op.table === "products_catalog") {
++      if (catalogError) return { data: null, error: { message: catalogError } };
++      return { data: op.filters.length ? catalogExact : catalogAll, error: null };
++    }
++    if (op.table === "stock_keys") {
++      if (op.update) {
++        const id = op.filters.find((f) => f[1] === "id")?.[2];
++        const row = stockRows.find((r) => r.id === id && r.is_used === false);
++        if (!row) return { data: null, error: null };
++        row.is_used = true;
++        return { data: { id }, error: null };
++      }
++      const unused = stockRows.filter((r) => r.is_used === false);
++      return { data: op.range ? unused.slice(op.range[0], op.range[1] + 1) : unused, error: null };
++    }
++    return { data: [], error: null };
++  };
++});
++
++const catalogRow = (name, prices, extra = {}) => ({
++  product_id: "p1",
++  name,
++  data: { id: "p1", name, fulfillmentType: "LOCAL", prices, ...extra },
++});
++
++/* tests -------------------------------------------------------------------------------- */
++
++test("catalogue DATABASE ERROR stops the purchase: no local stock, no supplier call", async () => {
++  catalogError = "connection reset";
++  stockRows = [{ id: 1, product_name: "Phantom", duration: "1 day", key_code: "LOCAL-KEY", is_used: false }];
++
++  const result = await releaseProduct({ username: "u", product_name: "Phantom", duration: "1 day" });
++
++  assert.equal(result.success, false);
++  assert.match(result.error, /catalogue could not be read/i);
++  assert.equal(stockSelects().length, 0);
++  assert.equal(stockUpdates().length, 0);
++  assert.equal(fetchCalls.length, 0);
++});
++
++test("duplicate catalogue rows for one name stop the purchase (no silent fallback)", async () => {
++  catalogExact = [catalogRow("Phantom", []), catalogRow("Phantom", [])];
++  const result = await releaseProduct({ username: "u", product_name: "Phantom", duration: "1 day" });
++  assert.equal(result.success, false);
++  assert.equal(stockSelects().length, 0);
++  assert.equal(fetchCalls.length, 0);
++});
++
++test("SELLER1 duration uses the Seller 1 product id + duration and never local stock", async () => {
++  catalogExact = [
++    catalogRow("Phantom", [
++      { duration: "1 day", supplier: "SELLER1", seller1Pid: "136", seller1Duration: "1day", seller2VariantId: "999" },
++    ]),
++  ];
++  stockRows = [{ id: 1, product_name: "Phantom", duration: "1 day", key_code: "LOCAL-KEY", is_used: false }];
++
++  const result = await releaseProduct({ username: "u", product_name: "Phantom", duration: "1 day" });
++
++  assert.deepEqual(result, { success: true, key: "S1-KEY-123" });
++  assert.equal(fetchCalls.length, 1);
++  assert.equal(fetchCalls[0].url, SELLER1_URL);
++  const body = new URLSearchParams(fetchCalls[0].body);
++  assert.equal(body.get("product_id"), "136");
++  assert.equal(body.get("duration"), "1day");
++  assert.equal(stockSelects().length, 0);
++  assert.equal(stockRows[0].is_used, false); // local key untouched
++});
++
++test("SELLER2 duration uses the Seller 2 variant id, not Seller 1 and not local stock", async () => {
++  catalogExact = [
++    catalogRow("Drip", [
++      { duration: "1 day", supplier: "SELLER2", seller2VariantId: "167", seller1Pid: "62", seller1Duration: "1day" },
++    ]),
++  ];
++  stockRows = [{ id: 1, product_name: "Drip", duration: "1 day", key_code: "LOCAL-KEY", is_used: false }];
++
++  const result = await releaseProduct({ username: "u", product_name: "Drip", duration: "1 day" });
++
++  assert.deepEqual(result, { success: true, key: "S2-KEY-456" });
++  assert.equal(fetchCalls.length, 1);
++  assert.equal(fetchCalls[0].url, SELLER2_URL);
++  assert.equal(new URLSearchParams(fetchCalls[0].body).get("variant_id"), "167");
++  assert.equal(stockSelects().length, 0);
++});
++
++test("LOCAL duration reserves the oldest matching key (case/space tolerant) and calls no supplier", async () => {
++  catalogExact = [catalogRow("Phantom - Non Root", [{ duration: "1 Day", supplier: "LOCAL" }])];
++  stockRows = [
++    { id: 7, product_name: "phantom - non root ", duration: "1 day", key_code: "LOCAL-KEY-A", is_used: false },
++    { id: 8, product_name: "Phantom - Non Root", duration: "1 Day", key_code: "LOCAL-KEY-B", is_used: false },
++    { id: 9, product_name: "Phantom - Non Root", duration: "7 Day", key_code: "WRONG-DURATION", is_used: false },
++  ];
++
++  const result = await releaseProduct({ username: "u", product_name: "Phantom - Non Root", duration: "1 Day" });
++
++  assert.deepEqual(result, { success: true, key: "LOCAL-KEY-A" });
++  assert.equal(fetchCalls.length, 0);
++  assert.equal(stockRows.find((r) => r.id === 7).is_used, true);
++  assert.equal(stockRows.find((r) => r.id === 8).is_used, false);
++  assert.equal(stockRows.find((r) => r.id === 9).is_used, false);
++});
++
++test("LOCAL with no matching key fails cleanly (and never calls a supplier)", async () => {
++  catalogExact = [catalogRow("Phantom", [{ duration: "1 day", supplier: "LOCAL" }])];
++  const result = await releaseProduct({ username: "u", product_name: "Phantom", duration: "1 day" });
++  assert.equal(result.success, false);
++  assert.equal(fetchCalls.length, 0);
++});
++
++test("catalogue duration without a supplier is an error, never local stock", async () => {
++  catalogExact = [catalogRow("Phantom", [{ duration: "1 day", seller1Pid: "1", seller1Duration: "1day" }])];
++  stockRows = [{ id: 1, product_name: "Phantom", duration: "1 day", key_code: "LOCAL-KEY", is_used: false }];
++
++  const result = await releaseProduct({ username: "u", product_name: "Phantom", duration: "1 day" });
++
++  assert.equal(result.success, false);
++  assert.match(result.error, /Supplier is not configured/);
++  assert.equal(stockSelects().length, 0);
++  assert.equal(fetchCalls.length, 0);
++});
++
++test("SELLER1 with a missing product id is an error, not a local fallback", async () => {
++  catalogExact = [catalogRow("Phantom", [{ duration: "1 day", supplier: "SELLER1", seller1Duration: "1day" }])];
++  stockRows = [{ id: 1, product_name: "Phantom", duration: "1 day", key_code: "LOCAL-KEY", is_used: false }];
++
++  const result = await releaseProduct({ username: "u", product_name: "Phantom", duration: "1 day" });
++
++  assert.equal(result.success, false);
++  assert.equal(fetchCalls.length, 0);
++  assert.equal(stockSelects().length, 0);
++});
++
++test("catalogue name that differs only by case/spacing is still found", async () => {
++  catalogExact = []; // exact lookup misses
++  catalogAll = [catalogRow("  PHANTOM  non root", [{ duration: "1 day", supplier: "SELLER2", seller2VariantId: "5" }])];
++
++  const result = await releaseProduct({ username: "u", product_name: "Phantom Non Root", duration: "1 day" });
++
++  assert.deepEqual(result, { success: true, key: "S2-KEY-456" });
++  assert.equal(stockSelects().length, 0);
++});
++
++test("a product genuinely missing from the catalogue and the legacy list is 'not found'", async () => {
++  const result = await releaseProduct({ username: "u", product_name: "Does Not Exist", duration: "1 day" });
++  assert.equal(result.success, false);
++  assert.match(result.error, /not found/i);
++  assert.equal(stockSelects().length, 0);
++  assert.equal(fetchCalls.length, 0);
++});
++
++test("genuinely missing from catalogue: legacy LOCAL product uses local stock", async () => {
++  const legacy = allProducts.find((p) => p.fulfillmentType === "LOCAL" && !p.sellerPid && p.prices.length);
++  assert.ok(legacy, "needs a legacy LOCAL product");
++  const tier = legacy.prices[0];
++  stockRows = [{ id: 1, product_name: legacy.name, duration: tier.duration, key_code: "LEGACY-LOCAL", is_used: false }];
++
++  const result = await releaseProduct({ username: "u", product_name: legacy.name, duration: tier.duration });
++
++  assert.deepEqual(result, { success: true, key: "LEGACY-LOCAL" });
++  assert.equal(fetchCalls.length, 0);
++});
++
++test("genuinely missing from catalogue: legacy Seller 1 product uses Seller 1, never local stock", async () => {
++  const legacy = allProducts.find((p) => p.sellerPid && p.prices.some((t) => t.sellerDuration));
++  assert.ok(legacy, "needs a legacy Seller 1 product");
++  const tier = legacy.prices.find((t) => t.sellerDuration);
++  stockRows = [{ id: 1, product_name: legacy.name, duration: tier.duration, key_code: "LOCAL-KEY", is_used: false }];
++
++  const result = await releaseProduct({ username: "u", product_name: legacy.name, duration: tier.duration });
++
++  assert.equal(result.success, true);
++  assert.equal(fetchCalls.length, 1);
++  assert.equal(fetchCalls[0].url, SELLER1_URL);
++  assert.equal(new URLSearchParams(fetchCalls[0].body).get("product_id"), String(legacy.sellerPid));
++  assert.equal(stockSelects().length, 0);
++});
++
++test("two buyers racing for the same key: the loser takes the next key instead of failing", async () => {
++  catalogExact = [catalogRow("Phantom", [{ duration: "1 day", supplier: "LOCAL" }])];
++  stockRows = [
++    { id: 1, product_name: "Phantom", duration: "1 day", key_code: "K1", is_used: false },
++    { id: 2, product_name: "Phantom", duration: "1 day", key_code: "K2", is_used: false },
++  ];
++  // simulate another buyer grabbing K1 between our read and our update
++  const original = state.handler;
++  state.handler = (op) => {
++    if (op.table === "stock_keys" && op.update && op.filters.find((f) => f[1] === "id")?.[2] === 1) {
++      stockRows[0].is_used = true;
++    }
++    return original(op);
++  };
++
++  const result = await releaseProduct({ username: "u", product_name: "Phantom", duration: "1 day" });
++  assert.deepEqual(result, { success: true, key: "K2" });
++});
++
++test("styled catalogue names find keys stored styled OR plain, and the oldest key is used first", async () => {
++  catalogExact = [catalogRow("𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", [{ duration: "1 day", supplier: "LOCAL" }])];
++  stockRows = [
++    { id: 4, product_name: "PHANTOM - NON ROOT", duration: "1 day", key_code: "PLAIN", is_used: false },
++    { id: 5, product_name: "𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", duration: "1 day", key_code: "STYLED", is_used: false },
++  ];
++
++  const first = await releaseProduct({ username: "u", product_name: "𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", duration: "1 day" });
++  const second = await releaseProduct({ username: "u", product_name: "𝗣𝗛𝗔𝗡𝗧𝗢𝗠 - 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", duration: "1 day" });
++
++  assert.deepEqual(first, { success: true, key: "PLAIN" });
++  assert.deepEqual(second, { success: true, key: "STYLED" });
++  assert.equal(fetchCalls.length, 0);
++});
++
++test("customer/admin count reads every page (more than 1000 keys) with the same rule", async () => {
++  stockRows = Array.from({ length: 2300 }, (_, i) => ({
++    id: i + 1,
++    product_name: i % 2 === 0 ? "𝗗𝗨𝗖𝗞 𝗠𝗢𝗗- 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧" : "duck mod- non root ",
++    duration: "7 day",
++    key_code: `K${i}`,
++    is_used: false,
++  }));
++  stockRows.push({ id: 9999, product_name: "𝗗𝗨𝗖𝗞 𝗠𝗢𝗗- 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", duration: "7 day", key_code: "USED", is_used: true });
++
++  const result = await countLocalStock("𝗗𝗨𝗖𝗞 𝗠𝗢𝗗- 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", "7 day", { fresh: true });
++  assert.deepEqual(result, { ok: true, data: 2300 });
++  assert.deepEqual(await countLocalStock("𝗗𝗨𝗖𝗞 𝗠𝗢𝗗- 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", "30 day", { fresh: true }), { ok: true, data: 0 });
++});
+diff --git a/tests/stubs/supabase-admin.mjs b/tests/stubs/supabase-admin.mjs
+new file mode 100644
+index 0000000..e682fd0
+--- /dev/null
++++ b/tests/stubs/supabase-admin.mjs
+@@ -0,0 +1,23 @@
++// Test double for lib/supabase-admin.ts. No network, no database.
++export const state = { handler: () => ({ data: [], error: null }), ops: [] };
++
++function builder(table) {
++  const op = { table, filters: [], update: null, single: false, range: null };
++  const b = {
++    select() { return b; },
++    eq(column, value) { op.filters.push(["eq", column, value]); return b; },
++    ilike(column, value) { op.filters.push(["ilike", column, value]); return b; },
++    order() { return b; },
++    limit() { return b; },
++    range(from, to) { op.range = [from, to]; return b; },
++    update(values) { op.update = values; return b; },
++    maybeSingle() { op.single = true; return b; },
++    then(resolve, reject) {
++      state.ops.push(op);
++      return Promise.resolve(state.handler(op)).then(resolve, reject);
++    },
++  };
++  return b;
++}
++
++export const supabaseAdmin = { from: (table) => builder(table) };
+diff --git a/tests/ts-hooks.mjs b/tests/ts-hooks.mjs
+new file mode 100644
+index 0000000..ca47e5f
+--- /dev/null
++++ b/tests/ts-hooks.mjs
+@@ -0,0 +1,28 @@
++import { existsSync } from "node:fs";
++import { fileURLToPath, pathToFileURL } from "node:url";
++import path from "node:path";
++
++const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
++
++function tryTs(base) {
++  for (const candidate of [base, `${base}.ts`, path.join(base, "index.ts")]) {
++    if (path.extname(candidate) === ".ts" && existsSync(candidate)) return pathToFileURL(candidate).href;
++  }
++  return null;
++}
++
++export async function resolve(specifier, context, nextResolve) {
++  // Tests never touch a real database: swap the Supabase client for an in-memory double.
++  if (specifier === "@/lib/supabase-admin") {
++    return { url: pathToFileURL(path.join(root, "tests/stubs/supabase-admin.mjs")).href, shortCircuit: true };
++  }
++  if (specifier.startsWith("@/")) {
++    const hit = tryTs(path.join(root, specifier.slice(2)));
++    if (hit) return { url: hit, shortCircuit: true };
++  }
++  if ((specifier.startsWith("./") || specifier.startsWith("../")) && context.parentURL && !path.extname(specifier)) {
++    const hit = tryTs(path.resolve(path.dirname(fileURLToPath(context.parentURL)), specifier));
++    if (hit) return { url: hit, shortCircuit: true };
++  }
++  return nextResolve(specifier, context);
++}

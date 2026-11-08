@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdmin } from "@/lib/auth";
 import { allProducts } from "@/lib/products";
+import { countLocalStock, fetchAllUnusedStock } from "@/lib/stock";
+import { stockCountKey } from "@/lib/delivery";
 import { creditWallet, debitWallet, getBalance, logWalletTransaction } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
@@ -24,8 +26,10 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
+    // Stock is read page by page: a plain select() stops at the database's 1000-row response cap,
+    // which silently hid keys from the Stock Keys list and the Stock Matrix.
     const [stock, users, wallets, purchases, prices, catalog] = await Promise.all([
-      supabaseAdmin.from("stock_keys").select("*").eq("is_used", false),
+      fetchAllUnusedStock(),
       supabaseAdmin.from("users").select("*"),
       supabaseAdmin.from("wallets").select("username, balance"),
       supabaseAdmin.from("purchase_history").select("*").order("id", { ascending: false }).limit(5000),
@@ -33,11 +37,19 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from("products_catalog").select("product_id, name, data").order("id", { ascending: true }),
     ]);
 
-    const firstError = stock.error || users.error || wallets.error || purchases.error || prices.error || catalog.error;
+    const firstError =
+      (stock.ok ? null : { message: stock.error }) ||
+      users.error ||
+      wallets.error ||
+      purchases.error ||
+      prices.error ||
+      catalog.error;
     if (firstError) {
       console.error("ADMIN DATA ERROR:", firstError.message);
       return fail("Could not load admin data.", 500);
     }
+
+    const stockKeys = stock.ok ? stock.data : [];
 
     const safeUsers = (users.data || []).map((u: any) => {
       const { password, ...rest } = u;
@@ -56,10 +68,28 @@ export async function GET(request: NextRequest) {
     // for an empty catalog; importing it is handled separately by /api/admin/legacy-products.
     const dashboardProducts = catalogProducts.length ? catalogProducts : allProducts;
 
+    // Diagnostics only (read-only): unused keys whose product + duration match NO catalogue entry,
+    // even after ignoring letter case and extra spaces. These are the keys a customer can never receive.
+    const knownPairs = new Set<string>();
+    for (const product of dashboardProducts as any[]) {
+      for (const tier of Array.isArray(product?.prices) ? product.prices : []) {
+        knownPairs.add(stockCountKey(product?.name, tier?.duration));
+      }
+    }
+    const unmatched = new Map<string, { product_name: string; duration: string; count: number }>();
+    for (const row of stockKeys as any[]) {
+      if (knownPairs.has(stockCountKey(row.product_name, row.duration))) continue;
+      const k = `${row.product_name}::${row.duration}`;
+      const entry = unmatched.get(k);
+      if (entry) entry.count += 1;
+      else unmatched.set(k, { product_name: String(row.product_name ?? ""), duration: String(row.duration ?? ""), count: 1 });
+    }
+
     return NextResponse.json(
       {
         success: true,
-        keys: stock.data || [],
+        keys: stockKeys,
+        unmatchedStock: Array.from(unmatched.values()).slice(0, 100),
         users: safeUsers,
         wallets: wallets.data || [],
         purchases: purchases.data || [],
@@ -85,14 +115,9 @@ export async function POST(request: NextRequest) {
 
     /* ---------- stock ---------- */
     if (action === "stock_count") {
-      const { count, error } = await supabaseAdmin
-        .from("stock_keys")
-        .select("id", { count: "exact", head: true })
-        .eq("product_name", String(body.product_name || ""))
-        .eq("duration", String(body.duration || ""))
-        .eq("is_used", false);
-      if (error) return fail("Could not count stock.", 500);
-      return NextResponse.json({ success: true, count: count ?? 0 }, { headers: NO_STORE });
+      const result = await countLocalStock(String(body.product_name || ""), String(body.duration || ""), { fresh: true });
+      if (!result.ok) return fail("Could not count stock.", 500);
+      return NextResponse.json({ success: true, count: result.data }, { headers: NO_STORE });
     }
 
     if (action === "add_stock") {

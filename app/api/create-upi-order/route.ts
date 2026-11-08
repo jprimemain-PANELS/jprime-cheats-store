@@ -45,7 +45,9 @@ export async function POST(request: NextRequest) {
 
     if (!productName || !duration) return fail("Missing required order information", 400);
 
-    const quote = await getTrustedQuote({ username, role, productName, duration });
+    const coupon = String(body?.coupon ?? "").trim().slice(0, 40);
+
+    const quote = await getTrustedQuote({ username, role, productName, duration, coupon });
     if (!quote.ok) return fail(quote.error, quote.httpStatus);
     if (quote.status === "MAINTENANCE") {
       return fail("This product is under maintenance. Please check back soon.", 409);

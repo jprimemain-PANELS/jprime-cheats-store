@@ -11,44 +11,22 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import {
+  deliveryModeForTier,
+  hasSeller1Config,
+  hasSeller2Config,
+  normalizeStockText,
+  normalizeSupplier,
+  summarizeFulfillment,
+} from "@/lib/delivery";
+import {
+  legacyToCatalogProduct,
+  normalizeProduct,
+  routingProblems,
+  type CatalogProduct as Product,
+  type CatalogTier as PriceTier,
+} from "@/lib/catalog-edit";
 
-
-type Supplier = "SELLER1" | "SELLER2" | "LOCAL";
-
-interface PriceTier {
-  duration: string;
-  priceINR: string;
-  resellerPrice?: string;
-  priceUSD?: string;
-  sellerDuration?: string;
-
-  supplier?: Supplier;
-
-  seller1Pid?: string;
-  seller1Duration?: string;
-
-  seller2VariantId?: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  category: "mobile" | "pc" | "ios";
-  fulfillmentType?: "API" | "LOCAL";
-  updateChannel: string;
-  features: string[];
-  videoPlaceholder?: string;
-  videoUrl?: string;
-  status: "ONLINE" | "MAINTENANCE";
-  prices: PriceTier[];
-}
-
-interface CatalogRow {
-  id: number;
-  product_id: string;
-  name: string;
-  data: Product;
-}
 
 const emptyProduct: Product = {
   id: "",
@@ -65,50 +43,13 @@ const emptyProduct: Product = {
       duration: "1 day",
       priceINR: "",
       resellerPrice: "",
-      supplier: "LOCAL",
+      supplier: "",
       seller1Pid: "",
       seller1Duration: "",
       seller2VariantId: "",
     },
   ],
 };
-
-function normalizeProduct(product: any): Product {
-  return {
-    id: String(product.id || ""),
-    name: String(product.name || ""),
-    category: product.category || "mobile",
-    fulfillmentType: product.fulfillmentType || "LOCAL",
-    updateChannel: String(product.updateChannel || ""),
-    features:
-      Array.isArray(product.features) && product.features.length
-        ? product.features
-        : [""],
-    videoPlaceholder: String(product.videoPlaceholder || ""),
-    videoUrl: String(product.videoUrl || ""),
-    status: product.status === "MAINTENANCE" ? "MAINTENANCE" : "ONLINE",
-
-    prices:
-      Array.isArray(product.prices) && product.prices.length
-        ? product.prices.map((tier: any) => ({
-            duration: String(tier.duration || ""),
-            priceINR: String(tier.priceINR || ""),
-            resellerPrice: String(tier.resellerPrice || ""),
-            priceUSD: String(tier.priceUSD || ""),
-            sellerDuration: String(tier.sellerDuration || ""),
-
-            supplier: tier.supplier || "LOCAL",
-
-            seller1Pid: String(tier.seller1Pid || ""),
-            seller1Duration: String(
-              tier.seller1Duration || tier.sellerDuration || ""
-            ),
-
-            seller2VariantId: String(tier.seller2VariantId || ""),
-          }))
-        : [],
-  };
-}
 
 async function adminCatalogRequest(
   path: string,
@@ -183,7 +124,11 @@ export default function ProductManager() {
       }
 
       const mergedProducts = rows.map((row: any) => {
-        const product = normalizeProduct(row.data);
+        const product = normalizeProduct({
+          ...(row.data || {}),
+          id: row.data?.id || row.product_id,
+          name: row.data?.name || row.name,
+        });
         return {
           ...product,
           status: statusesByName.get(product.name) ?? product.status,
@@ -217,7 +162,7 @@ export default function ProductManager() {
           duration: "1 day",
           priceINR: "",
           resellerPrice: "",
-          supplier: "LOCAL",
+          supplier: "",
           seller1Pid: "",
           seller1Duration: "",
           seller2VariantId: "",
@@ -254,6 +199,22 @@ export default function ProductManager() {
       return;
     }
 
+    // Every duration needs an explicit supplier. Nothing is ever defaulted to LOCAL.
+    const problems = routingProblems(selected);
+    const blocking = problems.filter((p) => p.includes("no supplier chosen"));
+
+    if (blocking.length) {
+      alert("Choose a supplier for every duration before saving:\n\n" + blocking.join("\n"));
+      return;
+    }
+
+    if (problems.length) {
+      const goOn = window.confirm(
+        "Please check these supplier settings:\n\n" + problems.join("\n") + "\n\nSave anyway?"
+      );
+      if (!goOn) return;
+    }
+
     const cleaned: Product = {
       ...selected,
 
@@ -273,7 +234,7 @@ export default function ProductManager() {
           resellerPrice: String(x.resellerPrice || "").trim(),
           priceUSD: String(x.priceUSD || "").trim(),
 
-          supplier: x.supplier || "LOCAL",
+          supplier: normalizeSupplier(x.supplier) ?? "",
 
           seller1Pid: String(x.seller1Pid || "").trim(),
           seller1Duration: String(
@@ -285,6 +246,11 @@ export default function ProductManager() {
           ).trim(),
         })),
     };
+
+    // Product-level flag is only a summary of the durations (kept for older code).
+    cleaned.fulfillmentType = summarizeFulfillment(
+      cleaned.prices.map((t) => deliveryModeForTier(t, undefined))
+    );
 
     setSaving(true);
 
@@ -389,75 +355,70 @@ export default function ProductManager() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Import ${allProducts.length} existing products into the new Product Catalog?`
-    );
-
-    if (!confirmed) return;
-
     setImporting(true);
 
-    const rows = allProducts.map((product: any) => {
-      const normalized = normalizeProduct(product);
+    try {
+      // Read the LIVE catalogue first so nothing that already exists is ever overwritten.
+      const live = await adminCatalogRequest("/api/admin/catalog");
+      const liveRows: any[] = Array.isArray(live.products) ? live.products : [];
 
-      /*
-       * Existing Seller 1 products:
-       * sellerPid belongs to the product currently.
-       *
-       * We copy it into every duration so the new system
-       * has a per-duration PID.
-       */
-      normalized.prices = normalized.prices.map(
-        (tier) => ({
-          ...tier,
-
-          supplier:
-            normalized.fulfillmentType === "API"
-              ? "SELLER1"
-              : "LOCAL",
-
-          seller1Pid:
-            product.sellerPid
-              ? String(product.sellerPid)
-              : "",
-
-          seller1Duration:
-            tier.sellerDuration || "",
-        })
+      const existingIds = new Set(
+        liveRows.map((r) => String(r?.product_id ?? r?.data?.id ?? "").trim().toLowerCase())
+      );
+      const existingNames = new Set(
+        liveRows.map((r) => normalizeStockText(r?.name ?? r?.data?.name))
       );
 
-      return {
-        product_id: normalized.id,
-        name: normalized.name,
-        data: normalized,
-        updated_at: new Date().toISOString(),
-      };
-    });
+      const toImport = allProducts.filter(
+        (p: any) =>
+          !existingIds.has(String(p.id ?? "").trim().toLowerCase()) &&
+          !existingNames.has(normalizeStockText(p.name))
+      );
+      const skipped = allProducts.length - toImport.length;
 
-    try {
-      for (const row of rows) {
+      if (toImport.length === 0) {
+        setImporting(false);
+        alert(
+          `Nothing to import. All ${allProducts.length} built-in products already exist in your catalogue and were left untouched.`
+        );
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Import ${toImport.length} built-in product(s) that are not in your catalogue yet?\n\n` +
+          `${skipped} product(s) already in the catalogue will NOT be changed.\n` +
+          `Supplier is detected from each product's real configuration.`
+      );
+
+      if (!confirmed) {
+        setImporting(false);
+        return;
+      }
+
+      const notes: string[] = [];
+
+      for (const legacy of toImport) {
+        const converted = legacyToCatalogProduct(legacy, notes);
         await adminCatalogRequest("/api/admin/catalog", {
           method: "POST",
-          body: JSON.stringify({
-            product: row.data,
-          }),
+          body: JSON.stringify({ product: converted }),
         });
       }
+
+      setImporting(false);
+
+      alert(
+        `${toImport.length} product(s) imported. ${skipped} existing product(s) were left untouched.` +
+          (notes.length ? `\n\nPlease review:\n\n${notes.slice(0, 15).join("\n")}` : "")
+      );
+
+      window.dispatchEvent(new Event("jprime-catalog-updated"));
+      await loadProducts();
     } catch (error: any) {
       console.error(error);
       setImporting(false);
       alert("Import failed: " + (error?.message || "Unknown error"));
-      return;
     }
-    
-    setImporting(false);
-
-    alert(
-      `${rows.length} existing products imported successfully.`
-    );
-
-    window.dispatchEvent(new Event("jprime-catalog-updated"));
-    await loadProducts();
   }
 
   function updateSelected(
@@ -537,6 +498,11 @@ export default function ProductManager() {
   function addDuration() {
     if (!selected) return;
 
+    // Inherit the routing of the last duration (same product, same supplier is the usual case).
+    // Seller IDs are NOT copied: each duration has its own, so they must be entered explicitly.
+    const last = selected.prices[selected.prices.length - 1];
+    const inheritedSupplier = normalizeSupplier(last?.supplier) ?? "";
+
     setSelected({
       ...selected,
 
@@ -548,9 +514,11 @@ export default function ProductManager() {
           priceINR: "",
           resellerPrice: "",
 
-          supplier: "LOCAL",
+          supplier: inheritedSupplier,
 
-          seller1Pid: "",
+          // Seller 1 product id is the same for every duration of a product, so inherit it.
+          seller1Pid:
+            inheritedSupplier === "SELLER1" ? String(last?.seller1Pid || "") : "",
           seller1Duration: "",
 
           seller2VariantId: "",
@@ -769,7 +737,11 @@ export default function ProductManager() {
                           <div className="text-xs text-zinc-500 mt-1">
                             ₹{tier.priceINR} • Reseller ₹
                             {tier.resellerPrice || "0"} •{" "}
-                            {tier.supplier || "LOCAL"}
+                            {tier.supplier || "SUPPLIER NOT SET"}
+                            {tier.supplier === "LOCAL" &&
+                            (hasSeller1Config(tier) || hasSeller2Config(tier))
+                              ? " ⚠ Seller IDs saved"
+                              : ""}
                           </div>
                         </div>
                       )
@@ -900,30 +872,22 @@ export default function ProductManager() {
 
                   <div>
                     <label className="text-xs text-zinc-400">
-                      Fulfillment
+                      Delivery (from durations)
                     </label>
 
-                    <select
-                      value={
-                        selected.fulfillmentType ||
-                        "LOCAL"
-                      }
-                      onChange={(e) =>
-                        updateSelected(
-                          "fulfillmentType",
-                          e.target.value
-                        )
-                      }
-                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
-                    >
-                      <option value="API">
-                        API
-                      </option>
-
-                      <option value="LOCAL">
-                        LOCAL STOCK
-                      </option>
-                    </select>
+                    <div className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-300">
+                      {selected.prices.length === 0
+                        ? "No durations yet"
+                        : (() => {
+                            const modes = selected.prices.map((t) =>
+                              deliveryModeForTier(t, undefined)
+                            );
+                            const api = modes.filter((m) => m === "API").length;
+                            if (api === modes.length) return "API (Seller 1 / Seller 2)";
+                            if (api === 0) return "LOCAL STOCK";
+                            return "MIXED (set per duration below)";
+                          })()}
+                    </div>
                   </div>
 
                   <div>
@@ -1186,10 +1150,7 @@ export default function ProductManager() {
                           </label>
 
                           <select
-                            value={
-                              tier.supplier ||
-                              "LOCAL"
-                            }
+                            value={tier.supplier || ""}
                             onChange={(e) =>
                               updateTier(
                                 index,
@@ -1197,8 +1158,16 @@ export default function ProductManager() {
                                 e.target.value
                               )
                             }
-                            className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                            className={`w-full mt-1 p-3 rounded-xl bg-zinc-950 border ${
+                              tier.supplier
+                                ? "border-zinc-800"
+                                : "border-amber-500/60"
+                            }`}
                           >
+                            <option value="" disabled>
+                              Select supplier...
+                            </option>
+
                             <option value="LOCAL">
                               Local Stock
                             </option>

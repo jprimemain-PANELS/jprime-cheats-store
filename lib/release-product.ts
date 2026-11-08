@@ -7,17 +7,19 @@ import {
   type Product,
   type PriceTier,
 } from "@/lib/products";
+import {
+  inferSupplier,
+  normalizeStockText,
+  resolveCatalogSupplier,
+  type Supplier,
+} from "@/lib/delivery";
+import { claimLocalStockKey } from "@/lib/stock";
 
 interface ReleaseProductParams {
   username: string;
   product_name: string;
   duration: string;
 }
-
-type Supplier =
-  | "LOCAL"
-  | "SELLER1"
-  | "SELLER2";
 
 interface CatalogPrice {
   duration?: unknown;
@@ -51,64 +53,107 @@ const SELLER2_API_URL =
    CATALOG
    ========================================================= */
 
-async function findCatalogProduct(
-  productName: string
-): Promise<CatalogProduct | null> {
-  const { data, error } =
-    await supabaseAdmin
-      .from("products_catalog")
-      .select("product_id, name, data")
-      .eq("name", productName)
-      .maybeSingle();
+/*
+ * A catalogue lookup has THREE outcomes and they must never be confused:
+ *   found      -> use the catalogue configuration
+ *   not_found  -> the product genuinely is not in products_catalog (legacy fallback allowed)
+ *   error      -> the database/query failed or the data is ambiguous. We do NOT know what the
+ *                 product is, so the purchase is stopped. It must never be treated as
+ *                 "not found" and quietly served from local stock.
+ */
+type CatalogLookup =
+  | { status: "found"; product: CatalogProduct }
+  | { status: "not_found" }
+  | { status: "error"; message: string };
 
-  if (error) {
-    console.error(
-      "CATALOG PRODUCT LOOKUP ERROR:",
-      error
-    );
-
-    return null;
-  }
-
-  if (!data) {
-    return null;
-  }
-
+function toCatalogProduct(row: any): CatalogProduct {
   const catalogData =
-    data.data &&
-    typeof data.data === "object"
-      ? data.data
-      : {};
+    row?.data && typeof row.data === "object" ? row.data : {};
 
   return {
     ...catalogData,
-    id:
-      catalogData.id ||
-      data.product_id,
-    name:
-      catalogData.name ||
-      data.name,
+    id: catalogData.id || row?.product_id,
+    name: catalogData.name || row?.name,
   };
+}
+
+async function findCatalogProduct(
+  productName: string
+): Promise<CatalogLookup> {
+  const wanted = normalizeStockText(productName);
+
+  // 1) Exact name (the normal case).
+  const exact = await supabaseAdmin
+    .from("products_catalog")
+    .select("product_id, name, data")
+    .eq("name", productName)
+    .limit(2);
+
+  if (exact.error) {
+    console.error("CATALOG PRODUCT LOOKUP ERROR:", exact.error.message);
+    return { status: "error", message: exact.error.message };
+  }
+
+  if ((exact.data || []).length > 1) {
+    console.error("CATALOG DUPLICATE PRODUCT NAME:", productName);
+    return {
+      status: "error",
+      message: "Duplicate catalogue entries for this product name.",
+    };
+  }
+
+  if ((exact.data || []).length === 1) {
+    return { status: "found", product: toCatalogProduct(exact.data![0]) };
+  }
+
+  // 2) Same name with different letter case / spacing. Read-only, tolerant match.
+  if (!wanted) return { status: "not_found" };
+
+  const loose = await supabaseAdmin
+    .from("products_catalog")
+    .select("product_id, name, data");
+
+  if (loose.error) {
+    console.error("CATALOG LOOSE LOOKUP ERROR:", loose.error.message);
+    return { status: "error", message: loose.error.message };
+  }
+
+  const matches = (loose.data || []).filter(
+    (row: any) => normalizeStockText(row?.name) === wanted
+  );
+
+  if (matches.length > 1) {
+    return {
+      status: "error",
+      message: "Duplicate catalogue entries for this product name.",
+    };
+  }
+
+  if (matches.length === 1) {
+    return { status: "found", product: toCatalogProduct(matches[0]) };
+  }
+
+  return { status: "not_found" };
 }
 
 function findCatalogPrice(
   product: CatalogProduct,
   duration: string
 ): CatalogPrice | null {
-  const prices = Array.isArray(
-    product.prices
-  )
-    ? product.prices
-    : [];
+  const prices = Array.isArray(product.prices) ? product.prices : [];
+  const wanted = String(duration ?? "").trim();
 
-  const found = prices.find(
+  const exact = prices.find(
+    (price) => String(price?.duration ?? "").trim() === wanted
+  );
+  if (exact) return exact;
+
+  const loose = prices.filter(
     (price) =>
-      String(
-        price?.duration ?? ""
-      ).trim() === duration
+      normalizeStockText(price?.duration) === normalizeStockText(wanted)
   );
 
-  return found || null;
+  return loose.length === 1 ? loose[0] : null;
 }
 
 /* =========================================================
@@ -473,81 +518,30 @@ async function purchaseFromSeller2(
    LOCAL STOCK
    ========================================================= */
 
-async function getLocalStockKey(
+/*
+ * Local delivery: one shared implementation (lib/stock.ts) used by catalogue and legacy paths.
+ */
+async function deliverFromLocalStock(
   productName: string,
   duration: string
 ) {
-  const { data, error } =
-    await supabase
-      .from("stock_keys")
-      .select("*")
-      .eq(
-        "product_name",
-        productName
-      )
-      .eq(
-        "duration",
-        duration
-      )
-      .eq(
-        "is_used",
-        false
-      )
-      .order("id", {
-        ascending: true,
-      })
-      .limit(1)
-      .maybeSingle();
+  const claimed = await claimLocalStockKey(productName, duration);
 
-  if (error) {
-    console.error(
-      "LOCAL STOCK LOOKUP ERROR:",
-      error
-    );
-
-    return {
-      success: false,
-      stockKey: null,
-    };
+  if (claimed.status === "ok") {
+    return { success: true as const, key: claimed.key };
   }
 
-  if (!data) {
+  if (claimed.status === "error") {
     return {
-      success: false,
-      stockKey: null,
+      success: false as const,
+      error: "Stock could not be checked right now. Please contact support.",
     };
   }
 
   return {
-    success: true,
-    stockKey: data,
+    success: false as const,
+    error: "Payment received, but no stock key is currently available.",
   };
-}
-
-async function reserveLocalStockKey(
-  id: number
-) {
-  const { data, error } =
-    await supabase
-      .from("stock_keys")
-      .update({
-        is_used: true,
-      })
-      .eq("id", id)
-      .eq("is_used", false)
-      .select("id")
-      .maybeSingle();
-
-  if (error) {
-    console.error(
-      "LOCAL STOCK RESERVE ERROR:",
-      error
-    );
-
-    return false;
-  }
-
-  return Boolean(data);
 }
 
 /* =========================================================
@@ -575,135 +569,6 @@ function findOldPrice(
   );
 }
 
-/*
- * Backward-compatible Seller 1
- * fallback for products that haven't
- * been moved/configured in catalog yet.
- */
-
-async function oldSeller1Fallback(
-  product: Product,
-  price: PriceTier
-) {
-  const apiKey =
-    process.env.RESELLER_API_KEY;
-
-  const masterKey =
-    process.env.RESELLER_MASTER_KEY;
-
-  if (!apiKey || !masterKey) {
-    return {
-      success: false,
-      error:
-        "Seller 1 is not configured.",
-    };
-  }
-
-  if (!product.sellerPid) {
-    return {
-      success: false,
-      error:
-        "Product has no supplier configuration.",
-    };
-  }
-
-  if (!price.sellerDuration) {
-    return {
-      success: false,
-      error:
-        "Seller duration is not configured.",
-    };
-  }
-
-  try {
-    const params =
-      new URLSearchParams({
-        api_key: apiKey,
-        action: "buy",
-        product_id:
-          String(
-            product.sellerPid
-          ),
-        duration:
-          price.sellerDuration,
-      });
-
-    const response =
-      await fetch(
-        SELLER1_API_URL,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/x-www-form-urlencoded",
-            "x-master-key":
-              masterKey,
-          },
-          body:
-            params.toString(),
-          cache: "no-store",
-        }
-      );
-
-    const text =
-      await response.text();
-
-    let result: any;
-
-    try {
-      result =
-        JSON.parse(text);
-    } catch {
-      return {
-        success: false,
-        error:
-          "Seller 1 returned invalid data.",
-      };
-    }
-
-    if (
-      !response.ok ||
-      result?.status !==
-        "success"
-    ) {
-      return {
-        success: false,
-        error:
-          result?.msg ||
-          result?.message ||
-          "Seller 1 purchase failed.",
-      };
-    }
-
-    const key =
-      result?.data?.key ??
-      result?.data?.key_code ??
-      result?.key ??
-      result?.key_code;
-
-    if (!key) {
-      return {
-        success: false,
-        error:
-          "Seller 1 returned no key.",
-      };
-    }
-
-    return {
-      success: true,
-      key: String(key),
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Seller 1 request failed.",
-    };
-  }
-}
-
 /* =========================================================
    MAIN RELEASE FUNCTION
    ========================================================= */
@@ -713,263 +578,133 @@ export async function releaseProduct({
   product_name,
   duration,
 }: ReleaseProductParams) {
-  console.log(
-    "================================="
-  );
+  console.log("RELEASE PRODUCT:", product_name, duration);
 
-  console.log(
-    "RELEASE PRODUCT:",
-    product_name,
-    duration
-  );
-
-  console.log(
-    "================================="
-  );
+  const lookup = await findCatalogProduct(product_name);
 
   /*
-   * First use products_catalog.
+   * A failed catalogue read is NOT "product not found". We do not know how this product is
+   * supplied, so we stop here instead of guessing (and possibly handing out a local key for a
+   * Seller product, or buying from the wrong supplier).
    */
-
-  let catalogProduct:
-    | CatalogProduct
-    | null = null;
-
-  try {
-    catalogProduct =
-      await findCatalogProduct(
-        product_name
-      );
-  } catch (error) {
-    console.error(
-      "CATALOG READ FAILED:",
-      error
-    );
+  if (lookup.status === "error") {
+    return {
+      success: false,
+      error:
+        "Product catalogue could not be read right now. Please contact support.",
+    };
   }
 
-  if (catalogProduct) {
-    const catalogPrice =
-      findCatalogPrice(
-        catalogProduct,
-        duration
-      );
+  /* ---------------------------------------------------------
+     PRODUCT FOUND IN THE CATALOGUE
+     --------------------------------------------------------- */
+  if (lookup.status === "found") {
+    const catalogProduct = lookup.product;
+
+    const catalogPrice = findCatalogPrice(catalogProduct, duration);
 
     if (!catalogPrice) {
       return {
         success: false,
-        error:
-          `Duration "${duration}" is not configured for "${product_name}" in Product Catalog.`,
+        error: `Duration "${duration}" is not configured for "${product_name}" in Product Catalog.`,
       };
     }
 
-    const supplier =
-      String(
-        catalogPrice.supplier ??
-          ""
-      )
-        .trim()
-        .toUpperCase() as Supplier;
+    const resolved = resolveCatalogSupplier(catalogPrice);
 
-    console.log(
-      "CATALOG SUPPLIER:",
-      supplier
+    if (!resolved.ok) {
+      console.error("CATALOG SUPPLIER NOT USABLE:", {
+        product: product_name,
+        duration,
+        reason: resolved.reason,
+      });
+
+      return {
+        success: false,
+        error: `Supplier is not configured for "${product_name}" - "${duration}". Set it in Product Manager.`,
+      };
+    }
+
+    return deliverBySupplier(
+      resolved.supplier,
+      catalogPrice,
+      product_name,
+      duration
     );
-
-    /*
-     * SELLER 1
-     */
-
-    if (
-      supplier === "SELLER1"
-    ) {
-      const result =
-        await purchaseFromSeller1(
-          catalogPrice,
-          product_name,
-          duration
-        );
-
-      if (!result.success) {
-        return result;
-      }
-
-      return {
-        success: true,
-        key: result.key,
-      };
-    }
-
-    /*
-     * SELLER 2
-     */
-
-    if (
-      supplier === "SELLER2"
-    ) {
-      const result =
-        await purchaseFromSeller2(
-          catalogPrice,
-          product_name,
-          duration
-        );
-
-      if (!result.success) {
-        return result;
-      }
-
-      return {
-        success: true,
-        key: result.key,
-      };
-    }
-
-    /*
-     * LOCAL
-     */
-
-    if (
-      supplier === "LOCAL"
-    ) {
-      const stock =
-        await getLocalStockKey(
-          product_name,
-          duration
-        );
-
-      if (
-        !stock.success ||
-        !stock.stockKey
-      ) {
-        return {
-          success: false,
-          error:
-            "Payment received, but no stock key is currently available.",
-        };
-      }
-
-      const reserved =
-        await reserveLocalStockKey(
-          stock.stockKey.id
-        );
-
-      if (!reserved) {
-        return {
-          success: false,
-          error:
-            "Stock key was taken by another purchase. Please try again.",
-        };
-      }
-
-      return {
-        success: true,
-        key: String(
-          stock.stockKey.key_code
-        ),
-      };
-    }
-
-    return {
-      success: false,
-      error:
-        `Invalid supplier configuration for "${product_name}" - "${duration}".`,
-    };
   }
 
-  /*
-   * =======================================================
-   * LEGACY FALLBACK
-   * =======================================================
-   *
-   * If the catalog has not been configured for a product yet,
-   * preserve the old behavior so the existing store does not
-   * suddenly stop working.
-   */
-
+  /* ---------------------------------------------------------
+     NOT IN THE CATALOGUE (genuinely missing) -> legacy list
+     --------------------------------------------------------- */
   console.warn(
     "CATALOG PRODUCT NOT FOUND. USING LEGACY PRODUCT CONFIG:",
     product_name
   );
 
-  const oldProduct =
-    findOldProduct(
-      product_name
-    );
+  const oldProduct = findOldProduct(product_name);
 
   if (!oldProduct) {
     return {
       success: false,
-      error:
-        "Product not found in Product Catalog.",
+      error: "Product not found in Product Catalog.",
     };
   }
 
-  const oldPrice =
-    findOldPrice(
-      oldProduct,
-      duration
-    );
+  const oldPrice = findOldPrice(oldProduct, duration);
 
   if (!oldPrice) {
     return {
       success: false,
-      error:
-        `Duration "${duration}" is not available for this product.`,
+      error: `Duration "${duration}" is not available for this product.`,
     };
   }
 
-  if (
-    oldProduct.sellerPid
-  ) {
-    const result =
-      await oldSeller1Fallback(
-        oldProduct,
-        oldPrice
-      );
-
-    if (!result.success) {
-      return result;
-    }
-
-    return {
-      success: true,
-      key: result.key,
-    };
-  }
-
-  const stock =
-    await getLocalStockKey(
-      product_name,
-      duration
-    );
-
-  if (
-    !stock.success ||
-    !stock.stockKey
-  ) {
-    return {
-      success: false,
-      error:
-        "Payment received, but no stock key is currently available.",
-    };
-  }
-
-  const reserved =
-    await reserveLocalStockKey(
-      stock.stockKey.id
-    );
-
-  if (!reserved) {
-    return {
-      success: false,
-      error:
-        "Stock key was taken by another purchase. Please try again.",
-    };
-  }
-
-  return {
-    success: true,
-    key: String(
-      stock.stockKey.key_code
-    ),
+  // Express the old configuration in the catalogue shape so both paths share one implementation.
+  const legacyPrice: CatalogPrice = {
+    duration: oldPrice.duration,
+    seller1Pid: oldProduct.sellerPid,
+    seller1Duration: oldPrice.sellerDuration,
+    seller2VariantId: (oldPrice as any).seller2VariantId,
   };
+
+  const legacySupplier = inferSupplier(legacyPrice, {
+    fulfillmentType: oldProduct.fulfillmentType,
+    sellerPid: oldProduct.sellerPid,
+  });
+
+  if (!legacySupplier) {
+    return {
+      success: false,
+      error: "Product has no supplier configuration.",
+    };
+  }
+
+  return deliverBySupplier(
+    legacySupplier,
+    legacyPrice,
+    product_name,
+    duration
+  );
+}
+
+/**
+ * One switch for all deliveries. LOCAL is only reached when the supplier really is LOCAL.
+ */
+async function deliverBySupplier(
+  supplier: Supplier,
+  price: CatalogPrice,
+  productName: string,
+  duration: string
+) {
+  console.log("DELIVERY SUPPLIER:", supplier);
+
+  if (supplier === "SELLER1") {
+    return purchaseFromSeller1(price, productName, duration);
+  }
+
+  if (supplier === "SELLER2") {
+    return purchaseFromSeller2(price, productName, duration);
+  }
+
+  return deliverFromLocalStock(productName, duration);
 }

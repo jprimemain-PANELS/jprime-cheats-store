@@ -1,6 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allProducts } from "@/lib/products";
 import { normalizeRole } from "@/lib/auth";
+import { applyPercentOff, findCoupon } from "@/lib/coupons";
+import { loadCoupons } from "@/lib/coupons-server";
 
 /**
  * Trusted, server-side price + status resolution.
@@ -8,7 +10,8 @@ import { normalizeRole } from "@/lib/auth";
  * but never trusts any price/amount sent by the browser.
  *
  * Order: catalog (or lib/products.ts fallback) -> product_prices override
- * -> reseller VIP override (resellers only) -> reseller price, else retail.
+ * -> reseller VIP override (resellers only) -> reseller price, else retail
+ * -> coupon code (only when the buyer typed one; not for resellers).
  */
 
 const STATUS_ROW = "__status__";
@@ -19,6 +22,7 @@ export type TrustedQuote =
       price: number;
       status: "ONLINE" | "MAINTENANCE";
       fulfillmentType: "API" | "LOCAL" | null;
+      coupon?: { code: string; percent: number; originalPrice: number };
     }
   | { ok: false; error: string; httpStatus: number };
 
@@ -65,6 +69,7 @@ export async function getTrustedQuote(params: {
   role: string;
   productName: string;
   duration: string;
+  coupon?: string;
 }): Promise<TrustedQuote> {
   const productName = String(params.productName || "").trim();
   const duration = String(params.duration || "").trim();
@@ -135,10 +140,34 @@ export async function getTrustedQuote(params: {
     return { ok: false, error: "This item is not available for purchase.", httpStatus: 409 };
   }
 
+  // Coupon code: applied ONLY when the buyer typed one. A wrong/expired code stops the purchase
+  // (it never silently charges a different price than the page showed).
+  let couponApplied: { code: string; percent: number; originalPrice: number } | undefined;
+  const couponInput = String(params.coupon ?? "").trim();
+
+  if (couponInput) {
+    if (role === "reseller") {
+      return { ok: false, error: "Coupon codes are not available for reseller accounts.", httpStatus: 400 };
+    }
+
+    const loaded = await loadCoupons();
+    if (!loaded.ok) return { ok: false, error: "Could not verify price.", httpStatus: 503 };
+
+    const found = findCoupon(loaded.coupons, couponInput, productName, new Date());
+    if (!found) {
+      return { ok: false, error: "This coupon code is not valid for this product.", httpStatus: 400 };
+    }
+
+    const original = price;
+    price = applyPercentOff(price, found.percent);
+    couponApplied = { code: found.code, percent: found.percent, originalPrice: original };
+  }
+
   return {
     ok: true,
     price: Math.round(price * 100) / 100,
     status,
     fulfillmentType: product.fulfillmentType,
+    ...(couponApplied ? { coupon: couponApplied } : {}),
   };
 }
