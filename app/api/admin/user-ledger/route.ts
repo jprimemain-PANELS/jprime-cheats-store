@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireAdmin } from "@/lib/auth";
+import { tdb } from "@/lib/tenant-db";
+import { requireTenantAdmin } from "@/lib/auth";
 import { buildUserLedger } from "@/lib/user-ledger";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ const LIMIT = 3000;
  * Admin only. Read-only: merges wallet_transactions and purchase_history into one timeline.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   const username = String(request.nextUrl.searchParams.get("username") || "");
@@ -21,22 +21,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Missing username." }, { status: 400, headers: NO_STORE });
   }
 
+  const db = tdb(auth.tenant.id);
   const [tx, purchases, deposits, orders] = await Promise.all([
-    supabaseAdmin
+    db
       .from("wallet_transactions")
       .select("*")
       .eq("username", username)
       .limit(LIMIT),
-    supabaseAdmin
+    db
       .from("purchase_history")
       .select("*")
       .eq("username", username)
       .order("id", { ascending: false })
       .limit(LIMIT),
     // Only used to recover missing top-up times. Any error is ignored on purpose.
-    supabaseAdmin.from("deposit_history").select("*").eq("username", username).limit(LIMIT),
+    db.from("deposit_history").select("*").eq("username", username).limit(LIMIT),
     // Only the UPI orders that did NOT end with a delivered key are shown.
-    supabaseAdmin
+    db
       .from("payment_orders")
       .select("*")
       .eq("username", username)

@@ -3,31 +3,71 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { SessionTimeout } from '@/components/session-timeout'
+import { BrandProvider } from '@/components/brand-provider'
+import { OWNER_BRAND, type Brand } from '@/lib/brand'
+import { StoreNotFound } from '@/components/store-not-found'
+import { currentTenant } from '@/lib/tenant'
+import { publicBrand } from '@/lib/tenant-admin'
+import { buildThemeCss } from '@/lib/theme'
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: 'JPRIME CHEATS STORE | Premium FF Panel Purchase',
-  description: 'Premium FF Panel Purchase - Mobile, PC & iOS Gaming Solutions',
+async function loadBrand() {
+  const tenant = await currentTenant();
+  if (!tenant) return null;
+  try {
+    const pb = await publicBrand(tenant);
+    const brand: Brand = tenant.kind === "owner"
+      ? { ...OWNER_BRAND, announcement: pb.theme?.announcement ?? "", tagline: pb.theme?.tagline ?? "", footerText: pb.theme?.footerText ?? "" }
+      : {
+          name: pb.name, isOwner: false, telegram: pb.telegram, logoUrl: pb.theme?.logoUrl ?? "",
+          tagline: pb.theme?.tagline ?? "", announcement: pb.theme?.announcement ?? "", footerText: pb.theme?.footerText ?? "",
+        };
+    return { tenant, brand, css: pb.theme ? buildThemeCss(pb.theme) : "" };
+  } catch {
+    // Branding lookup failed: still serve the store (owner keeps its look; co-admin gets its name, default theme)
+    return {
+      tenant,
+      brand: tenant.kind === "owner" ? OWNER_BRAND : { ...OWNER_BRAND, name: tenant.brandName, isOwner: false, telegram: tenant.telegramUsername },
+      css: "",
+    };
+  }
+}
 
-icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/icon.png",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const loaded = await loadBrand();
+  if (loaded && !loaded.brand.isOwner) {
+    return { title: loaded.brand.name, description: loaded.brand.tagline || `${loaded.brand.name} - digital store` };
+  }
+  return {
+    title: 'JPRIME CHEATS STORE | Premium FF Panel Purchase',
+    description: 'Premium FF Panel Purchase - Mobile, PC & iOS Gaming Solutions',
+    icons: { icon: "/favicon.ico", shortcut: "/favicon.ico", apple: "/icon.png" },
+  };
+}
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const loaded = await loadBrand();
+  if (!loaded) {
+    return (
+      <html lang="en" className="dark bg-background" suppressHydrationWarning>
+        <body suppressHydrationWarning><StoreNotFound /></body>
+      </html>
+    );
+  }
   return (
     <html lang="en" className="dark bg-background" suppressHydrationWarning>
+      <head>{loaded.css ? <style id="store-theme" dangerouslySetInnerHTML={{ __html: loaded.css }} /> : null}</head>
       <body className="font-sans antialiased bg-background text-foreground" suppressHydrationWarning>
-        <SessionTimeout />
-        {children}
+        <BrandProvider brand={loaded.brand}>
+          <SessionTimeout />
+          {children}
+        </BrandProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

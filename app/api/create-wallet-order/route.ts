@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { canTransact, OWNER_TENANT_ID, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import { requireUser, rateLimit } from "@/lib/auth";
 import {
   createGatewayOrder,
@@ -34,8 +35,11 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const { username } = auth.user;
+    if (!canTransact(auth.tenant)) return fail(SUSPENDED_MESSAGE, 403);
+    // Only the owner store has a configured payment gateway today; co-admin gateways are the next phase.
+    if (auth.tenant.id !== OWNER_TENANT_ID) return fail("Payments are not configured for this store yet.", 503);
 
-    if (!rateLimit(`wallet-topup:${username}`, 10, 60_000)) {
+    if (!rateLimit(`wallet-topup:${auth.tenant.id}:${username}`, 10, 60_000)) {
       return fail("Too many requests. Please wait a moment.", 429);
     }
 
@@ -72,14 +76,15 @@ export async function POST(request: NextRequest) {
       status: "pending",
     };
 
-    let { error: insertError } = await supabaseAdmin.from("deposit_history").insert([{ ...row, gateway: gatewayId }]);
+    const db = tdb(auth.tenant.id);
+    let { error: insertError } = await db.from("deposit_history").insert([{ ...row, gateway: gatewayId }]);
 
     if (insertError && isMissingColumn(insertError)) {
       if (gatewayId !== "xyz") {
         console.error("deposit_history.gateway column missing; run supabase/PAYMENT_GATEWAY_SWITCH.sql");
         return fail("Payment database needs the gateway update. Contact the store admin.", 500);
       }
-      ({ error: insertError } = await supabaseAdmin.from("deposit_history").insert([row]));
+      ({ error: insertError } = await db.from("deposit_history").insert([row]));
     }
 
     if (insertError) {

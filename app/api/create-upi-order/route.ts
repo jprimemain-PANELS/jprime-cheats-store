@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { canTransact, OWNER_TENANT_ID, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { getTrustedQuote } from "@/lib/pricing";
 import {
@@ -34,8 +35,11 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const { username, role } = auth.user;
+    if (!canTransact(auth.tenant)) return fail(SUSPENDED_MESSAGE, 403);
+    // Only the owner store has a configured payment gateway today; co-admin gateways are the next phase.
+    if (auth.tenant.id !== OWNER_TENANT_ID) return fail("Payments are not configured for this store yet.", 503);
 
-    if (!rateLimit(`upi-create:${username}`, 10, 60_000)) {
+    if (!rateLimit(`upi-create:${auth.tenant.id}:${username}`, 10, 60_000)) {
       return fail("Too many requests. Please wait a moment.", 429);
     }
 
@@ -47,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     const coupon = String(body?.coupon ?? "").trim().slice(0, 40);
 
-    const quote = await getTrustedQuote({ username, role, productName, duration, coupon });
+    const quote = await getTrustedQuote({ tenantId: auth.tenant.id, username, role, productName, duration, coupon });
     if (!quote.ok) return fail(quote.error, quote.httpStatus);
     if (quote.status === "MAINTENANCE") {
       return fail("This product is under maintenance. Please check back soon.", 409);
@@ -82,7 +86,8 @@ export async function POST(request: NextRequest) {
       expires_at: gatewayOrder.expires_at || null,
     };
 
-    let { error: insertError } = await supabaseAdmin.from("payment_orders").insert([{ ...row, gateway: gatewayId }]);
+    const db = tdb(auth.tenant.id);
+    let { error: insertError } = await db.from("payment_orders").insert([{ ...row, gateway: gatewayId }]);
 
     if (insertError && isMissingColumn(insertError)) {
       if (gatewayId !== "xyz") {
@@ -90,7 +95,7 @@ export async function POST(request: NextRequest) {
         return fail("Payment database needs the gateway update. Contact the store admin.", 500);
       }
       // xyz without the column: behave exactly like before.
-      ({ error: insertError } = await supabaseAdmin.from("payment_orders").insert([row]));
+      ({ error: insertError } = await db.from("payment_orders").insert([row]));
     }
 
     if (insertError) {

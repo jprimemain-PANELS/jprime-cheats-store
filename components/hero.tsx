@@ -10,6 +10,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
+import { useBrand } from "./brand-provider";
 
 interface HeroProps {
   onScrollToProducts?: () => void;
@@ -40,6 +41,7 @@ const stats = [
 ];
 
 export function Hero({ onScrollToProducts }: HeroProps) {
+  const brand = useBrand();
   const [showAudio, setShowAudio] = useState(false);
   const [active, setActive] = useState(0);
   const current = explainers[active];
@@ -58,23 +60,37 @@ export function Hero({ onScrollToProducts }: HeroProps) {
           <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
           <span className="text-xs font-medium text-white/60">
             Managed by{" "}
-            <span className="font-semibold text-white">@JPRIMEADMIN-GARENA</span>
+            <span className="font-semibold text-white">{brand.isOwner ? "@JPRIMEADMIN-GARENA" : brand.telegram ? `@${brand.telegram}` : brand.name}</span>
           </span>
         </div>
 
         {/* Heading */}
         <h1 className="text-5xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl md:text-7xl">
-          <span className="block text-white">JPRIME</span>
-          <span className="block bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
-            Cheats Store
-          </span>
+          {brand.isOwner ? (
+            <>
+              <span className="block text-white">JPRIME</span>
+              <span className="block bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
+                Cheats Store
+              </span>
+            </>
+          ) : (
+            <span className="block bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent break-words">
+              {brand.name}
+            </span>
+          )}
         </h1>
 
         {/* Description */}
         <p className="mt-5 max-w-md text-sm leading-relaxed text-white/60 sm:text-base">
-          Free Fire — professional mobile panel for CS &amp; BR rank push and
-          all mods. Trusted by{" "}
-          <span className="font-semibold text-white">10,000+ users</span>.
+          {brand.isOwner ? (
+            <>
+              Free Fire — professional mobile panel for CS &amp; BR rank push and
+              all mods. Trusted by{" "}
+              <span className="font-semibold text-white">10,000+ users</span>.
+            </>
+          ) : (
+            brand.tagline || "Browse our products below."
+          )}
         </p>
 
         {/* CTA */}
@@ -88,8 +104,8 @@ export function Hero({ onScrollToProducts }: HeroProps) {
         </button>
 
         {/* Stat tiles (compact) */}
-        <div className="mt-8 grid w-full max-w-md grid-cols-3 gap-2">
-          {stats.map(({ icon: Icon, value, label }) => (
+        <div className={`mt-8 grid w-full max-w-md gap-2 ${brand.isOwner ? "grid-cols-3" : "grid-cols-2"}`}>
+          {stats.filter((s) => brand.isOwner || s.label !== "Users").map(({ icon: Icon, value, label }) => (
             <div
               key={label}
               className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-3 backdrop-blur-md"
@@ -104,6 +120,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
         </div>
 
         {/* Audio guide (compact) */}
+        {brand.isOwner && (
         <div className="mt-4 w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] text-left backdrop-blur-md">
           <button
             type="button"
@@ -161,6 +178,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
             </div>
           )}
         </div>
+        )}
       </div>
     </section>
   );

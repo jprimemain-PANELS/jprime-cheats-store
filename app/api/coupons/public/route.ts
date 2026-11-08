@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { publicCouponView } from "@/lib/coupons";
 import { loadCoupons } from "@/lib/coupons-server";
+import { currentTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,8 @@ export const dynamic = "force-dynamic";
  * Codes are NEVER included.
  */
 export async function GET() {
-  const loaded = await loadCoupons();
+  const tenant = await currentTenant();
+  const loaded = tenant ? await loadCoupons(tenant.id) : ({ ok: false } as const);
   const view = loaded.ok ? publicCouponView(loaded.coupons) : { all: [], products: {} };
   return NextResponse.json({ success: true, ...view }, { headers: { "Cache-Control": "no-store" } });
 }

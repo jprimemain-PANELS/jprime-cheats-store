@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
 import {
   buildStockCountMap,
   normalizeStockText,
@@ -26,13 +26,13 @@ const MAX_PAGES = 50; // hard safety stop (50,000 rows)
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 /** All unused rows (oldest id first), read page by page. */
-async function fetchUnusedPages(columns: string): Promise<Result<any[]>> {
+async function fetchUnusedPages(tenantId: string, columns: string): Promise<Result<any[]>> {
   const rows: any[] = [];
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const from = page * PAGE_SIZE;
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await tdb(tenantId)
       .from("stock_keys")
       .select(columns)
       .eq("is_used", false)
@@ -56,16 +56,17 @@ async function fetchUnusedPages(columns: string): Promise<Result<any[]>> {
  * Every unused key (all columns). Used by the admin dashboard so the Stock Keys list and the
  * Stock Matrix are built from the SAME complete data instead of a truncated first page.
  */
-export async function fetchAllUnusedStock(): Promise<Result<any[]>> {
-  return fetchUnusedPages("*");
+export async function fetchAllUnusedStock(tenantId: string): Promise<Result<any[]>> {
+  return fetchUnusedPages(tenantId, "*");
 }
 
 /* Customer counters ask for the same numbers many times per page view (one per product card),
    so a very short in-memory snapshot is shared. Reservations and admin counts never use it. */
 const SNAPSHOT_MS = 10_000;
-let snapshot: { at: number; counts: Map<string, number> } | null = null;
+const snapshots = new Map<string, { at: number; counts: Map<string, number> }>(); // per store
 
 export async function countLocalStock(
+  tenantId: string,
   productName: string,
   duration: string,
   options: { fresh?: boolean } = {}
@@ -76,13 +77,15 @@ export async function countLocalStock(
 
   const now = Date.now();
 
-  if (options.fresh || !snapshot || now - snapshot.at > SNAPSHOT_MS) {
-    const rows = await fetchUnusedPages("id, product_name, duration");
+  let snap = snapshots.get(tenantId);
+  if (options.fresh || !snap || now - snap.at > SNAPSHOT_MS) {
+    const rows = await fetchUnusedPages(tenantId, "id, product_name, duration");
     if (!rows.ok) return rows;
-    snapshot = { at: now, counts: buildStockCountMap(rows.data) };
+    snap = { at: now, counts: buildStockCountMap(rows.data) };
+    snapshots.set(tenantId, snap);
   }
 
-  return { ok: true, data: snapshot.counts.get(stockCountKey(productName, duration)) ?? 0 };
+  return { ok: true, data: snap.counts.get(stockCountKey(productName, duration)) ?? 0 };
 }
 
 export type ClaimResult =
@@ -95,8 +98,8 @@ export type ClaimResult =
  * (compare-and-set on is_used=false fails) the next candidate is tried, so two simultaneous
  * purchases never fail just because they raced for the same row.
  */
-export async function claimLocalStockKey(productName: string, duration: string): Promise<ClaimResult> {
-  const rows = await fetchUnusedPages("id, product_name, duration, key_code");
+export async function claimLocalStockKey(tenantId: string, productName: string, duration: string): Promise<ClaimResult> {
+  const rows = await fetchUnusedPages(tenantId, "id, product_name, duration, key_code");
   if (!rows.ok) return { status: "error", message: rows.error };
 
   const candidates = rows.data.filter(
@@ -104,7 +107,7 @@ export async function claimLocalStockKey(productName: string, duration: string):
   );
 
   for (const candidate of candidates.slice(0, 25)) {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await tdb(tenantId)
       .from("stock_keys")
       .update({ is_used: true })
       .eq("id", candidate.id)
@@ -118,7 +121,7 @@ export async function claimLocalStockKey(productName: string, duration: string):
     }
 
     if (data) {
-      snapshot = null; // counts changed
+      snapshots.delete(tenantId); // counts changed
       return { status: "ok", key: String(candidate.key_code) };
     }
   }

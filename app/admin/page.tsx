@@ -32,6 +32,8 @@ import {
   Crown,
   CreditCard,
   Bell,
+  Palette,
+  Store,
 } from "lucide-react";
 
 import type { Product, PriceTier } from "@/lib/products";
@@ -43,6 +45,9 @@ import AllPricesEditor from "@/components/admin/AllPricesEditor";
 import VipPriceManager from "@/components/admin/VipPriceManager";
 import GatewayManager from "@/components/admin/GatewayManager";
 import TelegramManager from "@/components/admin/TelegramManager";
+import CoAdminManager from "@/components/admin/CoAdminManager";
+import BrandingManager from "@/components/admin/BrandingManager";
+import { useBrand } from "@/components/brand-provider";
 
 interface ManagedUser {
   id?: string | number;
@@ -65,6 +70,8 @@ type Tab =
   | "vip"
   | "gateway"
   | "telegram"
+  | "coadmins"
+  | "branding"
   | "purchases"
   | "users";
 
@@ -212,6 +219,8 @@ async function adminPost(body: Record<string, unknown>) {
 }
 
 export default function AdminPage() {
+  const brand = useBrand();
+  const [isOwnerAdmin, setIsOwnerAdmin] = useState(false);
   // Built-in product list, loaded from an admin-only endpoint
   // (keeps supplier IDs out of the public browser bundle).
   const [allProducts, setAllProducts] = useState<Product[]>([]);
@@ -291,12 +300,14 @@ export default function AdminPage() {
         return;
       }
 
-      if (json.user.role !== "admin") {
+      const role = String(json.user.role || "").toLowerCase();
+      if (role !== "admin" && role !== "coadmin") {
         setLoading(false);
         window.location.href = "/";
         return;
       }
 
+      setIsOwnerAdmin(role === "admin");
       await loadDashboard();
     } catch (err) {
       console.error("Auth check error:", err);
@@ -639,8 +650,14 @@ export default function AdminPage() {
     { id: "status", label: "Status", icon: Power, count: allProducts.length },
     { id: "products", label: "Products", icon: Package },
     { id: "vip", label: "VIP Prices", icon: Crown },
-    { id: "gateway", label: "Payments", icon: CreditCard },
-    { id: "telegram", label: "Telegram", icon: Bell },
+    ...(isOwnerAdmin
+      ? ([
+          { id: "gateway", label: "Payments", icon: CreditCard },
+          { id: "telegram", label: "Telegram", icon: Bell },
+          { id: "coadmins", label: "Co-admins", icon: Store },
+        ] as { id: Tab; label: string; icon: any; count?: number }[])
+      : []),
+    { id: "branding", label: "Branding", icon: Palette },
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -656,7 +673,7 @@ export default function AdminPage() {
                 <Shield className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-base font-bold text-white tracking-tight">JPrimeCheats</h1>
+                <h1 className="text-base font-bold text-white tracking-tight">{brand.isOwner ? "JPrimeCheats" : brand.name}</h1>
                 <p className="text-xs text-slate-400 font-medium">Admin Control Panel</p>
               </div>
             </div>
@@ -1157,10 +1174,16 @@ export default function AdminPage() {
         {activeTab === "vip" && <VipPriceManager resellers={resellerOptions} />}
 
         {/* PAYMENT GATEWAY (switch xyz / anuj, URLs and API keys) */}
-        {activeTab === "gateway" && <GatewayManager />}
+        {isOwnerAdmin && activeTab === "gateway" && <GatewayManager />}
 
         {/* TELEGRAM NOTIFICATIONS (bots, channels, key visibility) */}
-        {activeTab === "telegram" && <TelegramManager />}
+        {isOwnerAdmin && activeTab === "telegram" && <TelegramManager />}
+
+        {/* CO-ADMIN STORES (owner only) */}
+        {isOwnerAdmin && activeTab === "coadmins" && <CoAdminManager />}
+
+        {/* BRANDING (each store edits only its own) */}
+        {activeTab === "branding" && <BrandingManager />}
 
         {/* PURCHASES */}
         {activeTab === "purchases" && (

@@ -11,7 +11,7 @@ async function handle(request: NextRequest) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
 
-  const balance = await getOrCreateBalance(auth.user.username);
+  const balance = await getOrCreateBalance(auth.user.tenantId, auth.user.username);
   if (balance === null) {
     return NextResponse.json(
       { success: false, error: "Could not load wallet." },

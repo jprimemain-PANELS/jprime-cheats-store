@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireAdmin } from "@/lib/auth";
+import { tdb } from "@/lib/tenant-db";
+import { requireTenantAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +11,14 @@ export const dynamic = "force-dynamic";
  * Supplier fields are allowed here because this endpoint is admin-only.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
 
   if (!auth.ok) {
     return auth.response;
   }
 
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await tdb(auth.tenant.id)
       .from("products_catalog")
       .select("id, product_id, name, data, created_at, updated_at")
       .order("id", { ascending: true });
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
  * Creates or updates one catalog product.
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
 
   if (!auth.ok) {
     return auth.response;
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await tdb(auth.tenant.id)
       .from("products_catalog")
       .upsert(
         {
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: "product_id",
+          onConflict: "tenant_id,product_id",
         }
       )
       .select("id, product_id, name, data, created_at, updated_at")
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
  * DELETE /api/admin/catalog
  */
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
 
   if (!auth.ok) {
     return auth.response;
@@ -159,7 +159,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const { error } = await supabaseAdmin
+    const { error } = await tdb(auth.tenant.id)
       .from("products_catalog")
       .delete()
       .eq("product_id", productId);

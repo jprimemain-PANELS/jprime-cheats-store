@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { canTransact, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { getTrustedQuote } from "@/lib/pricing";
 import { releaseProduct } from "@/lib/release-product";
@@ -33,12 +34,14 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const { username, role } = auth.user;
+  const tenantId = auth.tenant.id;
+  if (!canTransact(auth.tenant)) return fail(SUSPENDED_MESSAGE, 403);
 
-  if (!rateLimit(`wallet-buy:${username}`, 12, 60_000)) {
+  if (!rateLimit(`wallet-buy:${tenantId}:${username}`, 12, 60_000)) {
     return fail("Too many requests. Please wait a moment.", 429);
   }
 
-  const lockKey = `wallet-buy:${username}`;
+  const lockKey = `wallet-buy:${tenantId}:${username}`;
   if (!acquire(lockKey)) {
     return fail("Another purchase is already in progress.", 409);
   }
@@ -52,14 +55,14 @@ export async function POST(request: NextRequest) {
 
     // 1. Trusted price + status.
     const coupon = String(body?.coupon ?? "").trim().slice(0, 40);
-    const quote = await getTrustedQuote({ username, role, productName, duration, coupon });
+    const quote = await getTrustedQuote({ tenantId: tenantId, username, role, productName, duration, coupon });
     if (!quote.ok) return fail(quote.error, quote.httpStatus);
     if (quote.status === "MAINTENANCE") {
       return fail("This product is under maintenance. Please check back soon.", 409);
     }
 
     // 2. Atomic debit.
-    const debit = await debitWallet(username, quote.price);
+    const debit = await debitWallet(tenantId, username, quote.price);
     if (!debit.ok) {
       if (debit.reason === "insufficient") return fail("Insufficient wallet balance.", 400);
       return fail("Could not process wallet payment.", 500);
@@ -67,6 +70,7 @@ export async function POST(request: NextRequest) {
 
     // Written immediately so a crash after this point is recoverable from the ledger.
     await logWalletTransaction({
+      tenantId,
       username,
       type: "purchase",
       amount: quote.price,
@@ -77,7 +81,7 @@ export async function POST(request: NextRequest) {
     // 3. Deliver the key.
     let key: string | null = null;
     try {
-      const delivery: any = await releaseProduct({ username, product_name: productName, duration });
+      const delivery: any = await releaseProduct({ tenantId, username, product_name: productName, duration });
       if (delivery?.success && typeof delivery.key === "string" && delivery.key.trim()) {
         key = delivery.key.trim();
       } else {
@@ -89,9 +93,10 @@ export async function POST(request: NextRequest) {
 
     // 4. Failure -> refund exactly once.
     if (!key) {
-      const refund = await creditWallet(username, quote.price);
+      const refund = await creditWallet(tenantId, username, quote.price);
       if (refund.ok) {
         await logWalletTransaction({
+          tenantId,
           username,
           type: "refund",
           amount: quote.price,
@@ -110,7 +115,7 @@ export async function POST(request: NextRequest) {
 
     const purchasedAt = new Date().toISOString();
 
-    const { error: historyError } = await supabaseAdmin
+    const { error: historyError } = await tdb(tenantId)
       .from("purchase_history")
       .insert([
         {
@@ -137,6 +142,7 @@ export async function POST(request: NextRequest) {
         amount: quote.price,
         method: "Wallet",
         key,
+        tenantId,
       });
     } catch (e) {
       console.error("TELEGRAM NOTIFICATION ERROR");

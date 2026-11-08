@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
 import { getSessionUser, normalizeRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ async function handle() {
 
     const username = String(user.username).trim();
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await tdb(user.tenantId)
       .from("reseller_price_overrides")
       .select("product_name, duration, reseller_price")
       .eq("username", username);

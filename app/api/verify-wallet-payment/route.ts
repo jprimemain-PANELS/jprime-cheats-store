@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { canTransact, OWNER_TENANT_ID, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import { requireUser, rateLimit } from "@/lib/auth";
 import {
   gatewayNeedsUtr,
@@ -23,7 +25,12 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const { username } = auth.user;
-    if (!rateLimit(`verify-topup:${username}`, 20, 60_000)) {
+    if (!canTransact(auth.tenant)) return reply(403, { success: false, status: "error", message: SUSPENDED_MESSAGE });
+    if (auth.tenant.id !== OWNER_TENANT_ID) {
+      return reply(503, { success: false, status: "gateway_failed", message: "Payments are not configured for this store yet." });
+    }
+    const tenantId = auth.tenant.id;
+    if (!rateLimit(`verify-topup:${tenantId}:${username}`, 20, 60_000)) {
       return reply(429, {
         success: false,
         status: "rate_limited",
@@ -39,7 +46,7 @@ export async function POST(request: NextRequest) {
       return reply(400, { success: false, status: "invalid_request", message: "Missing order reference." });
     }
 
-    const { data: deposit, error: depositError } = await supabaseAdmin
+    const { data: deposit, error: depositError } = await tdb(tenantId)
       .from("deposit_history")
       .select("*")
       .eq("gateway_order_id", gatewayOrderId)
@@ -134,8 +141,9 @@ export async function POST(request: NextRequest) {
     // Database RPC finalizes status + wallet credit + ledger entry in ONE transaction.
     // If it errors, PostgreSQL rolls the transaction back; retrying the same order is safe.
     const { data: finalized, error: finalizeError } = await supabaseAdmin.rpc(
-      "jprime_finalize_wallet_deposit",
+      "jprime_t_finalize_wallet_deposit",
       {
+        p_tenant: tenantId,
         p_gateway_order_id: gatewayOrderId,
         p_username: username,
         p_utr: verifiedUtr,

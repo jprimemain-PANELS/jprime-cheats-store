@@ -1,8 +1,18 @@
 "use client";
 
+import { OwnerOnly } from "@/components/owner-only";
+
 import React, { useState, useEffect } from "react";
 
 export default function OfficialPlatformsPage() {
+  return (
+    <OwnerOnly>
+      <OfficialPlatformsPageContent />
+    </OwnerOnly>
+  );
+}
+
+function OfficialPlatformsPageContent() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {

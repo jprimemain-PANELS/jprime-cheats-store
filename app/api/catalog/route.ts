@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { currentTenant, OWNER_TENANT_ID } from "@/lib/tenant";
 import { allProducts } from "@/lib/products";
 import type { Product, PriceTier } from "@/lib/products";
 import { deliveryModeForTier, summarizeFulfillment } from "@/lib/delivery";
@@ -130,7 +131,7 @@ function toPublicProduct(
 
 // Server-side fallback (lib/products.ts) with every supplier field stripped,
 // so supplier IDs/durations/variants never reach the browser.
-function fallbackProducts(): Product[] {
+function legacyFallbackProducts(): Product[] {
   return allProducts.map((p) => {
     const safe: Product = {
       id: p.id,
@@ -159,9 +160,17 @@ function fallbackProducts(): Product[] {
 }
 
 export async function GET() {
+  const tenant = await currentTenant();
+  if (!tenant) {
+    return NextResponse.json({ products: [], source: "none" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+  // The built-in product list is the owner store's legacy catalog; other stores start empty.
+  const isOwner = tenant.id === OWNER_TENANT_ID;
+  const fallbackProducts = () => (isOwner ? legacyFallbackProducts() : []);
+
   try {
     const { data, error } =
-      await supabaseAdmin
+      await tdb(tenant.id)
         .from("products_catalog")
         .select(
           "product_id, name, data"
@@ -191,12 +200,12 @@ export async function GET() {
       );
     }
 
-    const products = (data || [])
+    const products = ((data || []) as any[])
       .map((row: any) =>
         toPublicProduct(row)
       )
       .filter(
-        (p): p is Product =>
+        (p: Product | null): p is Product =>
           p !== null
       );
 

@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb, type TenantTable } from "@/lib/tenant-db";
 import { allProducts } from "@/lib/products";
 import { parseRupees } from "@/lib/price-math";
 
@@ -19,11 +19,11 @@ export interface PriceRow {
   reseller: number | null; // default reseller price, null when none is set
 }
 
-async function fetchAll(table: string, columns: string): Promise<{ ok: true; rows: any[] } | { ok: false; error: string }> {
+async function fetchAll(tenantId: string, table: TenantTable, columns: string): Promise<{ ok: true; rows: any[] } | { ok: false; error: string }> {
   const rows: any[] = [];
   for (let page = 0; page < 20; page += 1) {
     const from = page * 1000;
-    const { data, error } = await supabaseAdmin.from(table).select(columns).range(from, from + 999);
+    const { data, error } = await tdb(tenantId).from(table).select(columns).range(from, from + 999);
     if (error) return { ok: false, error: error.message };
     rows.push(...(data || []));
     if ((data || []).length < 1000) break;
@@ -31,8 +31,8 @@ async function fetchAll(table: string, columns: string): Promise<{ ok: true; row
   return { ok: true, rows };
 }
 
-export async function loadPriceBook(): Promise<{ ok: true; rows: PriceRow[] } | { ok: false; error: string }> {
-  const catalog = await fetchAll("products_catalog", "name, data");
+export async function loadPriceBook(tenantId: string): Promise<{ ok: true; rows: PriceRow[] } | { ok: false; error: string }> {
+  const catalog = await fetchAll(tenantId, "products_catalog", "name, data");
   if (!catalog.ok) return { ok: false, error: catalog.error };
 
   let products: { name: string; category: string; prices: any[] }[] = catalog.rows
@@ -54,7 +54,7 @@ export async function loadPriceBook(): Promise<{ ok: true; rows: PriceRow[] } | 
     }));
   }
 
-  const overridesResult = await fetchAll("product_prices", "product_name, duration, price_inr, reseller_price");
+  const overridesResult = await fetchAll(tenantId, "product_prices", "product_name, duration, price_inr, reseller_price");
   if (!overridesResult.ok) return { ok: false, error: overridesResult.error };
 
   const overrides = new Map<string, { retail: number | null; reseller: number | null }>();

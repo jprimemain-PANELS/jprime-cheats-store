@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { currentTenant } from "@/lib/tenant";
 import {
   attachSessionCookie,
   clientIp,
@@ -29,10 +30,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(INVALID, { status: 400, headers: NO_STORE });
     }
 
+    const tenant = await currentTenant();
+    if (!tenant) {
+      return NextResponse.json({ success: false, error: "Store not found." }, { status: 404, headers: NO_STORE });
+    }
+    const db = tdb(tenant.id);
+
     const ip = clientIp(request);
     if (
       !rateLimit(`login:ip:${ip}`, 20, 10 * 60_000) ||
-      !rateLimit(`login:id:${identifier.toLowerCase()}`, 10, 10 * 60_000)
+      !rateLimit(`login:id:${tenant.id}:${identifier.toLowerCase()}`, 10, 10 * 60_000)
     ) {
       return NextResponse.json(
         { success: false, error: "Too many attempts. Try again later." },
@@ -42,8 +49,8 @@ export async function POST(request: NextRequest) {
 
     // Separate parameterised lookups (no string-built filters).
     const [byName, byMobile] = await Promise.all([
-      supabaseAdmin.from("users").select("*").eq("username", identifier).limit(5),
-      supabaseAdmin.from("users").select("*").eq("mobile_number", identifier).limit(5),
+      db.from("users").select("*").eq("username", identifier).limit(5),
+      db.from("users").select("*").eq("mobile_number", identifier).limit(5),
     ]);
 
     if (byName.error || byMobile.error) {
@@ -66,7 +73,7 @@ export async function POST(request: NextRequest) {
     // Lazy migration: upgrade legacy plaintext passwords to scrypt on successful login.
     if (!isHashedPassword(storedPassword)) {
       const hashed = hashPassword(password);
-      const { error: upgradeError } = await supabaseAdmin
+      const { error: upgradeError } = await db
         .from("users")
         .update({ password: hashed })
         .eq("id", String(user.id))
@@ -91,7 +98,8 @@ export async function POST(request: NextRequest) {
       String(user.username),
       storedPassword,
       String(user.id),
-      request.headers.get("x-forwarded-host") || request.headers.get("host")
+      request.headers.get("x-forwarded-host") || request.headers.get("host"),
+      tenant.id
     );
   } catch (error) {
     console.error("LOGIN ERROR:", error instanceof Error ? error.message : "unknown");

@@ -1,8 +1,11 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
 
 /**
- * Wallet helpers call SECURITY DEFINER PostgreSQL functions installed by
- * WALLET_REPAIR_AND_FIX.sql. The database takes an advisory lock per exact
+ * Wallet helpers call the tenant-aware SECURITY DEFINER functions (jprime_t_wallet_*)
+ * installed by supabase/tenant/001_TENANT_FOUNDATION.sql. Every wallet is addressed by
+ * (tenantId, username), so the same username in two stores is two different wallets.
+ * Previously: WALLET_REPAIR_AND_FIX.sql. The database takes an advisory lock per exact
  * username, consolidates exact-match duplicates, and changes the balance in
  * one transaction. Usernames that differ by case or whitespace are NOT merged.
  */
@@ -18,9 +21,10 @@ type WalletRpcResult = {
   balance?: number | string;
 };
 
-export async function getBalance(username: string): Promise<number | null> {
-  if (typeof username !== "string" || username.length === 0) return null;
-  const { data, error } = await supabaseAdmin.rpc("jprime_wallet_get_balance", {
+export async function getBalance(tenantId: string, username: string): Promise<number | null> {
+  if (typeof tenantId !== "string" || typeof username !== "string" || username.length === 0) return null;
+  const { data, error } = await supabaseAdmin.rpc("jprime_t_wallet_get_balance", {
+    p_tenant: tenantId,
     p_username: username,
   });
   if (error) {
@@ -32,9 +36,10 @@ export async function getBalance(username: string): Promise<number | null> {
 }
 
 /** Returns the balance, creating a zero wallet if the user has none (own wallet only). */
-export async function getOrCreateBalance(username: string): Promise<number | null> {
-  if (typeof username !== "string" || username.length === 0) return null;
-  const { data, error } = await supabaseAdmin.rpc("jprime_wallet_get_or_create_balance", {
+export async function getOrCreateBalance(tenantId: string, username: string): Promise<number | null> {
+  if (typeof tenantId !== "string" || typeof username !== "string" || username.length === 0) return null;
+  const { data, error } = await supabaseAdmin.rpc("jprime_t_wallet_get_or_create_balance", {
+    p_tenant: tenantId,
     p_username: username,
   });
   if (error) {
@@ -45,13 +50,14 @@ export async function getOrCreateBalance(username: string): Promise<number | nul
   return Number.isFinite(balance) ? round2(balance) : null;
 }
 
-export async function debitWallet(username: string, amount: number): Promise<WalletResult> {
+export async function debitWallet(tenantId: string, username: string, amount: number): Promise<WalletResult> {
   const amt = round2(Number(amount));
-  if (typeof username !== "string" || username.length === 0 || !Number.isFinite(amt) || amt <= 0) {
+  if (typeof tenantId !== "string" || typeof username !== "string" || username.length === 0 || !Number.isFinite(amt) || amt <= 0) {
     return { ok: false, reason: "invalid" };
   }
 
-  const { data, error } = await supabaseAdmin.rpc("jprime_wallet_debit", {
+  const { data, error } = await supabaseAdmin.rpc("jprime_t_wallet_debit", {
+    p_tenant: tenantId,
     p_username: username,
     p_amount: amt,
   });
@@ -70,13 +76,14 @@ export async function debitWallet(username: string, amount: number): Promise<Wal
   return { ok: false, reason: "error" };
 }
 
-export async function creditWallet(username: string, amount: number): Promise<WalletResult> {
+export async function creditWallet(tenantId: string, username: string, amount: number): Promise<WalletResult> {
   const amt = round2(Number(amount));
-  if (typeof username !== "string" || username.length === 0 || !Number.isFinite(amt) || amt <= 0) {
+  if (typeof tenantId !== "string" || typeof username !== "string" || username.length === 0 || !Number.isFinite(amt) || amt <= 0) {
     return { ok: false, reason: "invalid" };
   }
 
-  const { data, error } = await supabaseAdmin.rpc("jprime_wallet_credit", {
+  const { data, error } = await supabaseAdmin.rpc("jprime_t_wallet_credit", {
+    p_tenant: tenantId,
     p_username: username,
     p_amount: amt,
   });
@@ -94,6 +101,7 @@ export async function creditWallet(username: string, amount: number): Promise<Wa
 
 /** Ledger entry. Never throws; a ledger failure must not lose a completed purchase. */
 export async function logWalletTransaction(entry: {
+  tenantId: string;
   username: string;
   type: string;
   amount: number;
@@ -101,14 +109,15 @@ export async function logWalletTransaction(entry: {
   description: string;
 }) {
   try {
-    const { error } = await supabaseAdmin.from("wallet_transactions").insert(entry);
+    const { tenantId, ...row } = entry;
+    const { error } = await tdb(tenantId).from("wallet_transactions").insert(row);
     if (error) console.error("WALLET LEDGER ERROR:", error.message);
   } catch (e) {
     console.error("WALLET LEDGER EXCEPTION:", e);
   }
 }
 
-/* Per-user in-flight guard (best effort on serverless; DB lock is authoritative). */
+/* Per-user in-flight guard (callers include the tenant id in the key) (best effort on serverless; DB lock is authoritative). */
 const inflight = new Set<string>();
 export function acquire(key: string): boolean {
   if (inflight.has(key)) return false;

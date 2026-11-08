@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { requireTenantAdmin } from "@/lib/auth";
 import { isValidCode, normalizeCode, sanitizeCoupons, type Coupon } from "@/lib/coupons";
 import { loadCoupons, saveCoupons } from "@/lib/coupons-server";
 
@@ -12,10 +12,10 @@ const reply = (status: number, payload: Record<string, unknown>) =>
 
 /** GET -> every coupon (admin only; this is the only place codes are returned). */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
-  const loaded = await loadCoupons();
+  const loaded = await loadCoupons(auth.tenant.id);
   if (!loaded.ok) return reply(500, { success: false, error: "Could not load coupons." });
   return reply(200, { success: true, coupons: loaded.coupons });
 }
@@ -27,14 +27,14 @@ export async function GET(request: NextRequest) {
  *   delete : { id }
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   try {
     const body = await request.json().catch(() => ({}));
     const action = String(body?.action || "save");
 
-    const loaded = await loadCoupons();
+    const loaded = await loadCoupons(auth.tenant.id);
     if (!loaded.ok) return reply(500, { success: false, error: "Could not load coupons." });
     let list: Coupon[] = loaded.coupons;
 
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       return reply(400, { success: false, error: "Unknown action." });
     }
 
-    const saved = await saveCoupons(list);
+    const saved = await saveCoupons(auth.tenant.id, list);
     if (!saved.ok) {
       console.error("COUPON SAVE ERROR:", saved.error);
       return reply(500, { success: false, error: "Could not save. Make sure the app_settings table exists (run supabase/PAYMENT_GATEWAY_SWITCH.sql)." });

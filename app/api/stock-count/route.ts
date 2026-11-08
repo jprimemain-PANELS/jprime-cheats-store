@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { currentTenant } from "@/lib/tenant";
 import { countLocalStock } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ count: null }, { status: 400, headers: NO_STORE });
   }
 
-  const result = await countLocalStock(product, duration);
+  const tenant = await currentTenant();
+  if (!tenant) return NextResponse.json({ count: null }, { status: 404, headers: NO_STORE });
+
+  const result = await countLocalStock(tenant.id, product, duration);
 
   if (!result.ok) {
     return NextResponse.json({ count: null }, { headers: NO_STORE });

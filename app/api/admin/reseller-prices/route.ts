@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireAdmin } from "@/lib/auth";
+import { tdb } from "@/lib/tenant-db";
+import { requireTenantAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 
-async function loadRows(username: string) {
-  return supabaseAdmin
+async function loadRows(tenantId: string, username: string) {
+  return tdb(tenantId)
     .from("reseller_price_overrides")
     .select("product_name, duration, reseller_price")
     .eq("username", username)
@@ -18,7 +18,7 @@ async function loadRows(username: string) {
  * Returns every custom (VIP) price saved for that reseller.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   const username = String(
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { data, error } = await loadRows(username);
+  const { data, error } = await loadRows(auth.tenant.id, username);
 
   if (error) {
     console.error("RESELLER PRICES GET ERROR:", error);
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
  * }
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   try {
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: target, error: targetError } = await supabaseAdmin
+    const { data: target, error: targetError } = await tdb(auth.tenant.id)
       .from("users")
       .select("username, role")
       .eq("username", username)
@@ -132,9 +132,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (upserts.length > 0) {
-      const { error } = await supabaseAdmin
+      const { error } = await tdb(auth.tenant.id)
         .from("reseller_price_overrides")
-        .upsert(upserts, { onConflict: "username,product_name,duration" });
+        .upsert(upserts, { onConflict: "tenant_id,username,product_name,duration" });
 
       if (error) {
         console.error("RESELLER PRICES SAVE ERROR:", error);
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
       const duration = String(r?.duration || "").trim();
       if (!productName || !duration) continue;
 
-      const { error } = await supabaseAdmin
+      const { error } = await tdb(auth.tenant.id)
         .from("reseller_price_overrides")
         .delete()
         .eq("username", username)
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data, error } = await loadRows(username);
+    const { data, error } = await loadRows(auth.tenant.id, username);
 
     if (error) {
       return NextResponse.json(

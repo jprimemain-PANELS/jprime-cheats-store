@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { MAX_ACTIVITY_EVENTS, maskUsername, type ActivityEvent } from "@/lib/recent-activity";
 
@@ -36,13 +36,13 @@ const ADMIN_DESCRIPTION_PREFIX = "Admin";
 // Over-fetch a little so rows dropped by validation never leave us under 10.
 const FETCH_PER_SOURCE = 25;
 
-// All users see the same masked feed, so one short server-side cache protects the DB.
+// All users OF THE SAME STORE see the same masked feed, so one short per-tenant cache protects the DB.
 const CACHE_TTL_MS = 10_000;
 
 type FeedResult = { events: ActivityEvent[]; partial: boolean };
 
-let cache: { at: number; value: FeedResult } | null = null;
-let inflight: Promise<FeedResult> | null = null;
+const cache = new Map<string, { at: number; value: FeedResult }>();
+const inflight = new Map<string, Promise<FeedResult>>();
 
 function eventKey(parts: Array<string | number>) {
   return createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 16);
@@ -57,9 +57,9 @@ function validTime(value: unknown): string | null {
   return Number.isFinite(Date.parse(iso)) ? iso : null;
 }
 
-async function loadDeposits(): Promise<ActivityEvent[]> {
+async function loadDeposits(tenantId: string): Promise<ActivityEvent[]> {
   // description is only used inside the filter; it is never selected or returned.
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await tdb(tenantId)
     .from("wallet_transactions")
     .select("username, amount, created_at")
     .in("type", WALLET_DEPOSIT_TYPES)
@@ -87,9 +87,9 @@ async function loadDeposits(): Promise<ActivityEvent[]> {
   return events;
 }
 
-async function loadPurchases(): Promise<ActivityEvent[]> {
+async function loadPurchases(tenantId: string): Promise<ActivityEvent[]> {
   // key_code / price_paid are intentionally NOT selected.
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await tdb(tenantId)
     .from("purchase_history")
     .select("username, product_name, duration, created_at")
     .order("created_at", { ascending: false })
@@ -117,8 +117,8 @@ async function loadPurchases(): Promise<ActivityEvent[]> {
   return events;
 }
 
-async function buildFeed(): Promise<FeedResult> {
-  const [deposits, purchases] = await Promise.allSettled([loadDeposits(), loadPurchases()]);
+async function buildFeed(tenantId: string): Promise<FeedResult> {
+  const [deposits, purchases] = await Promise.allSettled([loadDeposits(tenantId), loadPurchases(tenantId)]);
 
   if (deposits.status === "rejected") console.error("RECENT ACTIVITY ERROR:", deposits.reason?.message);
   if (purchases.status === "rejected") console.error("RECENT ACTIVITY ERROR:", purchases.reason?.message);
@@ -143,33 +143,35 @@ async function buildFeed(): Promise<FeedResult> {
   return { events, partial: deposits.status === "rejected" || purchases.status === "rejected" };
 }
 
-async function getFeed(): Promise<FeedResult> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.value;
-  if (inflight) return inflight;
+async function getFeed(tenantId: string): Promise<FeedResult> {
+  const hit = cache.get(tenantId);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+  const running = inflight.get(tenantId);
+  if (running) return running;
 
-  inflight = buildFeed()
+  const p = buildFeed(tenantId)
     .then((value) => {
-      cache = { at: Date.now(), value };
+      cache.set(tenantId, { at: Date.now(), value });
       return value;
     })
     .finally(() => {
-      inflight = null;
+      inflight.delete(tenantId);
     });
-
-  return inflight;
+  inflight.set(tenantId, p);
+  return p;
 }
 
 /**
  * GET /api/recent-activity
  * Logged-in users only. Returns the latest 10 successful wallet top-ups and
- * purchases with masked usernames. No UTRs, e-mails, phones, balances, keys,
+ * purchases of the caller's OWN store with masked usernames. No UTRs, e-mails, phones, balances, keys,
  * payment ids or purchase prices are ever selected or returned.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
 
-  if (!rateLimit(`recent-activity:${auth.user.username}`, 20, 60_000)) {
+  if (!rateLimit(`recent-activity:${auth.tenant.id}:${auth.user.username}`, 20, 60_000)) {
     return NextResponse.json(
       { success: false, error: "Too many requests. Please wait a moment." },
       { status: 429, headers: NO_STORE }
@@ -177,7 +179,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const feed = await getFeed();
+    const feed = await getFeed(auth.tenant.id);
     return NextResponse.json(
       { success: true, events: feed.events, partial: feed.partial, generatedAt: new Date().toISOString() },
       { headers: NO_STORE }

@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
+import { useBrand } from "@/components/brand-provider";
 
 interface WalletModalProps {
   open: boolean;
@@ -87,6 +88,7 @@ function getStoredUsername(): string | null {
 }
 
 export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: WalletModalProps) {
+  const brand = useBrand();
   const [showDeposit, setShowDeposit] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [displayedBalance, setDisplayedBalance] = useState(0);
@@ -567,14 +569,14 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                 </h2>
               </div>
 
-              <button
+{brand.isOwner && (              <button
                 onClick={() => window.open("https://youtube.com/@jprimepanel", "_blank")}
                 style={{ animationDelay: "50ms" }}
                 className="wallet-panel-in group flex w-full items-center justify-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/[0.08] py-3 text-sm font-semibold text-amber-300 transition-all duration-300 ease-out hover:bg-amber-500/15 active:scale-[0.98]"
               >
                 <HelpCircle className="h-4 w-4 transition-transform duration-300 ease-out group-hover:rotate-12" />
                 How to deposit?
-              </button>
+              </button>)}
 
               <div style={{ animationDelay: "100ms" }} className="wallet-panel-in">
                 <label className="mb-2 block text-sm text-neutral-400">Amount (₹)</label>

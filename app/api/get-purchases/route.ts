@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
 import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const auth = await requireUser(request);
     if (!auth.ok) return auth.response;
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await tdb(auth.user.tenantId)
       .from("purchase_history")
       .select("*")
       .eq("username", auth.user.username)

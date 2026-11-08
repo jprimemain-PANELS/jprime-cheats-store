@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { currentTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ rows: [] }, { status: 400, headers: NO_STORE });
   }
 
-  const { data, error } = await supabaseAdmin
+  const tenant = await currentTenant();
+  if (!tenant) return NextResponse.json({ rows: [] }, { status: 404, headers: NO_STORE });
+
+  const { data, error } = await tdb(tenant.id)
     .from("product_prices")
     .select("duration, price_inr, reseller_price")
     .eq("product_name", product);

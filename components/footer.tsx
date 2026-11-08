@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { MessageCircle, Phone } from "lucide-react";
+import { useBrand } from "./brand-provider";
+import { StoreLogo } from "./store-brand-mark";
 
 export function Footer() {
+  const brand = useBrand();
   return (
     <footer className="relative border-t border-violet-500/15 bg-[#07040f]/80 backdrop-blur-sm">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-400/40 to-transparent" />
@@ -16,16 +19,20 @@ export function Footer() {
           {/* Logo */}
           <div className="flex flex-col items-center md:items-start gap-2">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-fuchsia-500/25">
-                <span className="text-lg font-bold text-fuchsia-300">JP</span>
-              </div>
+              {brand.isOwner ? (
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-fuchsia-500/25">
+                  <span className="text-lg font-bold text-fuchsia-300">JP</span>
+                </div>
+              ) : (
+                <StoreLogo size={40} className="h-10 w-10 rounded-xl" />
+              )}
 
               <div>
                 <h3 className="text-lg font-semibold text-white">
-                  JPRIME CHEATS
+                  {brand.name}
                 </h3>
                 <p className="text-xs text-white/50">
-                  Premium FF Panel Store
+                  {brand.isOwner ? "Premium FF Panel Store" : brand.tagline}
                 </p>
               </div>
             </div>
@@ -38,8 +45,8 @@ export function Footer() {
             </p>
 
             <div className="flex flex-col items-center md:items-end gap-2.5">
-              <a
-                href="https://t.me/JPRIMEADMIN"
+              {brand.telegram && (<a
+                href={`https://t.me/${brand.telegram}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group inline-flex items-center gap-2 text-fuchsia-400 hover:text-fuchsia-300 transition-colors"
@@ -47,10 +54,10 @@ export function Footer() {
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/25 group-hover:bg-fuchsia-500/20 group-hover:border-fuchsia-500/40 transition-colors">
                   <MessageCircle className="h-3.5 w-3.5" />
                 </span>
-                <span className="text-sm font-medium">@JPRIMEADMIN</span>
-              </a>
+                <span className="text-sm font-medium">@{brand.telegram}</span>
+              </a>)}
 
-              <a
+              {brand.isOwner && (<a
                 href="https://wa.me/917200817883"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -60,7 +67,7 @@ export function Footer() {
                   <Phone className="h-3.5 w-3.5" />
                 </span>
                 <span className="text-sm font-medium">+91 72008 17883</span>
-              </a>
+              </a>)}
             </div>
           </div>
         </div>
@@ -71,28 +78,20 @@ export function Footer() {
             <Link href="/" className="hover:text-fuchsia-400 transition-colors">
               Home
             </Link>
-            <Link href="/refund-policy" className="hover:text-fuchsia-400 transition-colors">
-              Refunds
-            </Link>
-            <Link href="/terms" className="hover:text-fuchsia-400 transition-colors">
-              Terms
-            </Link>
-            <Link href="/privacy" className="hover:text-fuchsia-400 transition-colors">
-              Privacy
-            </Link>
-            <Link href="/official-platform" className="hover:text-fuchsia-400 transition-colors">
-              Official Platform
-            </Link>
+            {brand.isOwner && (<Link href="/refund-policy" className="hover:text-fuchsia-400 transition-colors">Refunds</Link>)}
+            {brand.isOwner && (<Link href="/terms" className="hover:text-fuchsia-400 transition-colors">Terms</Link>)}
+            {brand.isOwner && (<Link href="/privacy" className="hover:text-fuchsia-400 transition-colors">Privacy</Link>)}
+            {brand.isOwner && (<Link href="/official-platform" className="hover:text-fuchsia-400 transition-colors">Official Platform</Link>)}
           </div>
         </div>
 
         {/* Bottom */}
         <div className="mt-8 pt-8 border-t border-white/5 text-center">
           <p className="text-sm text-white/50">
-            © {new Date().getFullYear()} JPRIME CHEATS STORE. All rights reserved.
+            © {new Date().getFullYear()} {brand.isOwner ? "JPRIME CHEATS STORE" : brand.name}. All rights reserved.
           </p>
           <p className="mt-2 text-xs text-white/30">
-            Secure Digital Product Delivery Platform
+            {brand.footerText || "Secure Digital Product Delivery Platform"}
           </p>
         </div>
 

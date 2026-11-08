@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { requireAdmin } from "@/lib/auth";
+import { requireTenantAdmin } from "@/lib/auth";
 import { sanitizeRules, type DiscountRule } from "@/lib/discounts";
 import { loadDiscountRules, saveDiscountRules } from "@/lib/discounts-server";
 
@@ -13,10 +13,10 @@ function fail(error: string, status = 400) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
-  const result = await loadDiscountRules();
+  const result = await loadDiscountRules(auth.tenant.id);
   if (!result.ok) return fail("Could not load discounts.", 500);
   return NextResponse.json({ success: true, rules: result.rules }, { headers: NO_STORE });
 }
@@ -28,14 +28,14 @@ export async function GET(request: NextRequest) {
  *      { action: "stop_all" }              switch every rule off
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   try {
     const body = await request.json();
     const action = String(body?.action || "");
 
-    const current = await loadDiscountRules();
+    const current = await loadDiscountRules(auth.tenant.id);
     if (!current.ok) return fail("Could not load discounts.", 500);
     let rules: DiscountRule[] = current.rules;
 
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     if (rules.length > 100) return fail("Too many discounts. Delete old ones first.");
 
-    const saved = await saveDiscountRules(rules);
+    const saved = await saveDiscountRules(auth.tenant.id, rules);
     if (!saved.ok) {
       console.error("DISCOUNT SAVE ERROR:", saved.error);
       return fail("Could not save. Make sure the app_settings table exists (it is created by PAYMENT_GATEWAY_SWITCH.sql).", 500);

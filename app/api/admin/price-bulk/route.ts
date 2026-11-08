@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireAdmin } from "@/lib/auth";
+import { tdb } from "@/lib/tenant-db";
+import { requireTenantAdmin } from "@/lib/auth";
 import { loadPriceBook } from "@/lib/price-book";
 import { BULK_MODES, computeBulkPrice, parseScope, scopeMatches, type BulkMode, type RoundTo } from "@/lib/price-math";
 
@@ -22,7 +22,7 @@ function fail(error: string, status = 400) {
  * Writes the same product_prices rows the Pricing tab already uses.
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   try {
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     if (!Number.isFinite(value) || value <= 0) return fail("Enter an amount greater than 0.");
     if ((mode === "percent_off" && value >= 100) || (mode === "percent_up" && value > 500)) return fail("That percentage is not allowed.");
 
-    const book = await loadPriceBook();
+    const book = await loadPriceBook(auth.tenant.id);
     if (!book.ok) return fail("Could not load current prices.", 500);
 
     const changes: {
@@ -115,9 +115,9 @@ export async function POST(request: NextRequest) {
     }));
 
     for (let i = 0; i < upserts.length; i += 500) {
-      const { error } = await supabaseAdmin
+      const { error } = await tdb(auth.tenant.id)
         .from("product_prices")
-        .upsert(upserts.slice(i, i + 500), { onConflict: "product_name,duration" });
+        .upsert(upserts.slice(i, i + 500), { onConflict: "tenant_id,product_name,duration" });
       if (error) {
         console.error("BULK PRICE SAVE ERROR:", error.message);
         return fail(`Saved ${i} of ${upserts.length} rows, then failed. Check the Pricing tab and run it again.`, 500);

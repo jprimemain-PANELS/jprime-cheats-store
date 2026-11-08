@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireAdmin } from "@/lib/auth";
+import { tdb } from "@/lib/tenant-db";
+import { requireTenantAdmin } from "@/lib/auth";
+import { OWNER_TENANT_ID } from "@/lib/tenant";
 import { allProducts } from "@/lib/products";
 import { countLocalStock, fetchAllUnusedStock } from "@/lib/stock";
 import { stockCountKey } from "@/lib/delivery";
@@ -10,7 +11,10 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 const STATUS_ROW = "__status__";
-const ROLES = ["user", "reseller", "admin"];
+// Platform owner may promote to admin; a co-admin can only manage customers/resellers,
+// so a store can never mint admins or co-admins (privilege escalation).
+const OWNER_ROLES = ["user", "reseller", "admin"];
+const TENANT_ROLES = ["user", "reseller"];
 
 function fail(error: string, status = 400) {
   return NextResponse.json({ success: false, error }, { status, headers: NO_STORE });
@@ -22,19 +26,20 @@ function fail(error: string, status = 400) {
  * Password hashes are NEVER returned.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   try {
+    const db = tdb(auth.tenant.id);
     // Stock is read page by page: a plain select() stops at the database's 1000-row response cap,
     // which silently hid keys from the Stock Keys list and the Stock Matrix.
     const [stock, users, wallets, purchases, prices, catalog] = await Promise.all([
-      fetchAllUnusedStock(),
-      supabaseAdmin.from("users").select("*"),
-      supabaseAdmin.from("wallets").select("username, balance"),
-      supabaseAdmin.from("purchase_history").select("*").order("id", { ascending: false }).limit(5000),
-      supabaseAdmin.from("product_prices").select("*"),
-      supabaseAdmin.from("products_catalog").select("product_id, name, data").order("id", { ascending: true }),
+      fetchAllUnusedStock(auth.tenant.id),
+      db.from("users").select("*"),
+      db.from("wallets").select("username, balance"),
+      db.from("purchase_history").select("*").order("id", { ascending: false }).limit(5000),
+      db.from("product_prices").select("*"),
+      db.from("products_catalog").select("product_id, name, data").order("id", { ascending: true }),
     ]);
 
     const firstError =
@@ -66,7 +71,11 @@ export async function GET(request: NextRequest) {
 
     // Quick-control tabs use the live catalog. The built-in list remains only as a fallback
     // for an empty catalog; importing it is handled separately by /api/admin/legacy-products.
-    const dashboardProducts = catalogProducts.length ? catalogProducts : allProducts;
+    const dashboardProducts = catalogProducts.length
+      ? catalogProducts
+      : auth.tenant.id === OWNER_TENANT_ID
+        ? allProducts
+        : [];
 
     // Diagnostics only (read-only): unused keys whose product + duration match NO catalogue entry,
     // even after ignoring letter case and extra spaces. These are the keys a customer can never receive.
@@ -106,16 +115,18 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   try {
+    const tenantId = auth.tenant.id;
+    const db = tdb(tenantId);
     const body = await request.json().catch(() => ({}));
     const action = String(body?.action || "");
 
     /* ---------- stock ---------- */
     if (action === "stock_count") {
-      const result = await countLocalStock(String(body.product_name || ""), String(body.duration || ""), { fresh: true });
+      const result = await countLocalStock(auth.tenant.id, String(body.product_name || ""), String(body.duration || ""), { fresh: true });
       if (!result.ok) return fail("Could not count stock.", 500);
       return NextResponse.json({ success: true, count: result.data }, { headers: NO_STORE });
     }
@@ -130,7 +141,7 @@ export async function POST(request: NextRequest) {
 
       if (!productName || !duration || keys.length === 0) return fail("Missing product, duration or keys.");
 
-      const { error } = await supabaseAdmin.from("stock_keys").insert(
+      const { error } = await db.from("stock_keys").insert(
         keys.map((key_code) => ({ product_name: productName, duration, key_code, is_used: false }))
       );
       if (error) {
@@ -143,7 +154,7 @@ export async function POST(request: NextRequest) {
     if (action === "delete_stock") {
       const id = Number(body.id);
       if (!Number.isFinite(id)) return fail("Invalid id.");
-      const { error } = await supabaseAdmin.from("stock_keys").delete().eq("id", id);
+      const { error } = await db.from("stock_keys").delete().eq("id", id);
       if (error) return fail("Could not delete key.", 500);
       return NextResponse.json({ success: true }, { headers: NO_STORE });
     }
@@ -172,9 +183,9 @@ export async function POST(request: NextRequest) {
 
       if (clean.length === 0) return fail("Nothing to save.");
 
-      const { error } = await supabaseAdmin
+      const { error } = await db
         .from("product_prices")
-        .upsert(clean, { onConflict: "product_name,duration" });
+        .upsert(clean, { onConflict: "tenant_id,product_name,duration" });
       if (error) {
         console.error("SAVE PRICES ERROR:", error.message);
         return fail("Could not save prices.", 500);
@@ -187,14 +198,14 @@ export async function POST(request: NextRequest) {
       const status = String(body.status || "");
       if (!productName || (status !== "ONLINE" && status !== "MAINTENANCE")) return fail("Invalid status.");
 
-      const { error } = await supabaseAdmin.from("product_prices").upsert(
+      const { error } = await db.from("product_prices").upsert(
         {
           product_name: productName,
           duration: STATUS_ROW,
           price_inr: status === "MAINTENANCE" ? 1 : 0,
           reseller_price: null,
         },
-        { onConflict: "product_name,duration" }
+        { onConflict: "tenant_id,product_name,duration" }
       );
       if (error) return fail("Could not save status.", 500);
       return NextResponse.json({ success: true }, { headers: NO_STORE });
@@ -205,7 +216,7 @@ export async function POST(request: NextRequest) {
       const userId = String(body.userId ?? "").trim();
       if (!userId) return fail("Missing user ID. Refresh the admin page and try again.");
 
-      const { data: target, error: targetError } = await supabaseAdmin
+      const { data: target, error: targetError } = await db
         .from("users")
         .select("id, username, role")
         .eq("id", userId)
@@ -216,10 +227,15 @@ export async function POST(request: NextRequest) {
 
       if (body.role !== undefined && String(body.role) !== target.role) {
         const role = String(body.role);
-        if (!ROLES.includes(role)) return fail("Invalid role.");
+        const allowedRoles = tenantId === OWNER_TENANT_ID ? OWNER_ROLES : TENANT_ROLES;
+        if (!allowedRoles.includes(role)) return fail("Invalid role.");
+        // A store admin cannot change the role of admin/co-admin accounts.
+        if (tenantId !== OWNER_TENANT_ID && !TENANT_ROLES.includes(String(target.role ?? "user"))) {
+          return fail("You cannot change this account's role.", 403);
+        }
         if (String(target.id) === String(auth.user.id)) return fail("You cannot change your own role.");
 
-        const { error } = await supabaseAdmin.from("users").update({ role }).eq("id", userId);
+        const { error } = await db.from("users").update({ role }).eq("id", userId);
         if (error) return fail("Could not update role.", 500);
       }
 
@@ -233,15 +249,15 @@ export async function POST(request: NextRequest) {
         let applied = amount;
 
         if (action2 === "add") {
-          const r = await creditWallet(username, amount);
+          const r = await creditWallet(tenantId, username, amount);
           if (!r.ok) return fail("Could not update wallet.", 500);
           newBalance = r.balance;
         } else {
-          const current = await getBalance(username);
+          const current = await getBalance(tenantId, username);
           if (current === null) return fail("Could not update wallet.", 500);
           applied = Math.min(amount, current); // never below zero (same as before)
           if (applied > 0) {
-            const r = await debitWallet(username, applied);
+            const r = await debitWallet(tenantId, username, applied);
             if (!r.ok) return fail("Could not update wallet.", 500);
             newBalance = r.balance;
           }
@@ -249,6 +265,7 @@ export async function POST(request: NextRequest) {
 
         if (newBalance !== null) {
           await logWalletTransaction({
+            tenantId,
             username,
             type: action2 === "add" ? "credit" : "debit",
             amount: applied,

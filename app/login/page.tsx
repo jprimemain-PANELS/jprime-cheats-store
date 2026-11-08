@@ -14,6 +14,7 @@
  * ==================================================================== */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useBrand } from "@/components/brand-provider";
 import type { LucideIcon } from "lucide-react";
 import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Play, ChevronRight } from "lucide-react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
@@ -552,23 +553,27 @@ const Field = ({ icon: Icon, type, placeholder, value, onChange }: FieldProps) =
   </div>
 );
 
-const BrandHeader = ({ isLogin }: { isLogin: boolean }) => (
+const BrandHeader = ({ isLogin }: { isLogin: boolean }) => {
+  const brand = useBrand();
+  return (
   <div className="text-center mb-4 relative z-20 select-none">
     <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 backdrop-blur-md">
       <Sparkles className="h-3 w-3 text-fuchsia-400" />
-      <span className="text-[9px] font-medium tracking-wider text-white/60 uppercase">JPRIME GLOBAL</span>
+      <span className="text-[9px] font-medium tracking-wider text-white/60 uppercase">{brand.isOwner ? "JPRIME GLOBAL" : brand.name}</span>
     </div>
 
     <h1 className="text-[26px] font-extrabold tracking-tight uppercase leading-none text-white">
-      JPRIME{" "}
-      <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">STORE</span>
+      {brand.isOwner ? (<>JPRIME{" "}
+      <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">STORE</span></>) : (
+      <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent break-words">{brand.name}</span>)}
     </h1>
 
     <p className="text-white/40 text-[9px] font-semibold uppercase tracking-[0.2em] mt-2">
       {isLogin ? "Authentication Protocol" : "Registration Protocol"}
     </p>
   </div>
-);
+  );
+};
 
 const SubmitButton = ({ isLogin, onClick }: { isLogin: boolean; onClick: () => void }) => (
   <div className="mt-4 relative z-20">
@@ -583,13 +588,15 @@ const SubmitButton = ({ isLogin, onClick }: { isLogin: boolean; onClick: () => v
 );
 
 /* Account switch: ONE slim horizontal row (icon + short text + button) */
-const SwitchBar = ({ isLogin, onToggle }: { isLogin: boolean; onToggle: () => void }) => (
+const SwitchBar = ({ isLogin, onToggle }: { isLogin: boolean; onToggle: () => void }) => {
+  const brand = useBrand();
+  return (
   <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-white/10 bg-[#10091f]/90 px-3 py-2">
     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500/25 to-fuchsia-500/25 text-fuchsia-300 ring-1 ring-fuchsia-400/20">
       {isLogin ? <UserPlus className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
     </span>
     <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-white/85">
-      {isLogin ? "New to JPrime?" : "Already a member?"}
+      {isLogin ? (brand.isOwner ? "New to JPrime?" : `New to ${brand.name}?`) : "Already a member?"}
     </span>
     <button
       type="button"
@@ -600,7 +607,8 @@ const SwitchBar = ({ isLogin, onToggle }: { isLogin: boolean; onToggle: () => vo
       <ChevronRight className="h-3 w-3" />
     </button>
   </div>
-);
+  );
+};
 
 /* Tutorial: slim help banner */
 const TutorialCard = () => (
@@ -709,6 +717,7 @@ const useAuthForm = () => {
 /* ------------------------------------------------------------------ */
 
 export default function LoginPage() {
+  const brand = useBrand();
   const { isLogin, form, setField, toggleMode, submit } = useAuthForm();
 
   return (
@@ -763,7 +772,7 @@ export default function LoginPage() {
           </section>
         </div>
 
-        <TutorialCard />
+        {brand.isOwner && <TutorialCard />}
       </main>
 
       <LoginStyles />

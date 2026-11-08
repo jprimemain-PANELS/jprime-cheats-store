@@ -8,6 +8,7 @@ export function AuthButtons() {
   const router = useRouter();
 
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canLaunch, setCanLaunch] = useState(false);
 
   useEffect(() => {
     checkAdmin();
@@ -19,8 +20,12 @@ export function AuthButtons() {
       const res = await fetch("/api/auth/me", { cache: "no-store" });
       const json = await res.json();
 
-      if (json?.success && json?.user?.role === "admin") {
+      const role = String(json?.user?.role ?? "").toLowerCase();
+      if (json?.success && (role === "admin" || role === "coadmin")) {
         setIsAdmin(true);
+      }
+      if (json?.success && ["reseller", "vip_reseller", "vip reseller", "vip"].includes(role)) {
+        setCanLaunch(true);
       }
     } catch {
       // not an admin / offline
@@ -49,6 +54,15 @@ export function AuthButtons() {
           className="bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-xl text-sm font-bold hover:bg-zinc-800 transition-all"
         >
           ADMIN
+        </button>
+      )}
+
+      {canLaunch && (
+        <button
+          onClick={() => router.push("/launch")}
+          className="hidden sm:inline-flex bg-gradient-to-r from-violet-600 to-fuchsia-600 px-3 py-2 rounded-xl text-xs font-bold text-white hover:brightness-110 transition-all"
+        >
+          Launch Your Own Website
         </button>
       )}
 

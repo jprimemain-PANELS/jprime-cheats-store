@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { OWNER_TENANT_ID } from "@/lib/tenant";
 import { allProducts } from "@/lib/products";
 import { normalizeRole } from "@/lib/auth";
 import { applyPercentOff, findCoupon } from "@/lib/coupons";
@@ -33,12 +34,12 @@ function parseRupees(value: unknown): number | null {
 
 type Tier = { duration: string; priceINR: unknown; resellerPrice?: unknown };
 
-async function loadProduct(productName: string): Promise<{
+async function loadProduct(tenantId: string, productName: string): Promise<{
   tiers: Tier[];
   status: "ONLINE" | "MAINTENANCE";
   fulfillmentType: "API" | "LOCAL" | null;
 } | null> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await tdb(tenantId)
     .from("products_catalog")
     .select("name, data")
     .eq("name", productName)
@@ -54,7 +55,8 @@ async function loadProduct(productName: string): Promise<{
     };
   }
 
-  // Legacy fallback (same behaviour as the storefront / release-product).
+  // Legacy built-in product list belongs to the owner store only.
+  if (tenantId !== OWNER_TENANT_ID) return null;
   const legacy = allProducts.find((p) => p.name === productName);
   if (!legacy) return null;
   return {
@@ -65,6 +67,7 @@ async function loadProduct(productName: string): Promise<{
 }
 
 export async function getTrustedQuote(params: {
+  tenantId: string;
   username: string;
   role: string;
   productName: string;
@@ -79,7 +82,7 @@ export async function getTrustedQuote(params: {
     return { ok: false, error: "Invalid product.", httpStatus: 400 };
   }
 
-  const product = await loadProduct(productName);
+  const product = await loadProduct(params.tenantId, productName);
   if (!product) return { ok: false, error: "Product not found.", httpStatus: 404 };
 
   const tier = product.tiers.find((t) => String(t?.duration ?? "").trim() === duration);
@@ -89,7 +92,7 @@ export async function getTrustedQuote(params: {
   let reseller = tier.resellerPrice != null ? parseRupees(tier.resellerPrice) : null;
   let status = product.status;
 
-  const { data: rows, error: rowsError } = await supabaseAdmin
+  const { data: rows, error: rowsError } = await tdb(params.tenantId)
     .from("product_prices")
     .select("duration, price_inr, reseller_price")
     .eq("product_name", productName);
@@ -118,7 +121,7 @@ export async function getTrustedQuote(params: {
   if (role === "reseller") {
     price = reseller ?? retail;
 
-    const { data: vip, error: vipError } = await supabaseAdmin
+    const { data: vip, error: vipError } = await tdb(params.tenantId)
       .from("reseller_price_overrides")
       .select("reseller_price")
       .eq("username", params.username)
@@ -150,7 +153,7 @@ export async function getTrustedQuote(params: {
       return { ok: false, error: "Coupon codes are not available for reseller accounts.", httpStatus: 400 };
     }
 
-    const loaded = await loadCoupons();
+    const loaded = await loadCoupons(params.tenantId);
     if (!loaded.ok) return { ok: false, error: "Could not verify price.", httpStatus: 503 };
 
     const found = findCoupon(loaded.coupons, couponInput, productName, new Date());

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { canTransact, currentTenant, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import { clientIp, hashPassword, isSameOrigin, rateLimit } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,15 @@ export async function POST(request: NextRequest) {
     if (!isSameOrigin(request)) {
       return NextResponse.json({ success: false, error: "Cross-origin request blocked." }, { status: 403, headers: NO_STORE });
     }
+
+    const tenant = await currentTenant();
+    if (!tenant) {
+      return NextResponse.json({ success: false, error: "Store not found." }, { status: 404, headers: NO_STORE });
+    }
+    if (!canTransact(tenant)) {
+      return NextResponse.json({ success: false, error: SUSPENDED_MESSAGE }, { status: 403, headers: NO_STORE });
+    }
+    const db = tdb(tenant.id);
 
     if (!rateLimit(`signup:ip:${clientIp(request)}`, 10, 60 * 60_000)) {
       return NextResponse.json(
@@ -50,7 +60,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: existing, error: existingError } = await supabaseAdmin
+    const { data: existing, error: existingError } = await db
       .from("users")
       .select("username")
       .eq("username", username)
@@ -64,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Role is ALWAYS "user" here. Browser-supplied roles are ignored.
-    const { error } = await supabaseAdmin.from("users").insert([
+    const { error } = await db.from("users").insert([
       {
         username,
         password: hashPassword(password),

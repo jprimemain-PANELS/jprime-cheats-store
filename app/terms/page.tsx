@@ -1,8 +1,18 @@
 "use client";
 
+import { OwnerOnly } from "@/components/owner-only";
+
 import React, { useState, useEffect } from "react";
 
 export default function TermsAndConditionsPage() {
+  return (
+    <OwnerOnly>
+      <TermsAndConditionsPageContent />
+    </OwnerOnly>
+  );
+}
+
+function TermsAndConditionsPageContent() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {

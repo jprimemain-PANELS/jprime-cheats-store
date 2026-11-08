@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   const { username, role } = auth.user;
 
-  if (!rateLimit(`coupon-check:${username}`, 20, 60_000)) {
+  if (!rateLimit(`coupon-check:${auth.tenant.id}:${username}`, 20, 60_000)) {
     return NextResponse.json({ success: false, error: "Too many attempts. Please wait a minute." }, { status: 429, headers: NO_STORE });
   }
 
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Enter a coupon code." }, { status: 400, headers: NO_STORE });
   }
 
-  const quote = await getTrustedQuote({ username, role, productName, duration, coupon: code });
+  const quote = await getTrustedQuote({ tenantId: auth.tenant.id, username, role, productName, duration, coupon: code });
 
   if (!quote.ok) {
     return NextResponse.json({ success: true, valid: false, error: quote.error }, { headers: NO_STORE });

@@ -1,0 +1,680 @@
+{
+ "columns": [
+  {
+   "t": "deposit_history",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "deposit_history",
+   "c": "username",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "deposit_history",
+   "c": "gateway_order_id",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "deposit_history",
+   "c": "amount",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "deposit_history",
+   "c": "utr",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "deposit_history",
+   "c": "created_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "deposit_history",
+   "c": "status",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "deposit_history",
+   "c": "mobile_number",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "payment_orders",
+   "c": "order_id",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "user_id",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "amount",
+   "type": "numeric",
+   "null": "YES",
+   "default": "0"
+  },
+  {
+   "t": "payment_orders",
+   "c": "phone",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "status",
+   "type": "text",
+   "null": "YES",
+   "default": "'PENDING'::text"
+  },
+  {
+   "t": "payment_orders",
+   "c": "payment_channel",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "qr_url",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "data",
+   "type": "jsonb",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "created_at",
+   "type": "timestamp with time zone",
+   "null": "YES",
+   "default": "now()"
+  },
+  {
+   "t": "payment_orders",
+   "c": "updated_at",
+   "type": "timestamp with time zone",
+   "null": "YES",
+   "default": "now()"
+  },
+  {
+   "t": "payment_orders",
+   "c": "duration",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "product_name",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "product_id",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "price",
+   "type": "numeric",
+   "null": "YES",
+   "default": "0"
+  },
+  {
+   "t": "payment_orders",
+   "c": "expires_at",
+   "type": "timestamp with time zone",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "username",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "gateway_order_id",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "used",
+   "type": "boolean",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "upi_link",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "payment_orders",
+   "c": "utr",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "product_prices",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "product_prices",
+   "c": "product_slug",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "product_prices",
+   "c": "duration",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "product_prices",
+   "c": "price",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "product_prices",
+   "c": "product_name",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "product_prices",
+   "c": "updated_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "product_prices",
+   "c": "price_inr",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "product_prices",
+   "c": "reseller_price",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "products_catalog",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "products_catalog",
+   "c": "product_id",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "products_catalog",
+   "c": "name",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "products_catalog",
+   "c": "title",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "products_catalog",
+   "c": "category",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "products_catalog",
+   "c": "status",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "products_catalog",
+   "c": "data",
+   "type": "jsonb",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "products_catalog",
+   "c": "created_at",
+   "type": "timestamp with time zone",
+   "null": "YES",
+   "default": "now()"
+  },
+  {
+   "t": "products_catalog",
+   "c": "updated_at",
+   "type": "timestamp with time zone",
+   "null": "YES",
+   "default": "now()"
+  },
+  {
+   "t": "purchase_history",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "purchase_history",
+   "c": "username",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "purchase_history",
+   "c": "product_slug",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "purchase_history",
+   "c": "duration",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "purchase_history",
+   "c": "license_key",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "purchase_history",
+   "c": "price_paid",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "purchase_history",
+   "c": "purchased_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "purchase_history",
+   "c": "product_name",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "purchase_history",
+   "c": "key_code",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "purchase_history",
+   "c": "created_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "username",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "product_slug",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "duration",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "custom_price",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "product_name",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "reseller_price",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "created_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "reseller_price_overrides",
+   "c": "updated_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "product_slug",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "duration",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "license_key",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "is_used",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "used_by",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "created_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "product_name",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "stock_keys",
+   "c": "key_code",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "users",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "users",
+   "c": "username",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "users",
+   "c": "password",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "users",
+   "c": "email",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "users",
+   "c": "mobile_number",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "users",
+   "c": "role",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "users",
+   "c": "created_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "users",
+   "c": "password_hash",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallet_transactions",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "wallet_transactions",
+   "c": "username",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallet_transactions",
+   "c": "amount",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallet_transactions",
+   "c": "type",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallet_transactions",
+   "c": "description",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallet_transactions",
+   "c": "created_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallet_transactions",
+   "c": "balance_after",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallets",
+   "c": "id",
+   "type": "text",
+   "null": "NO",
+   "default": "(gen_random_uuid())::text"
+  },
+  {
+   "t": "wallets",
+   "c": "username",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallets",
+   "c": "balance",
+   "type": "numeric",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallets",
+   "c": "created_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  },
+  {
+   "t": "wallets",
+   "c": "updated_at",
+   "type": "text",
+   "null": "YES",
+   "default": null
+  }
+ ],
+ "live_indexes": [
+  "CREATE UNIQUE INDEX deposit_history_pkey ON public.deposit_history USING btree (id)",
+  "CREATE UNIQUE INDEX idx_payment_orders_unique_order ON public.payment_orders USING btree (COALESCE(order_id, id))",
+  "CREATE UNIQUE INDEX payment_orders_gateway_order_id_unique ON public.payment_orders USING btree (gateway_order_id) WHERE (gateway_order_id IS NOT NULL)",
+  "CREATE UNIQUE INDEX payment_orders_pkey ON public.payment_orders USING btree (id)",
+  "CREATE UNIQUE INDEX payment_orders_utr_unique ON public.payment_orders USING btree (utr) WHERE (utr IS NOT NULL)",
+  "CREATE UNIQUE INDEX product_prices_pkey ON public.product_prices USING btree (id)",
+  "CREATE UNIQUE INDEX product_prices_product_name_duration_uidx ON public.product_prices USING btree (product_name, duration)",
+  "CREATE UNIQUE INDEX products_catalog_pkey ON public.products_catalog USING btree (id)",
+  "CREATE UNIQUE INDEX products_catalog_product_id_key ON public.products_catalog USING btree (product_id)",
+  "CREATE UNIQUE INDEX purchase_history_pkey ON public.purchase_history USING btree (id)",
+  "CREATE UNIQUE INDEX reseller_price_overrides_pkey ON public.reseller_price_overrides USING btree (id)",
+  "CREATE UNIQUE INDEX reseller_price_overrides_user_product_duration_uidx ON public.reseller_price_overrides USING btree (username, product_name, duration)",
+  "CREATE UNIQUE INDEX stock_keys_pkey ON public.stock_keys USING btree (id)",
+  "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)",
+  "CREATE UNIQUE INDEX wallet_transactions_pkey ON public.wallet_transactions USING btree (id)",
+  "CREATE UNIQUE INDEX wallets_pkey ON public.wallets USING btree (id)"
+ ]
+}

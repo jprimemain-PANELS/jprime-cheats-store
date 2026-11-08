@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
 import { attachSessionCookie, getSessionUser, isSameOrigin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await tdb(user.tenantId)
     .from("users")
     .select("password")
     .eq("id", String(user.id))
@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
     user.username,
     data.password,
     String(user.id),
-    request.headers.get("x-forwarded-host") || request.headers.get("host")
+    request.headers.get("x-forwarded-host") || request.headers.get("host"),
+    user.tenantId
   );
 }

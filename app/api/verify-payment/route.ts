@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin as supabase } from "@/lib/supabase-admin";
+import { tdb, utrAlreadyUsed } from "@/lib/tenant-db";
+import { canTransact, OWNER_TENANT_ID, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { releaseProduct } from "@/lib/release-product";
 import { sendTelegramPurchase } from "@/lib/telegram";
@@ -15,9 +16,9 @@ import {
  * Mark a processing order as failed when key delivery fails.
  * This prevents an automatic retry from buying another supplier key.
  */
-async function markDeliveryFailed(gatewayOrderId: string) {
+async function markDeliveryFailed(tenantId: string, gatewayOrderId: string) {
   try {
-    const { error } = await supabase
+    const { error } = await tdb(tenantId)
       .from("payment_orders")
       .update({ status: "delivery_failed" })
       .eq("gateway_order_id", gatewayOrderId)
@@ -37,21 +38,6 @@ async function markDeliveryFailed(gatewayOrderId: string) {
   }
 }
 
-/** Replay protection: a UTR that already settled any other order is rejected. */
-async function utrAlreadyUsed(utr: string, gatewayOrderId: string): Promise<boolean> {
-  for (const table of ["payment_orders", "deposit_history"] as const) {
-    const { data: dup, error: dupError } = await supabase
-      .from(table)
-      .select("gateway_order_id")
-      .eq("utr", utr)
-      .neq("gateway_order_id", gatewayOrderId)
-      .limit(1);
-
-    if (!dupError && dup && dup.length > 0) return true;
-  }
-  return false;
-}
-
 function digitsOnly(value: unknown): string {
   return String(value ?? "").replace(/\D/g, "");
 }
@@ -64,7 +50,20 @@ export async function POST(request: NextRequest) {
     const auth = await requireUser(request);
     if (!auth.ok) return auth.response;
 
-    if (!rateLimit(`verify-pay:${auth.user.username}`, 20, 60_000)) {
+    // Orders are looked up only inside the caller's own store.
+    const tenantId = auth.tenant.id;
+    const db = tdb(tenantId);
+    if (!canTransact(auth.tenant)) {
+      return NextResponse.json({ success: false, error: SUSPENDED_MESSAGE }, { status: 403 });
+    }
+    if (tenantId !== OWNER_TENANT_ID) {
+      return NextResponse.json(
+        { success: false, error: "Payments are not configured for this store yet." },
+        { status: 503 }
+      );
+    }
+
+    if (!rateLimit(`verify-pay:${tenantId}:${auth.user.username}`, 20, 60_000)) {
       return NextResponse.json(
         { success: false, error: "Too many attempts. Please wait a moment." },
         { status: 429 }
@@ -85,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Find the payment order.
-    const { data: order, error: orderError } = await supabase
+    const { data: order, error: orderError } = await db
       .from("payment_orders")
       .select("*")
       .eq("gateway_order_id", gatewayOrderId)
@@ -128,7 +127,7 @@ export async function POST(request: NextRequest) {
 
     // 3. If already successful, return its recorded key.
     if (order.status === "success") {
-      let historyQuery = supabase
+      let historyQuery = db
         .from("purchase_history")
         .select("key_code")
         .eq("username", order.username)
@@ -319,7 +318,7 @@ export async function POST(request: NextRequest) {
     const claimFields: Record<string, string> = { status: "processing" };
     if (claimUtr) claimFields.utr = claimUtr;
 
-    let claim = await supabase
+    let claim = await db
       .from("payment_orders")
       .update(claimFields)
       .eq("gateway_order_id", gatewayOrderId)
@@ -341,7 +340,7 @@ export async function POST(request: NextRequest) {
 
       // utr column not present yet (SQL migration not applied): claim without it.
       if (claim.error.code === "42703" || /utr/i.test(claim.error.message || "")) {
-        claim = await supabase
+        claim = await db
           .from("payment_orders")
           .update({ status: "processing" })
           .eq("gateway_order_id", gatewayOrderId)
@@ -386,6 +385,7 @@ export async function POST(request: NextRequest) {
 
     try {
       delivery = await releaseProduct({
+        tenantId,
         username: order.username,
         product_name: order.product_name,
         duration: order.duration,
@@ -396,7 +396,7 @@ export async function POST(request: NextRequest) {
 
       console.error("KEY RELEASE EXCEPTION:", { gatewayOrderId, message });
 
-      await markDeliveryFailed(gatewayOrderId);
+      await markDeliveryFailed(tenantId, gatewayOrderId);
 
       return NextResponse.json(
         {
@@ -416,7 +416,7 @@ export async function POST(request: NextRequest) {
         error: deliveryError || "No valid key returned",
       });
 
-      await markDeliveryFailed(gatewayOrderId);
+      await markDeliveryFailed(tenantId, gatewayOrderId);
 
       return NextResponse.json(
         {
@@ -433,7 +433,7 @@ export async function POST(request: NextRequest) {
     // 9. Record the exact generated key before finalizing the order.
     const purchasedAt = new Date().toISOString();
 
-    const { error: historyError } = await supabase.from("purchase_history").insert([
+    const { error: historyError } = await db.from("purchase_history").insert([
       {
         username: order.username,
         product_name: order.product_name,
@@ -454,7 +454,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       // 10. Finalize the order only after the key has been recorded.
-      const { data: finalizedOrder, error: finalizeError } = await supabase
+      const { data: finalizedOrder, error: finalizeError } = await db
         .from("payment_orders")
         .update({ status: "success", used: true })
         .eq("gateway_order_id", gatewayOrderId)
@@ -480,6 +480,7 @@ export async function POST(request: NextRequest) {
         amount: Number(order.amount),
         method: "UPI",
         key: generatedKey,
+        tenantId,
       });
     } catch (telegramError) {
       console.error("TELEGRAM NOTIFICATION ERROR:", telegramError);

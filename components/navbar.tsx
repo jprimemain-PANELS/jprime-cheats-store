@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { Menu, Smartphone, Monitor, Apple, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { AuthButtons } from "./auth-buttons";
 import { WalletModal } from "./wallet-modal";
+import { StoreLogo } from "./store-brand-mark";
+import { useBrand } from "./brand-provider";
 
 interface NavbarProps {
   activeCategory: string;
@@ -20,6 +21,7 @@ const categories = [
 ];
 
 export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
+  const brand = useBrand();
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [indicator, setIndicator] = useState({ left: 0, width: 0, opacity: 0 });
@@ -107,18 +109,15 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
             {/* Logo */}
             <div className="flex items-center gap-2 sm:gap-4 animate-in fade-in slide-in-from-left-2 duration-500">
               <AuthButtons />
-              <Image
-                src="/logo.png"
-                alt="J Prime Panels"
-                width={50}
-                height={50}
+              <StoreLogo
+                size={50}
                 className="rounded-xl transition-transform duration-300 hover:scale-105 hover:rotate-2 w-9 h-9 sm:w-12 sm:h-12"
               />
               <div className="hidden sm:block">
                 <h1 className="text-lg font-semibold tracking-tight text-white">
-                  JPRIME CHEATS
+                  {brand.name}
                 </h1>
-                <p className="text-xs text-white/50">Premium FF Panel</p>
+                <p className="text-xs text-white/50">{brand.isOwner ? "Premium FF Panel" : brand.tagline}</p>
               </div>
             </div>
 
@@ -204,16 +203,10 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
                 >
                   <div className="flex flex-col gap-6 pt-8">
                     <div className="flex items-center gap-3 px-2">
-                      <Image
-                        src="/logo.png"
-                        alt="J Prime Panels"
-                        width={50}
-                        height={50}
-                        className="rounded-xl"
-                      />
+                      <StoreLogo size={50} className="rounded-xl" />
                       <div>
-                        <h2 className="text-lg font-semibold text-white">JPRIME CHEATS</h2>
-                        <p className="text-xs text-white/50">Premium FF Panel</p>
+                        <h2 className="text-lg font-semibold text-white">{brand.name}</h2>
+                        <p className="text-xs text-white/50">{brand.isOwner ? "Premium FF Panel" : brand.tagline}</p>
                       </div>
                     </div>
 

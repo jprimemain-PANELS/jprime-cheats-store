@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { tdb } from "@/lib/tenant-db";
+import { currentTenant, OWNER_TENANT_ID, type Tenant } from "@/lib/tenant";
 
 /**
  * Server-verified sessions.
@@ -35,6 +36,7 @@ function sessionCookieDomain(hostHeader?: string | null): string | undefined {
 }
 
 export type SessionUser = {
+  tenantId: string;
   id: string | number | null;
   username: string;
   email: string | null;
@@ -133,10 +135,16 @@ export function verifyPassword(plain: string, stored: string): boolean {
 /* session tokens                                                      */
 /* ------------------------------------------------------------------ */
 
-type TokenPayload = { i?: string; u: string; pf: string; exp: number };
+type TokenPayload = { i?: string; u: string; pf: string; exp: number; t?: string };
 
-export function createSessionToken(username: string, storedPassword: string, userId: string | number): string {
+export function createSessionToken(
+  username: string,
+  storedPassword: string,
+  userId: string | number,
+  tenantId: string = OWNER_TENANT_ID
+): string {
   const payload: TokenPayload = {
+    t: tenantId,
     i: String(userId),
     u: username,
     pf: passwordFingerprint(storedPassword),
@@ -173,11 +181,12 @@ export function attachSessionCookie(
   username: string,
   storedPassword: string,
   userId: string | number,
-  hostHeader?: string | null
+  hostHeader?: string | null,
+  tenantId: string = OWNER_TENANT_ID
 ): NextResponse {
   const domain = sessionCookieDomain(hostHeader);
   const secure = process.env.NODE_ENV === "production";
-  const token = createSessionToken(username, storedPassword, userId);
+  const token = createSessionToken(username, storedPassword, userId, tenantId);
 
   response.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -246,33 +255,37 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   }
   if (!payload) return null;
 
+  // The session is valid ONLY on the store it was issued for. The tenant comes from the
+  // trusted Host mapping, never from the client. Sessions issued before multi-tenancy
+  // have no "t" claim and belong to the owner store.
+  const tenant = await currentTenant();
+  if (!tenant) return null;
+  const tokenTenant = payload.t ?? OWNER_TENANT_ID;
+  if (tokenTenant !== tenant.id) return null;
+
+  const db = tdb(tenant.id);
+
   // New sessions contain the immutable users.id so duplicate usernames cannot
   // make a valid account ambiguous. Legacy sessions are accepted only when the
-  // username resolves to exactly one user; otherwise the user must log in again.
+  // username resolves to exactly one user in THIS tenant; otherwise log in again.
   let row: any = null;
   if (payload.i) {
-    const { data, error } = await supabaseAdmin
-      .from("users")
-      .select("*")
-      .eq("id", payload.i)
-      .maybeSingle();
+    const { data, error } = await db.from("users").select("*").eq("id", payload.i).maybeSingle();
     if (error || !data) return null;
     row = data;
     if (String(row.username ?? "") !== payload.u) return null;
   } else {
-    const { data, error } = await supabaseAdmin
-      .from("users")
-      .select("*")
-      .eq("username", payload.u)
-      .limit(2);
+    const { data, error } = await db.from("users").select("*").eq("username", payload.u).limit(2);
     if (error || !data || data.length !== 1) return null;
     row = data[0];
   }
+  if (String(row.tenant_id ?? OWNER_TENANT_ID) !== tenant.id) return null; // belt and braces
   if (!safeEqual(passwordFingerprint(String(row.password ?? "")), payload.pf)) {
     return null;
   }
 
   return {
+    tenantId: tenant.id,
     id: row.id == null ? null : String(row.id),
     username: String(row.username),
     email: row.email ? String(row.email) : null,
@@ -307,27 +320,48 @@ export function isSameOrigin(request: NextRequest): boolean {
   }
 }
 
-export async function requireUser(
-  request: NextRequest
-): Promise<{ ok: true; user: SessionUser } | { ok: false; response: NextResponse }> {
+export type AuthOk = { ok: true; user: SessionUser; tenant: Tenant };
+export type AuthResult = AuthOk | { ok: false; response: NextResponse };
+
+export async function requireUser(request: NextRequest): Promise<AuthResult> {
   if (!isSameOrigin(request)) {
     return { ok: false, response: deny(403, "Cross-origin request blocked.") };
   }
 
   const user = await getSessionUser();
-  if (!user) {
+  const tenant = user ? await currentTenant() : null;
+  if (!user || !tenant || tenant.id !== user.tenantId) {
     return { ok: false, response: deny(401, "Please log in.") };
   }
-  return { ok: true, user };
+  return { ok: true, user, tenant };
 }
 
-export async function requireAdmin(
-  request: NextRequest
-): Promise<{ ok: true; user: SessionUser } | { ok: false; response: NextResponse }> {
+/** True only for the platform owner: role "admin" inside the OWNER tenant. */
+export function isOwnerAdmin(user: SessionUser, tenant: Tenant): boolean {
+  return user.role === "admin" && tenant.kind === "owner" && tenant.id === OWNER_TENANT_ID && user.tenantId === tenant.id;
+}
+
+/** Platform-level admin (cross-tenant dashboard). A co-admin can never pass this. */
+export async function requireAdmin(request: NextRequest): Promise<AuthResult> {
   const auth = await requireUser(request);
   if (!auth.ok) return auth;
+  if (!isOwnerAdmin(auth.user, auth.tenant)) {
+    return { ok: false, response: deny(403, "Unauthorized") };
+  }
+  return auth;
+}
 
-  if (auth.user.role !== "admin") {
+/**
+ * Admin of the CURRENT store: the platform owner on the owner store, or a co-admin on
+ * their own store. All data access afterwards is scoped to auth.tenant.id.
+ */
+export async function requireTenantAdmin(request: NextRequest): Promise<AuthResult> {
+  const auth = await requireUser(request);
+  if (!auth.ok) return auth;
+  const { user, tenant } = auth;
+  const ownerOk = isOwnerAdmin(user, tenant);
+  const coadminOk = user.role === "coadmin" && tenant.kind === "coadmin" && user.tenantId === tenant.id;
+  if (!ownerOk && !coadminOk) {
     return { ok: false, response: deny(403, "Unauthorized") };
   }
   return auth;

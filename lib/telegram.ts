@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { OWNER_TENANT_ID } from "@/lib/tenant";
 
 /**
  * Telegram purchase notifications.
@@ -208,6 +209,12 @@ export interface PurchaseNotice {
   method?: string;
   /** The released key. Each destination decides how much of it to show. */
   key?: string;
+  /**
+   * The store the purchase happened in. The destinations configured in Admin -> Telegram belong to
+   * the platform OWNER, so purchases from any other store are never sent to them (a co-admin's
+   * customers, keys and prices are private to that co-admin).
+   */
+  tenantId?: string;
 }
 
 /** Wraps a value onto several lines (by words) so long product names don't stretch the card. */
@@ -277,6 +284,7 @@ ${status}</pre>${keyBelow}
 /** Best effort: never throws, so a Telegram problem can never lose a customer's key. */
 export async function sendTelegramPurchase(notice: PurchaseNotice) {
   try {
+    if (notice.tenantId && notice.tenantId !== OWNER_TENANT_ID) return;
     const snap = await loadStored();
     const { list } = effectiveDestinations(snap);
     const targets = list.filter((d) => d.enabled);

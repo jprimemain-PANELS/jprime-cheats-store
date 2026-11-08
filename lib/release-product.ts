@@ -1,7 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabase-admin";
-
-// Stock keys are read/written with the service-role client only (the table is not exposed to the browser).
-const supabase = supabaseAdmin;
+import { tdb, OWNER_TENANT_ID } from "@/lib/tenant-db";
 import {
   allProducts,
   type Product,
@@ -16,6 +13,7 @@ import {
 import { claimLocalStockKey } from "@/lib/stock";
 
 interface ReleaseProductParams {
+  tenantId: string;
   username: string;
   product_name: string;
   duration: string;
@@ -78,12 +76,13 @@ function toCatalogProduct(row: any): CatalogProduct {
 }
 
 async function findCatalogProduct(
+  tenantId: string,
   productName: string
 ): Promise<CatalogLookup> {
   const wanted = normalizeStockText(productName);
 
   // 1) Exact name (the normal case).
-  const exact = await supabaseAdmin
+  const exact = await tdb(tenantId)
     .from("products_catalog")
     .select("product_id, name, data")
     .eq("name", productName)
@@ -109,7 +108,7 @@ async function findCatalogProduct(
   // 2) Same name with different letter case / spacing. Read-only, tolerant match.
   if (!wanted) return { status: "not_found" };
 
-  const loose = await supabaseAdmin
+  const loose = await tdb(tenantId)
     .from("products_catalog")
     .select("product_id, name, data");
 
@@ -522,10 +521,11 @@ async function purchaseFromSeller2(
  * Local delivery: one shared implementation (lib/stock.ts) used by catalogue and legacy paths.
  */
 async function deliverFromLocalStock(
+  tenantId: string,
   productName: string,
   duration: string
 ) {
-  const claimed = await claimLocalStockKey(productName, duration);
+  const claimed = await claimLocalStockKey(tenantId, productName, duration);
 
   if (claimed.status === "ok") {
     return { success: true as const, key: claimed.key };
@@ -573,14 +573,27 @@ function findOldPrice(
    MAIN RELEASE FUNCTION
    ========================================================= */
 
+const NOT_CONFIGURED = {
+  success: false as const,
+  error: "Inventory is not configured for this store yet.",
+};
+
 export async function releaseProduct({
+  tenantId,
   username,
   product_name,
   duration,
 }: ReleaseProductParams) {
   console.log("RELEASE PRODUCT:", product_name, duration);
 
-  const lookup = await findCatalogProduct(product_name);
+  /*
+   * TENANT SAFETY: the Seller 1 / Seller 2 credentials in the environment belong to the OWNER
+   * store. A co-admin store may only deliver from its OWN stock_keys until per-tenant seller
+   * credentials / shared stock exist. Fail closed.
+   */
+  const isOwner = tenantId === OWNER_TENANT_ID;
+
+  const lookup = await findCatalogProduct(tenantId, product_name);
 
   /*
    * A failed catalogue read is NOT "product not found". We do not know how this product is
@@ -626,6 +639,7 @@ export async function releaseProduct({
     }
 
     return deliverBySupplier(
+      tenantId,
       resolved.supplier,
       catalogPrice,
       product_name,
@@ -640,6 +654,11 @@ export async function releaseProduct({
     "CATALOG PRODUCT NOT FOUND. USING LEGACY PRODUCT CONFIG:",
     product_name
   );
+
+  // The built-in legacy product list belongs to the owner store only.
+  if (!isOwner) {
+    return { success: false, error: "Product not found in Product Catalog." };
+  }
 
   const oldProduct = findOldProduct(product_name);
 
@@ -680,6 +699,7 @@ export async function releaseProduct({
   }
 
   return deliverBySupplier(
+    tenantId,
     legacySupplier,
     legacyPrice,
     product_name,
@@ -691,12 +711,15 @@ export async function releaseProduct({
  * One switch for all deliveries. LOCAL is only reached when the supplier really is LOCAL.
  */
 async function deliverBySupplier(
+  tenantId: string,
   supplier: Supplier,
   price: CatalogPrice,
   productName: string,
   duration: string
 ) {
   console.log("DELIVERY SUPPLIER:", supplier);
+
+  if (supplier !== "LOCAL" && tenantId !== OWNER_TENANT_ID) return NOT_CONFIGURED;
 
   if (supplier === "SELLER1") {
     return purchaseFromSeller1(price, productName, duration);
@@ -706,5 +729,5 @@ async function deliverBySupplier(
     return purchaseFromSeller2(price, productName, duration);
   }
 
-  return deliverFromLocalStock(productName, duration);
+  return deliverFromLocalStock(tenantId, productName, duration);
 }

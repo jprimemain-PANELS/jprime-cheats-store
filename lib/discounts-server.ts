@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { readSetting, writeSetting } from "@/lib/tenant-db";
 import { STORE_DISCOUNTS_KEY, sanitizeRules, type DiscountRule } from "@/lib/discounts";
 
 /**
@@ -6,12 +6,8 @@ import { STORE_DISCOUNTS_KEY, sanitizeRules, type DiscountRule } from "@/lib/dis
  * A missing table or missing row simply means "no discounts". Any OTHER read error is reported
  * so the purchase quote can stop instead of charging a different price than the page showed.
  */
-export async function loadDiscountRules(): Promise<{ ok: true; rules: DiscountRule[] } | { ok: false }> {
-  const { data, error } = await supabaseAdmin
-    .from("app_settings")
-    .select("value")
-    .eq("key", STORE_DISCOUNTS_KEY)
-    .maybeSingle();
+export async function loadDiscountRules(tenantId: string): Promise<{ ok: true; rules: DiscountRule[] } | { ok: false }> {
+  const { data, error } = await readSetting(tenantId, STORE_DISCOUNTS_KEY);
 
   if (error) {
     if (/does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ""} ${error.message}`)) {
@@ -25,10 +21,7 @@ export async function loadDiscountRules(): Promise<{ ok: true; rules: DiscountRu
   return { ok: true, rules: sanitizeRules(value?.rules) };
 }
 
-export async function saveDiscountRules(rules: DiscountRule[]): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await supabaseAdmin.from("app_settings").upsert(
-    { key: STORE_DISCOUNTS_KEY, value: { rules }, updated_at: new Date().toISOString() },
-    { onConflict: "key" }
-  );
+export async function saveDiscountRules(tenantId: string, rules: DiscountRule[]): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await writeSetting(tenantId, STORE_DISCOUNTS_KEY, { rules });
   return error ? { ok: false, error: error.message } : { ok: true };
 }

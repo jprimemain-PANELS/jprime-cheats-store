@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireAdmin } from "@/lib/auth";
+import { tdb } from "@/lib/tenant-db";
+import { requireTenantAdmin } from "@/lib/auth";
 import { loadPriceBook, type PriceRow } from "@/lib/price-book";
 import { BULK_MODES, computeBulkPrice, parseScope, scopeMatches, type BulkMode, type RoundTo, type Scope } from "@/lib/price-math";
 
@@ -17,11 +17,12 @@ function fail(error: string, status = 400) {
 const keyOf = (name: string, duration: string) => `${name}::${duration}`;
 
 /** Resellers named by the admin ("ALL" = every reseller). Anyone who is not a reseller is rejected. */
-async function resolveResellers(input: unknown): Promise<{ ok: true; names: string[] } | { ok: false; error: string }> {
+async function resolveResellers(tenantId: string, input: unknown): Promise<{ ok: true; names: string[] } | { ok: false; error: string }> {
+  const db = tdb(tenantId);
   if (input === "ALL") {
     const names: string[] = [];
     for (let page = 0; page < 20; page += 1) {
-      const { data, error } = await supabaseAdmin
+      const { data, error } = await db
         .from("users")
         .select("username")
         .eq("role", "reseller")
@@ -39,7 +40,7 @@ async function resolveResellers(input: unknown): Promise<{ ok: true; names: stri
 
   const found = new Set<string>();
   for (let i = 0; i < wanted.length; i += 100) {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("users")
       .select("username, role")
       .in("username", wanted.slice(i, i + 100));
@@ -53,14 +54,15 @@ async function resolveResellers(input: unknown): Promise<{ ok: true; names: stri
 }
 
 /** username -> ("product::duration" -> current VIP price) */
-async function loadOverrides(usernames: string[]): Promise<{ ok: true; map: Map<string, Map<string, number>> } | { ok: false }> {
+async function loadOverrides(tenantId: string, usernames: string[]): Promise<{ ok: true; map: Map<string, Map<string, number>> } | { ok: false }> {
+  const db = tdb(tenantId);
   const map = new Map<string, Map<string, number>>();
   for (const name of usernames) map.set(name, new Map());
 
   for (let i = 0; i < usernames.length; i += 40) {
     const chunk = usernames.slice(i, i + 40);
     for (let page = 0; page < 40; page += 1) {
-      const { data, error } = await supabaseAdmin
+      const { data, error } = await db
         .from("reseller_price_overrides")
         .select("username, product_name, duration, reseller_price")
         .in("username", chunk)
@@ -92,8 +94,9 @@ function rowsInScope(book: PriceRow[], scope: Scope) {
  *    fromUsername }
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
+  const db = tdb(auth.tenant.id);
 
   try {
     const body = await request.json();
@@ -102,13 +105,13 @@ export async function POST(request: NextRequest) {
     if (!["preview", "apply", "reset", "copy"].includes(action)) return fail("Unknown action.");
     if (!scope) return fail("Choose which products to change.");
 
-    const resellers = await resolveResellers(body?.usernames);
+    const resellers = await resolveResellers(auth.tenant.id, body?.usernames);
     if (!resellers.ok) return fail(resellers.error);
     const usernames = resellers.names;
     if (usernames.length === 0) return fail("There are no resellers.");
     if (usernames.length > MAX_RESELLERS) return fail(`Choose at most ${MAX_RESELLERS} resellers at a time.`);
 
-    const book = await loadPriceBook();
+    const book = await loadPriceBook(auth.tenant.id);
     if (!book.ok) return fail("Could not load current prices.", 500);
     const scoped = rowsInScope(book.rows, scope);
 
@@ -120,11 +123,11 @@ export async function POST(request: NextRequest) {
       for (let i = 0; i < usernames.length; i += 50) {
         const userChunk = usernames.slice(i, i + 50);
         if (scope.type === "all") {
-          const { error } = await supabaseAdmin.from("reseller_price_overrides").delete().in("username", userChunk);
+          const { error } = await db.from("reseller_price_overrides").delete().in("username", userChunk);
           if (error) return fail("Could not reset prices.", 500);
         } else {
           for (let j = 0; j < productNames.length; j += 40) {
-            const { error } = await supabaseAdmin
+            const { error } = await db
               .from("reseller_price_overrides")
               .delete()
               .in("username", userChunk)
@@ -138,9 +141,9 @@ export async function POST(request: NextRequest) {
 
     /* ---------------- copy: same prices from another reseller ---------------- */
     if (action === "copy") {
-      const from = await resolveResellers([String(body?.fromUsername || "")]);
+      const from = await resolveResellers(auth.tenant.id, [String(body?.fromUsername || "")]);
       if (!from.ok) return fail(from.error);
-      const source = await loadOverrides(from.names);
+      const source = await loadOverrides(auth.tenant.id, from.names);
       if (!source.ok) return fail("Could not read the source prices.", 500);
 
       const inScope = new Set(scoped.map((r) => keyOf(r.product_name, r.duration)));
@@ -157,9 +160,9 @@ export async function POST(request: NextRequest) {
       if (rows.length > MAX_ROWS) return fail("Too many rows in one go.");
 
       for (let i = 0; i < rows.length; i += 500) {
-        const { error } = await supabaseAdmin
+        const { error } = await db
           .from("reseller_price_overrides")
-          .upsert(rows.slice(i, i + 500), { onConflict: "username,product_name,duration" });
+          .upsert(rows.slice(i, i + 500), { onConflict: "tenant_id,username,product_name,duration" });
         if (error) return fail(`Copied ${i} of ${rows.length} rows, then failed.`, 500);
       }
       return NextResponse.json({ success: true, rows: rows.length, resellers: usernames.length }, { headers: NO_STORE });
@@ -177,7 +180,7 @@ export async function POST(request: NextRequest) {
     if (scoped.length === 0) return fail("No products match.");
     if (scoped.length * usernames.length > MAX_ROWS) return fail("Too many rows in one go. Choose fewer resellers or products.");
 
-    const overrides = await loadOverrides(usernames);
+    const overrides = await loadOverrides(auth.tenant.id, usernames);
     if (!overrides.ok) return fail("Could not read current VIP prices.", 500);
 
     const build = (username: string) => {
@@ -221,9 +224,9 @@ export async function POST(request: NextRequest) {
       skipped += built.skipped;
       const rows = built.out.map((r) => ({ username, product_name: r.product_name, duration: r.duration, reseller_price: r.price, updated_at: now }));
       for (let i = 0; i < rows.length; i += 500) {
-        const { error } = await supabaseAdmin
+        const { error } = await db
           .from("reseller_price_overrides")
-          .upsert(rows.slice(i, i + 500), { onConflict: "username,product_name,duration" });
+          .upsert(rows.slice(i, i + 500), { onConflict: "tenant_id,username,product_name,duration" });
         if (error) {
           console.error("VIP BULK SAVE ERROR:", error.message);
           return fail(`Saved ${total} rows, then failed at "${username}". Run it again to finish.`, 500);
