@@ -49,6 +49,8 @@ import TelegramManager from "@/components/admin/TelegramManager";
 import CoAdminManager from "@/components/admin/CoAdminManager";
 import BrandingManager from "@/components/admin/BrandingManager";
 import DomainManager from "@/components/admin/DomainManager";
+import SubscriptionManager from "@/components/admin/SubscriptionManager";
+import StoreTelegramManager from "@/components/admin/StoreTelegramManager";
 import { useBrand } from "@/components/brand-provider";
 
 interface ManagedUser {
@@ -64,6 +66,7 @@ interface ManagedUser {
 type PriceOverride = { priceINR: number; resellerPrice?: number };
 type ProductStatus = "ONLINE" | "MAINTENANCE";
 type Tab =
+  | "subscription"
   | "domain"
   | "overview"
   | "inventory"
@@ -653,15 +656,14 @@ export default function AdminPage() {
     { id: "status", label: "Status", icon: Power, count: allProducts.length },
     { id: "products", label: "Products", icon: Package },
     { id: "vip", label: "VIP Prices", icon: Crown },
+    { id: "gateway", label: "Payments", icon: CreditCard },
+    { id: "telegram", label: "Telegram", icon: Bell },
     ...(isOwnerAdmin
-      ? ([
-          { id: "gateway", label: "Payments", icon: CreditCard },
-          { id: "telegram", label: "Telegram", icon: Bell },
-          { id: "coadmins", label: "Co-admins", icon: Store },
-        ] as { id: Tab; label: string; icon: any; count?: number }[])
+      ? ([{ id: "coadmins", label: "Co-admins", icon: Store }] as { id: Tab; label: string; icon: any; count?: number }[])
       : []),
     { id: "branding", label: "Branding", icon: Palette },
     { id: "domain", label: "Domain", icon: Globe },
+    ...(!isOwnerAdmin ? ([{ id: "subscription", label: "Subscription", icon: CreditCard }] as { id: Tab; label: string; icon: any; count?: number }[]) : []),
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -870,7 +872,7 @@ export default function AdminPage() {
                     ))}
                   </div>
                   <p className="mt-3 text-[11px] text-slate-500">
-                    API = delivered by Seller 1 / Seller 2, no local keys needed.
+                    API = delivered by bb team admin / whitex seller hub, no local keys needed.
                   </p>
                   {unmatchedStock.length > 0 && (
                     <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-1.5">
@@ -1172,16 +1174,16 @@ export default function AdminPage() {
         )}
 
         {/* PRODUCTS (catalog manager — reads/writes products_catalog only) */}
-        {activeTab === "products" && <ProductManager />}
+        {activeTab === "products" && <ProductManager isOwner={isOwnerAdmin} />}
 
         {/* VIP PRICES (per-reseller custom prices — reseller_price_overrides) */}
         {activeTab === "vip" && <VipPriceManager resellers={resellerOptions} />}
 
         {/* PAYMENT GATEWAY (switch xyz / anuj, URLs and API keys) */}
-        {isOwnerAdmin && activeTab === "gateway" && <GatewayManager />}
+        {activeTab === "gateway" && <GatewayManager />}
 
         {/* TELEGRAM NOTIFICATIONS (bots, channels, key visibility) */}
-        {isOwnerAdmin && activeTab === "telegram" && <TelegramManager />}
+        {activeTab === "telegram" && (isOwnerAdmin ? <TelegramManager /> : <StoreTelegramManager />)}
 
         {/* CO-ADMIN STORES (owner only) */}
         {isOwnerAdmin && activeTab === "coadmins" && <CoAdminManager />}
@@ -1189,6 +1191,7 @@ export default function AdminPage() {
         {/* BRANDING (each store edits only its own) */}
         {activeTab === "branding" && <BrandingManager />}
         {activeTab === "domain" && <DomainManager />}
+        {activeTab === "subscription" && !isOwnerAdmin && <SubscriptionManager />}
 
         {/* PURCHASES */}
         {activeTab === "purchases" && (

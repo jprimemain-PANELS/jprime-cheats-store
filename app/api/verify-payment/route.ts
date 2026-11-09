@@ -7,6 +7,7 @@ import { sendTelegramPurchase } from "@/lib/telegram";
 import {
   gatewayNeedsUtr,
   getGatewayConfig,
+  tenantGatewayReady,
   normalizeBankReference,
   resolveGatewayId,
   verifyGatewayPayment,
@@ -56,9 +57,9 @@ export async function POST(request: NextRequest) {
     if (!canTransact(auth.tenant)) {
       return NextResponse.json({ success: false, error: SUSPENDED_MESSAGE }, { status: 403 });
     }
-    if (tenantId !== OWNER_TENANT_ID) {
+    if (tenantId !== OWNER_TENANT_ID && !(await tenantGatewayReady(tenantId))) {
       return NextResponse.json(
-        { success: false, error: "Payments are not configured for this store yet." },
+        { success: false, error: "Payments are not set up for this store yet." },
         { status: 503 }
       );
     }
@@ -203,7 +204,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Gateway credentials for the gateway that created this order.
-    const cfg = await getGatewayConfig(gatewayId);
+    const cfg = await getGatewayConfig(gatewayId, false, tenantId);
     if (!cfg.apiKey) {
       console.error(`${gatewayId} gateway API key is missing`);
 

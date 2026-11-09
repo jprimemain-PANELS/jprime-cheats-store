@@ -78,6 +78,7 @@ describe("Launch Your Own Website application", () => {
     expect(tables.tenant_applications ?? []).toHaveLength(0);
   });
   it("a reseller creates a PENDING application; password is hashed; tenant is forced from the session, not the body", async () => {
+    vi.stubEnv("PLATFORM_ROOT_DOMAIN", ""); // instant launch is covered in subscription.test.ts; this is the legacy approval path
     asReseller();
     const r = await apply(req("/api/tenant/apply", { method: "POST", host: HOST_A, body: { ...APP, applicant_tenant_id: TENANT_B, status: "approved", tenant_id: TENANT_B } }));
     expect(r.status).toBe(200);

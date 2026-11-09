@@ -75,7 +75,7 @@ export default function DomainManager() {
                       <Row k="CNAME" v={`${c.host.split(".").length > 2 ? c.host.split(".")[0] : "@"}  →  ${c.cname}`} />
                       <p className="text-[11px] text-slate-500">For a bare domain with no prefix, use an A record to <code className="font-mono">{c.aRecord}</code> instead.</p>
                     </div>
-                    <p className="text-xs text-slate-300">Step 3. Press <b>Check DNS</b>. When it says OK, the platform owner turns your domain on.</p>
+                    <p className="text-xs text-slate-300">Step 3. Press <b>Check DNS</b>. When the proof is found, your domain is switched on (automatically, or by the platform owner).</p>
                   </>
                 )}
                 {c.note && <p className="text-xs text-slate-400">{c.note}</p>}

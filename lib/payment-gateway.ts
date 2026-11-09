@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { OWNER_TENANT_ID, settingKey } from "@/lib/tenant-db";
 
 /**
  * UPI payment gateway layer.
@@ -97,16 +98,25 @@ type Snapshot = {
   at: number;
 };
 
-let cache: Snapshot | null = null;
+const cache = new Map<string, Snapshot>();
+const isOwnerTenant = (tenantId: string) => tenantId === OWNER_TENANT_ID;
 
-export function invalidateGatewayCache() {
-  cache = null;
+/** Co-admin stores may only use the two ANUJ gateways (xyz is retired and never available to them). */
+export const STORE_GATEWAY_IDS: GatewayId[] = ["anuj", "paytm"];
+export const gatewayAllowedFor = (id: GatewayId, tenantId: string) => isOwnerTenant(tenantId) || STORE_GATEWAY_IDS.includes(id);
+
+export function invalidateGatewayCache(tenantId?: string) {
+  if (tenantId) cache.delete(tenantId);
+  else cache.clear();
 }
 
-async function loadSettings(force = false): Promise<Snapshot> {
-  if (!force && cache && Date.now() - cache.at < CACHE_MS) return cache;
+async function loadSettings(force = false, tenantId: string = OWNER_TENANT_ID): Promise<Snapshot> {
+  const hit = cache.get(tenantId);
+  if (!force && hit && Date.now() - hit.at < CACHE_MS) return hit;
 
-  const keys = [ACTIVE_KEY, ...GATEWAY_IDS.map(configKey)];
+  // Each store reads ONLY its own prefixed rows (owner rows keep their original key names).
+  const K = (k: string) => settingKey(tenantId, k);
+  const keys = [K(ACTIVE_KEY), ...GATEWAY_IDS.map((id) => K(configKey(id)))];
   const { data, error } = await supabaseAdmin.from(SETTINGS_TABLE).select("key, value").in("key", keys);
 
   let snap: Snapshot;
@@ -118,12 +128,12 @@ async function loadSettings(force = false): Promise<Snapshot> {
     let active: GatewayId | null = null;
     for (const row of data || []) {
       const value = (row as any).value;
-      if ((row as any).key === ACTIVE_KEY) {
+      if ((row as any).key === K(ACTIVE_KEY)) {
         if (isGatewayId(value?.gateway)) active = value.gateway;
         continue;
       }
       for (const id of GATEWAY_IDS) {
-        if ((row as any).key === configKey(id) && value && typeof value === "object") {
+        if ((row as any).key === K(configKey(id)) && value && typeof value === "object") {
           configs[id] = value as StoredConfig;
         }
       }
@@ -131,7 +141,7 @@ async function loadSettings(force = false): Promise<Snapshot> {
     snap = { ready: true, active, configs, at: Date.now() };
   }
 
-  cache = snap;
+  cache.set(tenantId, snap);
   return snap;
 }
 
@@ -140,9 +150,18 @@ function envDefaultGateway(): GatewayId {
   return isGatewayId(fromEnv) ? fromEnv : "xyz";
 }
 
-export async function getActiveGatewayId(): Promise<GatewayId> {
-  const snap = await loadSettings();
+export async function getActiveGatewayId(tenantId: string = OWNER_TENANT_ID): Promise<GatewayId> {
+  const snap = await loadSettings(false, tenantId);
+  if (!isOwnerTenant(tenantId)) return snap.active && gatewayAllowedFor(snap.active, tenantId) ? snap.active : "anuj";
   return snap.active ?? envDefaultGateway();
+}
+
+/** A co-admin store can take payments only when it saved its OWN key for its OWN active gateway. */
+export async function tenantGatewayReady(tenantId: string): Promise<boolean> {
+  if (isOwnerTenant(tenantId)) return true;
+  const snap = await loadSettings(false, tenantId);
+  if (!snap.active || !gatewayAllowedFor(snap.active, tenantId)) return false;
+  return !!cleanStr(snap.configs[snap.active]?.api_key);
 }
 
 export type GatewayConfig = {
@@ -157,13 +176,14 @@ function cleanStr(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-export async function getGatewayConfig(id: GatewayId, force = false): Promise<GatewayConfig> {
-  const snap = await loadSettings(force);
+export async function getGatewayConfig(id: GatewayId, force = false, tenantId: string = OWNER_TENANT_ID): Promise<GatewayConfig> {
+  const snap = await loadSettings(force, tenantId);
   const meta = GATEWAY_META[id];
   const stored = snap.configs[id] || {};
 
   const storedKey = cleanStr(stored.api_key);
-  const envKey = cleanStr(process.env[meta.envKey]);
+  // SAFETY: the Vercel env keys belong to the OWNER store. A co-admin store never falls back to them.
+  const envKey = isOwnerTenant(tenantId) ? cleanStr(process.env[meta.envKey]) : "";
 
   return {
     id,
@@ -229,7 +249,7 @@ export type CreateResult =
   | { ok: true; order: CreatedOrder }
   | { ok: false; error: string; httpStatus: number };
 
-export async function createGatewayOrder(cfg: GatewayConfig, amount: number): Promise<CreateResult> {
+export async function createGatewayOrder(cfg: GatewayConfig, amount: number, payeeName = "JPRIME"): Promise<CreateResult> {
   const url = safeUrl(cfg.createUrl);
   if (!url) return { ok: false, error: "Payment gateway URL is invalid", httpStatus: 500 };
 
@@ -262,7 +282,7 @@ export async function createGatewayOrder(cfg: GatewayConfig, amount: number): Pr
 
     // The gateway gives a QR only; build a tap-to-pay UPI link from the same details.
     const upiLink = upiId
-      ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent("JPRIME")}&am=${encodeURIComponent(
+      ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName.slice(0, 40))}&am=${encodeURIComponent(
           String(data.amount)
         )}&cu=INR&tn=${encodeURIComponent(orderId)}`
       : null;
@@ -453,11 +473,12 @@ export type GatewayAdminView = {
   >;
 };
 
-export async function getGatewayAdminView(): Promise<GatewayAdminView> {
-  const snap = await loadSettings(true);
+export async function getGatewayAdminView(tenantId: string = OWNER_TENANT_ID): Promise<GatewayAdminView> {
+  const snap = await loadSettings(true, tenantId);
   const gateways = {} as GatewayAdminView["gateways"];
   for (const id of GATEWAY_IDS) {
-    const cfg = await getGatewayConfig(id);
+    if (!gatewayAllowedFor(id, tenantId)) continue;
+    const cfg = await getGatewayConfig(id, false, tenantId);
     const meta = GATEWAY_META[id];
     gateways[id] = {
       id,
@@ -475,7 +496,7 @@ export async function getGatewayAdminView(): Promise<GatewayAdminView> {
   }
   return {
     storageReady: snap.ready,
-    active: snap.active ?? envDefaultGateway(),
+    active: isOwnerTenant(tenantId) ? snap.active ?? envDefaultGateway() : snap.active && gatewayAllowedFor(snap.active, tenantId) ? snap.active : "anuj",
     activeFrom: snap.active ? "admin" : "env-default",
     gateways,
   };
@@ -483,20 +504,21 @@ export async function getGatewayAdminView(): Promise<GatewayAdminView> {
 
 const SETUP_HINT = "Settings table not found. Run supabase/PAYMENT_GATEWAY_SWITCH.sql in the Supabase SQL editor first.";
 
-async function writeSetting(key: string, value: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+async function writeSetting(key: string, value: unknown, tenantId: string = OWNER_TENANT_ID): Promise<{ ok: true } | { ok: false; error: string }> {
   const { error } = await supabaseAdmin
     .from(SETTINGS_TABLE)
-    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    .upsert({ key: settingKey(tenantId, key), value, updated_at: new Date().toISOString() }, { onConflict: "key" });
   if (error) {
     console.error("GATEWAY SETTING WRITE ERROR:", error.message);
     return { ok: false, error: SETUP_HINT };
   }
-  invalidateGatewayCache();
+  invalidateGatewayCache(tenantId);
   return { ok: true };
 }
 
-export async function setActiveGateway(id: GatewayId) {
-  return writeSetting(ACTIVE_KEY, { gateway: id });
+export async function setActiveGateway(id: GatewayId, tenantId: string = OWNER_TENANT_ID) {
+  if (!gatewayAllowedFor(id, tenantId)) return { ok: false as const, error: "That gateway is not available." };
+  return writeSetting(ACTIVE_KEY, { gateway: id }, tenantId);
 }
 
 function validateUrl(raw: string): string | null {
@@ -511,9 +533,11 @@ function validateUrl(raw: string): string | null {
 
 export async function saveGatewayConfig(
   id: GatewayId,
-  input: { apiKey?: string; clearKey?: boolean; createUrl?: string; verifyUrl?: string; resetUrls?: boolean }
+  input: { apiKey?: string; clearKey?: boolean; createUrl?: string; verifyUrl?: string; resetUrls?: boolean },
+  tenantId: string = OWNER_TENANT_ID
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const snap = await loadSettings(true);
+  if (!gatewayAllowedFor(id, tenantId)) return { ok: false, error: "That gateway is not available." };
+  const snap = await loadSettings(true, tenantId);
   const current: StoredConfig = { ...(snap.configs[id] || {}) };
 
   if (input.resetUrls) {
@@ -550,15 +574,16 @@ export async function saveGatewayConfig(
     current.api_key = key;
   }
 
-  return writeSetting(configKey(id), current);
+  return writeSetting(configKey(id), current, tenantId);
 }
 
 /**
  * Safe connectivity test: asks the gateway to look up a fake order. No money moves and no
  * order is created. Tells the admin whether the URL is reachable and the key is accepted.
  */
-export async function testGateway(id: GatewayId): Promise<{ ok: boolean; message: string }> {
-  const cfg = await getGatewayConfig(id, true);
+export async function testGateway(id: GatewayId, tenantId: string = OWNER_TENANT_ID): Promise<{ ok: boolean; message: string }> {
+  if (!gatewayAllowedFor(id, tenantId)) return { ok: false, message: "That gateway is not available." };
+  const cfg = await getGatewayConfig(id, true, tenantId);
   if (!cfg.apiKey) return { ok: false, message: `No API key saved. Add one here or set ${GATEWAY_META[id].envKey} in Vercel.` };
 
   const url = safeUrl(cfg.verifyUrl);
@@ -593,9 +618,11 @@ export async function testGateway(id: GatewayId): Promise<{ ok: boolean; message
  */
 export async function inspectGatewayOrder(
   id: GatewayId,
-  orderId: string
+  orderId: string,
+  tenantId: string = OWNER_TENANT_ID
 ): Promise<{ ok: boolean; message: string; httpStatus?: number; interpreted?: string; raw?: string }> {
-  const cfg = await getGatewayConfig(id, true);
+  if (!gatewayAllowedFor(id, tenantId)) return { ok: false, message: "That gateway is not available." };
+  const cfg = await getGatewayConfig(id, true, tenantId);
   if (!cfg.apiKey) return { ok: false, message: `No API key saved for ${GATEWAY_META[id].label}.` };
 
   const url = safeUrl(cfg.verifyUrl);

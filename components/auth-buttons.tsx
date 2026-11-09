@@ -47,7 +47,7 @@ export function AuthButtons() {
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2 sm:gap-3">
       {isAdmin && (
         <button
           onClick={() => router.push("/admin")}
@@ -60,9 +60,10 @@ export function AuthButtons() {
       {canLaunch && (
         <button
           onClick={() => router.push("/launch")}
-          className="hidden sm:inline-flex bg-gradient-to-r from-violet-600 to-fuchsia-600 px-3 py-2 rounded-xl text-xs font-bold text-white hover:brightness-110 transition-all"
+          className="inline-flex items-center bg-gradient-to-r from-violet-600 to-fuchsia-600 px-2.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold text-white hover:brightness-110 transition-all whitespace-nowrap"
         >
-          Launch Your Own Website
+          <span className="sm:hidden">Launch Website</span>
+          <span className="hidden sm:inline">Launch Your Own Website</span>
         </button>
       )}
 

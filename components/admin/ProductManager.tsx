@@ -75,15 +75,16 @@ async function adminCatalogRequest(
   return data;
 }
 
-export default function ProductManager() {
+export default function ProductManager({ isOwner = true }: { isOwner?: boolean } = {}) {
   // Built-in product list, from an admin-only endpoint (used by "Import Existing").
   const [allProducts, setAllProducts] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!isOwner) return; // the built-in list belongs to the owner store only
     adminCatalogRequest("/api/admin/legacy-products")
       .then((r) => setAllProducts(Array.isArray(r.products) ? r.products : []))
       .catch(() => setAllProducts([]));
-  }, []);
+  }, [isOwner]);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [selected, setSelected] = useState<Product | null>(null);
@@ -563,6 +564,7 @@ export default function ProductManager() {
 
         <div className="flex flex-wrap gap-2">
 
+          {isOwner && (
           <button
             onClick={importExistingProducts}
             disabled={importing}
@@ -574,6 +576,7 @@ export default function ProductManager() {
               ? "Importing..."
               : "Import Existing"}
           </button>
+          )}
 
           <button
             onClick={loadProducts}
@@ -612,12 +615,14 @@ export default function ProductManager() {
             No products are in the new catalog yet.
           </p>
 
+          {isOwner && (
           <button
             onClick={importExistingProducts}
             className="px-5 py-3 rounded-xl bg-cyan-500 text-black font-bold"
           >
             Import Existing Products
           </button>
+          )}
 
         </div>
 
@@ -883,7 +888,7 @@ export default function ProductManager() {
                               deliveryModeForTier(t, undefined)
                             );
                             const api = modes.filter((m) => m === "API").length;
-                            if (api === modes.length) return "API (Seller 1 / Seller 2)";
+                            if (api === modes.length) return "API (bb team admin / whitex seller hub)";
                             if (api === 0) return "LOCAL STOCK";
                             return "MIXED (set per duration below)";
                           })()}
@@ -1172,13 +1177,21 @@ export default function ProductManager() {
                               Local Stock
                             </option>
 
-                            <option value="SELLER1">
-                              Seller 1
-                            </option>
+                            {isOwner ? (
+                              <>
+                                <option value="SELLER1">
+                                  bb team admin
+                                </option>
 
-                            <option value="SELLER2">
-                              Seller 2
-                            </option>
+                                <option value="SELLER2">
+                                  whitex seller hub
+                                </option>
+                              </>
+                            ) : (
+                              <option value="" disabled>
+                                JPRIME API stock (coming soon)
+                              </option>
+                            )}
                           </select>
 
                         </div>
@@ -1192,7 +1205,7 @@ export default function ProductManager() {
 
                             <div>
                               <label className="text-xs text-zinc-400">
-                                Seller 1 PID
+                                bb team admin PID
                               </label>
 
                               <input
@@ -1214,7 +1227,7 @@ export default function ProductManager() {
 
                             <div>
                               <label className="text-xs text-zinc-400">
-                                Seller 1 Duration
+                                bb team admin Duration
                               </label>
 
                               <input
@@ -1245,7 +1258,7 @@ export default function ProductManager() {
                           <div className="mt-4">
 
                             <label className="text-xs text-zinc-400">
-                              Seller 2 Variant ID
+                              whitex seller hub Variant ID
                             </label>
 
                             <input

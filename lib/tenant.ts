@@ -20,6 +20,8 @@ export type Tenant = {
   inventoryMode: "own_api" | "shared_stock";
   sharedStockAllowed: boolean;
   telegramUsername: string | null;
+  planExpiresAt: string | null;       // null = never expires
+  subscriptionExpired: boolean;       // status is shown as "suspended" while true (no new purchases)
 };
 
 const OWNER_TENANT: Tenant = {
@@ -31,6 +33,8 @@ const OWNER_TENANT: Tenant = {
   inventoryMode: "own_api",
   sharedStockAllowed: true,
   telegramUsername: null,
+  planExpiresAt: null,
+  subscriptionExpired: false,
 };
 
 const BUILTIN_OWNER_HOSTS = ["jprimecheats.store", "www.jprimecheats.store"];
@@ -68,11 +72,17 @@ export function clearTenantCache() {
 }
 
 function rowToTenant(row: any): Tenant {
+  // A store whose plan ran out behaves like a suspended store (customers keep history, no new purchases).
+  // NULL expiry (every store that exists today, and the owner) never expires.
+  const exp = row.plan_expires_at ? new Date(row.plan_expires_at).getTime() : null;
+  const expired = row.kind !== "owner" && exp !== null && exp < Date.now();
   return {
+    planExpiresAt: row.plan_expires_at ? String(row.plan_expires_at) : null,
+    subscriptionExpired: expired,
     id: String(row.id),
     slug: String(row.slug),
     kind: row.kind === "owner" ? "owner" : "coadmin",
-    status: row.status as TenantStatus,
+    status: (expired && row.status === "active" ? "suspended" : row.status) as TenantStatus,
     brandName: String(row.brand_name ?? ""),
     inventoryMode: row.inventory_mode === "shared_stock" ? "shared_stock" : "own_api",
     sharedStockAllowed: row.shared_stock_allowed === true,

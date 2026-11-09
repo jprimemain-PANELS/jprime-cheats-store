@@ -136,6 +136,7 @@ export async function ownerOverview() {
       return {
         id: t.id, slug: t.slug, brandName: t.brand_name, status: t.status, inventoryMode: t.inventory_mode,
         sharedStockAllowed: t.shared_stock_allowed === true, telegram: t.telegram_username, createdAt: t.created_at,
+        planExpiresAt: t.plan_expires_at ?? null, payer: t.payer_username ?? null,
         domains: (dom.get(t.id) ?? []).map((d) => ({ host: d.host, verified: d.verified === true })),
         customers: Number(s.customers ?? 0), resellers: Number(s.resellers ?? 0), products: Number(s.products ?? 0),
         orders: Number(s.orders ?? 0), walletTotal: Number(s.wallet_total ?? 0), lastPurchaseAt: s.last_purchase_at ?? null,

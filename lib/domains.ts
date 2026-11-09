@@ -133,7 +133,15 @@ export async function checkCustomDomainDns(tenant: Tenant, actor: Actor) {
     : "We could not find the proof record yet. DNS can take a few minutes up to a few hours.";
   await supabaseAdmin.from("tenant_domains").update({ dns_verified: txt, last_check_at: new Date().toISOString(), last_check_note: note }).eq("host", c.host).eq("tenant_id", tenant.id).eq("kind", "custom");
   await audit(tenant.id, actor, txt ? "domain.dns_ok" : "domain.dns_pending", c.host);
-  return { ok: true as const, proofFound: txt, pointsToHost: points, note, state: await domainState(tenant.id) };
+  // AUTOMATIC: when the owner set up the Vercel token and allowed this store, a proven domain is added to Vercel and switched on now.
+  let autoNote = "";
+  if (txt && vercelConfigured() && st.allowed && c.status !== "live") {
+    const a = await activateCustomDomain(c.host, false, actor);
+    autoNote = a.ok
+      ? (points ? " Your domain is now LIVE." : " Your domain is switched on. It will start working as soon as the CNAME record (step 2) is in place.")
+      : " Automatic activation failed, the platform owner will activate it manually.";
+  }
+  return { ok: true as const, proofFound: txt, pointsToHost: points, note: note + autoNote, state: await domainState(tenant.id) };
 }
 
 export async function removeCustomDomain(tenant: Tenant, actor: Actor) {

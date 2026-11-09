@@ -77,6 +77,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A co-admin store can only sell from its own (LOCAL) stock until the API system ships.
+    // Never trust the browser: enforce it here as well as in the form.
+    if (auth.tenant.kind !== "owner") {
+      const tiers: any[] = Array.isArray((product as any).prices) ? (product as any).prices : [];
+      if (tiers.some((t) => t && t.supplier && String(t.supplier).toUpperCase() !== "LOCAL")) {
+        return NextResponse.json({ success: false, error: "This store can only use Local Stock for now." }, { status: 400 });
+      }
+    }
+
     const productId = String(product.id || "").trim();
     const productName = String(product.name || "").trim();
 

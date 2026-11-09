@@ -7,6 +7,7 @@ import {
   createGatewayOrder,
   gatewayNeedsUtr,
   getActiveGatewayId,
+  tenantGatewayReady,
   getGatewayConfig,
   isAmountAcceptable,
 } from "@/lib/payment-gateway";
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
     const { username, role } = auth.user;
     if (!canTransact(auth.tenant)) return fail(SUSPENDED_MESSAGE, 403);
     // Only the owner store has a configured payment gateway today; co-admin gateways are the next phase.
-    if (auth.tenant.id !== OWNER_TENANT_ID) return fail("Payments are not configured for this store yet.", 503);
+    if (auth.tenant.id !== OWNER_TENANT_ID && !(await tenantGatewayReady(auth.tenant.id))) return fail("Payments are not set up for this store yet. Please contact the store owner.", 503);
 
     if (!rateLimit(`upi-create:${auth.tenant.id}:${username}`, 10, 60_000)) {
       return fail("Too many requests. Please wait a moment.", 429);
@@ -57,14 +58,14 @@ export async function POST(request: NextRequest) {
       return fail("This product is under maintenance. Please check back soon.", 409);
     }
 
-    const gatewayId = await getActiveGatewayId();
-    const cfg = await getGatewayConfig(gatewayId);
+    const gatewayId = await getActiveGatewayId(auth.tenant.id);
+    const cfg = await getGatewayConfig(gatewayId, false, auth.tenant.id);
     if (!cfg.apiKey) {
       console.error(`${gatewayId} gateway API key is missing`);
       return fail("Payment gateway is not configured", 500);
     }
 
-    const created = await createGatewayOrder(cfg, quote.price);
+    const created = await createGatewayOrder(cfg, quote.price, auth.tenant.kind === "owner" ? undefined : auth.tenant.brandName);
     if (!created.ok) return fail(created.error, created.httpStatus);
     const gatewayOrder = created.order;
 

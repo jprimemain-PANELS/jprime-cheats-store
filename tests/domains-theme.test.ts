@@ -150,6 +150,39 @@ describe("co-admin custom domain flow", () => {
   });
 });
 
+describe("automatic activation (Vercel API configured)", () => {
+  it("proof found -> domain added to Vercel and switched on without the owner; no proof -> nothing", async () => {
+    vi.stubEnv("VERCEL_TOKEN", "tok"); vi.stubEnv("VERCEL_PROJECT_ID", "prj_1");
+    const calls: any[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: any) => { calls.push({ url, init }); return { ok: true, json: async () => ({}) }; });
+    allow(); asCoadmin();
+    await post(HOST_B, { action: "request", domain: "shop.raj.com" });
+    let c = await (await post(HOST_B, { action: "check" })).json();
+    expect(c.proofFound).toBe(false); expect(calls).toHaveLength(0);
+    expect((tables.tenant_domains.find((d) => d.host === "shop.raj.com") as any).verified).toBe(false);
+    dnsState.txt = [[(tables.tenant_domains.find((d) => d.host === "shop.raj.com") as any).verify_token]];
+    c = await (await post(HOST_B, { action: "check" })).json();
+    expect(c.proofFound).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain("/projects/prj_1/domains"); expect(JSON.parse(calls[0].init.body)).toEqual({ name: "shop.raj.com" });
+    expect((tables.tenant_domains.find((d) => d.host === "shop.raj.com") as any).verified).toBe(true);
+    clearTenantCache(); expect((await resolveTenantByHost("shop.raj.com"))?.id).toBe(TENANT_B);
+    vi.unstubAllGlobals();
+  });
+  it("a store the owner has NOT allowed never auto-activates", async () => {
+    vi.stubEnv("VERCEL_TOKEN", "tok"); vi.stubEnv("VERCEL_PROJECT_ID", "prj_1");
+    const calls: any[] = []; vi.stubGlobal("fetch", async (...a: any[]) => { calls.push(a); return { ok: true, json: async () => ({}) }; });
+    allow(); asCoadmin();
+    await post(HOST_B, { action: "request", domain: "shop.raj.com" });
+    (tables.tenants.find((t) => t.id === TENANT_B) as any).custom_domain_allowed = false; // owner switched it off meanwhile
+    dnsState.txt = [[(tables.tenant_domains.find((d) => d.host === "shop.raj.com") as any).verify_token]];
+    await post(HOST_B, { action: "check" });
+    expect(calls).toHaveLength(0);
+    expect((tables.tenant_domains.find((d) => d.host === "shop.raj.com") as any).verified).toBe(false);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("theme v2", () => {
   it("defaults are the original look: no structural CSS", () => {
     const css = buildThemeCss(DEFAULT_THEME);

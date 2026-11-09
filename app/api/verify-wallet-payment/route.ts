@@ -6,6 +6,7 @@ import { requireUser, rateLimit } from "@/lib/auth";
 import {
   gatewayNeedsUtr,
   getGatewayConfig,
+  tenantGatewayReady,
   normalizeBankReference,
   resolveGatewayId,
   verifyGatewayPayment,
@@ -26,10 +27,10 @@ export async function POST(request: NextRequest) {
 
     const { username } = auth.user;
     if (!canTransact(auth.tenant)) return reply(403, { success: false, status: "error", message: SUSPENDED_MESSAGE });
-    if (auth.tenant.id !== OWNER_TENANT_ID) {
-      return reply(503, { success: false, status: "gateway_failed", message: "Payments are not configured for this store yet." });
-    }
     const tenantId = auth.tenant.id;
+    if (tenantId !== OWNER_TENANT_ID && !(await tenantGatewayReady(tenantId))) {
+      return reply(503, { success: false, status: "gateway_failed", message: "Payments are not set up for this store yet." });
+    }
     if (!rateLimit(`verify-topup:${tenantId}:${username}`, 20, 60_000)) {
       return reply(429, {
         success: false,
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       return reply(409, { success: false, status: "error", message: "This deposit can no longer be verified." });
     }
 
-    const cfg = await getGatewayConfig(gatewayId);
+    const cfg = await getGatewayConfig(gatewayId, false, tenantId);
     if (!cfg.apiKey) {
       console.error(`${gatewayId} gateway API key is missing`);
       return reply(500, { success: false, status: "gateway_failed", message: "Gateway not configured properly." });

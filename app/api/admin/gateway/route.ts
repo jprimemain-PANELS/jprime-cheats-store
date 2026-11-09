@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, rateLimit } from "@/lib/auth";
+import { requireTenantAdmin, rateLimit } from "@/lib/auth";
 import {
   getGatewayAdminView,
   inspectGatewayOrder,
@@ -23,11 +23,11 @@ function fail(error: string, status = 400) {
  * Admin session required on every call.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   try {
-    const view = await getGatewayAdminView();
+    const view = await getGatewayAdminView(auth.tenant.id);
     return NextResponse.json({ success: true, ...view }, { headers: NO_STORE });
   } catch (e) {
     console.error("ADMIN GATEWAY READ ERROR:", e instanceof Error ? e.message : "unknown");
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin(request);
+  const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
 
   if (!rateLimit(`admin-gateway:${auth.user.username}`, 30, 60_000)) {
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     if (!isGatewayId(gateway)) return fail("Unknown gateway.");
 
     if (action === "set_active") {
-      const result = await setActiveGateway(gateway);
+      const result = await setActiveGateway(gateway, auth.tenant.id);
       if (!result.ok) return fail(result.error, 500);
       console.warn(`ADMIN ${auth.user.username} switched the active payment gateway to ${gateway}`);
       return NextResponse.json({ success: true }, { headers: NO_STORE });
@@ -64,21 +64,21 @@ export async function POST(request: NextRequest) {
         createUrl: typeof body.createUrl === "string" ? body.createUrl : undefined,
         verifyUrl: typeof body.verifyUrl === "string" ? body.verifyUrl : undefined,
         resetUrls: body.resetUrls === true,
-      });
+      }, auth.tenant.id);
       if (!result.ok) return fail(result.error, result.error.startsWith("Settings table") ? 500 : 400);
       console.warn(`ADMIN ${auth.user.username} updated the ${gateway} gateway settings`);
       return NextResponse.json({ success: true }, { headers: NO_STORE });
     }
 
     if (action === "test") {
-      const result = await testGateway(gateway);
+      const result = await testGateway(gateway, auth.tenant.id);
       return NextResponse.json({ success: true, ok: result.ok, message: result.message }, { headers: NO_STORE });
     }
 
     if (action === "inspect") {
       const orderId = String(body?.orderId || "").trim();
       if (!/^[A-Za-z0-9_-]{4,64}$/.test(orderId)) return fail("Enter a valid order ID (letters and numbers only).");
-      const result = await inspectGatewayOrder(gateway, orderId);
+      const result = await inspectGatewayOrder(gateway, orderId, auth.tenant.id);
       return NextResponse.json({ success: true, ...result }, { headers: NO_STORE });
     }
 

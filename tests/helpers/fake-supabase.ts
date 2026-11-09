@@ -136,6 +136,23 @@ export const supabaseAdmin = {
       return { data: { ok: true, balance: w.balance }, error: null };
     }
     if (name === "jprime_tenant_stats") return { data: [], error: null };
+    if (name === "jprime_approve_tenant_application") {
+      const app = rows("tenant_applications").find((x) => x.id === args.p_app_id);
+      if (!app) return { data: { ok: true }, error: null }; // legacy route tests approve ids that have no row
+      if (app.status !== "pending") return { data: { ok: false, reason: "not_pending" }, error: null };
+      const tid = randomUUID();
+      rows("tenants").push({ id: tid, slug: app.slug, kind: "coadmin", status: "active", brand_name: app.brand_name, telegram_username: app.telegram_username, inventory_mode: app.inventory_mode, shared_stock_allowed: false, custom_domain_allowed: false });
+      const host = args.p_root_domain ? `${app.slug}.${args.p_root_domain}` : null;
+      if (host) rows("tenant_domains").push({ host, tenant_id: tid, is_primary: true, verified: true, kind: "subdomain" });
+      app.status = "approved";
+      return { data: { ok: true, tenant_id: tid, host }, error: null };
+    }
+    if (name === "jprime_tenant_start_trial") {
+      const t = rows("tenants").find((x) => x.id === args.p_tenant);
+      if (!t || t.trial_used) return { data: { ok: false, reason: "trial_used" }, error: null };
+      t.trial_used = true; t.payer_username = args.p_payer; t.plan_expires_at = new Date(Date.now() + args.p_days * 86400000).toISOString();
+      return { data: { ok: true, expires_at: t.plan_expires_at }, error: null };
+    }
     if (name.startsWith("jprime_approve_tenant_application") || name === "jprime_reject_tenant_application" || name === "jprime_set_tenant_status" || name === "jprime_create_tenant_direct") {
       return { data: { ok: true }, error: null };
     }

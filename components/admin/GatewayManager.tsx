@@ -44,7 +44,7 @@ interface EditState {
   verifyUrl: string;
 }
 
-const IDS: GatewayId[] = ["xyz", "anuj", "paytm"];
+const IDS: GatewayId[] = ["anuj", "paytm"]; // XYZ is retired (hidden); old XYZ orders still verify on the server
 
 async function gatewayRequest(options: RequestInit = {}) {
   // Authentication is the HttpOnly session cookie; the server re-checks the admin role.
@@ -142,7 +142,7 @@ export default function GatewayManager() {
     if (!view) return;
     const g = view.gateways[id];
     if (g.keySource === "missing") {
-      note(id, false, `Add an API key first (or set ${g.envKey} in Vercel).`);
+      note(id, false, "Add an API key first.");
       return;
     }
     if (!window.confirm(`Switch NEW payments to ${g.label}?\n\nOrders already created keep using the gateway they were created on.`)) return;
@@ -238,7 +238,7 @@ export default function GatewayManager() {
               <div className="flex items-center gap-2 text-xs">
                 <KeyRound className="h-3.5 w-3.5 text-slate-500" />
                 {g.keySource === "missing" ? (
-                  <span className="text-rose-400">No API key. Add one below or set {g.envKey} in Vercel.</span>
+                  <span className="text-rose-400">No API key yet. Paste your key below.</span>
                 ) : (
                   <span className="text-slate-300">
                     API key <span className="font-mono text-slate-400">{g.keyHint}</span>{" "}

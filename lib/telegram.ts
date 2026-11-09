@@ -284,7 +284,12 @@ ${status}</pre>${keyBelow}
 /** Best effort: never throws, so a Telegram problem can never lose a customer's key. */
 export async function sendTelegramPurchase(notice: PurchaseNotice) {
   try {
-    if (notice.tenantId && notice.tenantId !== OWNER_TENANT_ID) return;
+    if (notice.tenantId && notice.tenantId !== OWNER_TENANT_ID) {
+      // A co-admin store alerts ITS OWN Telegram only, never the owner's destinations.
+      const { sendStorePurchase } = await import("@/lib/store-telegram");
+      await sendStorePurchase(notice.tenantId, notice);
+      return;
+    }
     const snap = await loadStored();
     const { list } = effectiveDestinations(snap);
     const targets = list.filter((d) => d.enabled);

@@ -7,7 +7,7 @@ type Store = {
   id: string; slug: string; brandName: string; status: string; inventoryMode: string; sharedStockAllowed: boolean;
   telegram: string | null; createdAt: string; domains: { host: string; verified: boolean }[];
   customers: number; resellers: number; products: number; orders: number; walletTotal: number;
-  lastPurchaseAt: string | null; paymentStatus: string;
+  lastPurchaseAt: string | null; paymentStatus: string; planExpiresAt?: string | null; payer?: string | null;
 };
 type App = {
   id: string; brandName: string; slug: string; telegram: string | null; inventoryMode: string;
@@ -189,7 +189,7 @@ export default function CoAdminManager() {
                         </div>
                       ))}
                     </div>
-                    <p className="text-[11px] text-slate-500">{modeLabel(s.inventoryMode)} · Telegram @{s.telegram || "—"} · created {new Date(s.createdAt).toLocaleDateString()}{s.lastPurchaseAt ? ` · last purchase ${new Date(s.lastPurchaseAt).toLocaleDateString()}` : ""}</p>
+                    <p className="text-[11px] text-slate-500">{modeLabel(s.inventoryMode)} · Telegram @{s.telegram || "—"} · created {new Date(s.createdAt).toLocaleDateString()}{s.planExpiresAt ? ` · plan until ${new Date(s.planExpiresAt).toLocaleDateString()}${new Date(s.planExpiresAt) < new Date() ? " (EXPIRED)" : ""}` : " · no expiry"}{s.payer ? ` · wallet: ${s.payer}` : ""}{s.lastPurchaseAt ? ` · last purchase ${new Date(s.lastPurchaseAt).toLocaleDateString()}` : ""}</p>
                   </div>
                 ))}
               </div>
