@@ -45,6 +45,10 @@ export function Hero({ onScrollToProducts }: HeroProps) {
   const [showAudio, setShowAudio] = useState(false);
   const [active, setActive] = useState(0);
   const current = explainers[active];
+  const L = brand.layout;
+  const lay = brand.isOwner ? "centered" : L.heroLayout;
+  const outerCls = lay === "centered" ? "max-w-2xl" : lay === "left" ? "max-w-5xl" : "max-w-6xl grid items-center gap-10 md:grid-cols-2";
+  const innerCls = lay === "centered" ? "flex flex-col items-center text-center" : "flex flex-col items-start text-left";
 
   return (
     <section className="relative w-full overflow-hidden bg-[#07040f] px-4 pb-8 pt-24 text-white selection:bg-fuchsia-500 selection:text-white">
@@ -54,7 +58,8 @@ export function Hero({ onScrollToProducts }: HeroProps) {
       <div className="pointer-events-none absolute top-72 -left-24 h-[260px] w-[260px] rounded-full bg-orange-500/10 blur-[100px]" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-400/60 to-transparent" />
 
-      <div className="relative z-10 mx-auto flex max-w-2xl flex-col items-center text-center">
+      <div className={`relative z-10 mx-auto ${outerCls}`}>
+      <div className={innerCls}>
         {/* Admin pill */}
         <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 backdrop-blur-md">
           <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
@@ -75,7 +80,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
             </>
           ) : (
             <span className="block bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent break-words">
-              {brand.name}
+              {L.heroTitle || brand.name}
             </span>
           )}
         </h1>
@@ -89,7 +94,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
               <span className="font-semibold text-white">10,000+ users</span>.
             </>
           ) : (
-            brand.tagline || "Browse our products below."
+            L.heroSubtitle || brand.tagline || "Browse our products below."
           )}
         </p>
 
@@ -99,11 +104,12 @@ export function Hero({ onScrollToProducts }: HeroProps) {
           onClick={onScrollToProducts}
           className="group mt-7 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 px-7 py-3.5 text-sm font-semibold shadow-[0_8px_40px_-8px_rgba(192,38,211,0.8)] transition-all hover:scale-[1.03] hover:shadow-[0_8px_50px_-6px_rgba(192,38,211,1)] active:scale-95"
         >
-          Browse Panels
+          {brand.isOwner ? "Browse Panels" : L.ctaText || "Browse products"}
           <ArrowDown className="h-4 w-4 transition-transform group-hover:translate-y-0.5" />
         </button>
 
         {/* Stat tiles (compact) */}
+        {(brand.isOwner || L.showStats) && (
         <div className={`mt-8 grid w-full max-w-md gap-2 ${brand.isOwner ? "grid-cols-3" : "grid-cols-2"}`}>
           {stats.filter((s) => brand.isOwner || s.label !== "Users").map(({ icon: Icon, value, label }) => (
             <div
@@ -118,6 +124,7 @@ export function Hero({ onScrollToProducts }: HeroProps) {
             </div>
           ))}
         </div>
+        )}
 
         {/* Audio guide (compact) */}
         {brand.isOwner && (
@@ -179,6 +186,17 @@ export function Hero({ onScrollToProducts }: HeroProps) {
           )}
         </div>
         )}
+      </div>
+      {lay === "split" && (
+        <div className="relative hidden md:block">
+          {L.heroImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={L.heroImageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" className="aspect-[4/3] w-full rounded-3xl border border-white/10 object-cover" />
+          ) : (
+            <div className="aspect-[4/3] w-full rounded-3xl border border-white/10 bg-gradient-to-br from-violet-500/30 via-fuchsia-500/20 to-transparent" />
+          )}
+        </div>
+      )}
       </div>
     </section>
   );

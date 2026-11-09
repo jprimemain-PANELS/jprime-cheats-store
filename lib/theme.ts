@@ -17,6 +17,15 @@ export const FONTS = {
 } as const;
 export type FontKey = keyof typeof FONTS;
 
+export const RADII = { sharp: "sharp", soft: "soft", round: "round", pill: "pill" } as const;
+export const CARD_STYLES = ["glass", "solid", "outline", "elevated"] as const;
+export const BACKDROPS = ["solid", "gradient", "aurora", "grid", "image"] as const;
+export const HERO_LAYOUTS = ["centered", "left", "split"] as const;
+export const FONT_SCALES = ["small", "normal", "large"] as const;
+export const BUTTON_STYLES = ["gradient", "solid"] as const;
+export const COLUMNS = [2, 3, 4] as const;
+export type Radius = keyof typeof RADII;
+
 export type Theme = {
   preset?: string;
   primary: string;
@@ -29,15 +38,36 @@ export type Theme = {
   tagline: string;
   announcement: string;
   footerText: string;
+  // ---- v2: structure (every default equals the original look, so old themes render unchanged) ----
+  radius: Radius;
+  cardStyle: (typeof CARD_STYLES)[number];
+  backdrop: (typeof BACKDROPS)[number];
+  backdropImageUrl: string;
+  heroLayout: (typeof HERO_LAYOUTS)[number];
+  heroTitle: string;
+  heroSubtitle: string;
+  heroImageUrl: string;
+  ctaText: string;
+  columns: (typeof COLUMNS)[number];
+  fontScale: (typeof FONT_SCALES)[number];
+  buttonStyle: (typeof BUTTON_STYLES)[number];
+  showStats: boolean;
+  motion: boolean;
 };
 
-export const PRESETS: Record<string, Pick<Theme, "primary" | "accent" | "background" | "surface" | "foreground">> = {
+type Colors = Pick<Theme, "primary" | "accent" | "background" | "surface" | "foreground">;
+export const PRESETS: Record<string, Colors & Partial<Theme>> = {
   violet: { primary: "#8b5cf6", accent: "#d946ef", background: "#07040f", surface: "#0b0714", foreground: "#f4f4f5" },
   ocean: { primary: "#0ea5e9", accent: "#22d3ee", background: "#04101a", surface: "#071a29", foreground: "#f0f9ff" },
   emerald: { primary: "#10b981", accent: "#a3e635", background: "#041310", surface: "#08201a", foreground: "#ecfdf5" },
   sunset: { primary: "#f97316", accent: "#f43f5e", background: "#130806", surface: "#1d0d09", foreground: "#fff7ed" },
   light: { primary: "#4f46e5", accent: "#db2777", background: "#f8fafc", surface: "#ffffff", foreground: "#0f172a" },
   mono: { primary: "#e4e4e7", accent: "#a1a1aa", background: "#09090b", surface: "#131316", foreground: "#fafafa" },
+  // v2 presets also change the layout, not just colors
+  arcade: { primary: "#22d3ee", accent: "#a3e635", background: "#05070d", surface: "#0b1220", foreground: "#e6fffb", radius: "sharp", cardStyle: "outline", backdrop: "grid", heroLayout: "left", columns: 4, font: "mono", buttonStyle: "solid", showStats: false },
+  boutique: { primary: "#b45309", accent: "#be123c", background: "#fbf7f0", surface: "#ffffff", foreground: "#1c1917", radius: "soft", cardStyle: "elevated", backdrop: "solid", heroLayout: "split", columns: 3, font: "serif", buttonStyle: "solid", fontScale: "large" },
+  neon: { primary: "#f43f5e", accent: "#8b5cf6", background: "#0a0510", surface: "#140a1f", foreground: "#fdf4ff", radius: "pill", cardStyle: "glass", backdrop: "aurora", heroLayout: "centered", columns: 3, font: "rounded" },
+  slate: { primary: "#38bdf8", accent: "#38bdf8", background: "#0f172a", surface: "#1e293b", foreground: "#f1f5f9", radius: "soft", cardStyle: "solid", backdrop: "gradient", heroLayout: "left", columns: 2, font: "system", buttonStyle: "solid", motion: false },
 };
 
 export const DEFAULT_THEME: Theme = {
@@ -48,6 +78,26 @@ export const DEFAULT_THEME: Theme = {
   tagline: "",
   announcement: "",
   footerText: "",
+  radius: "round",
+  cardStyle: "glass",
+  backdrop: "solid",
+  backdropImageUrl: "",
+  heroLayout: "centered",
+  heroTitle: "",
+  heroSubtitle: "",
+  heroImageUrl: "",
+  ctaText: "",
+  columns: 3,
+  fontScale: "normal",
+  buttonStyle: "gradient",
+  showStats: true,
+  motion: true,
+};
+
+export const STRUCTURE_DEFAULTS: Partial<Theme> = {
+  radius: DEFAULT_THEME.radius, cardStyle: DEFAULT_THEME.cardStyle, backdrop: DEFAULT_THEME.backdrop, heroLayout: DEFAULT_THEME.heroLayout,
+  columns: DEFAULT_THEME.columns, fontScale: DEFAULT_THEME.fontScale, buttonStyle: DEFAULT_THEME.buttonStyle,
+  showStats: DEFAULT_THEME.showStats, motion: DEFAULT_THEME.motion, font: DEFAULT_THEME.font,
 };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -91,7 +141,8 @@ export function validateTheme(input: unknown, base: Theme = DEFAULT_THEME): Them
   const t: Theme = { ...base };
 
   if (typeof src.preset === "string" && src.preset in PRESETS && !("primary" in src)) {
-    Object.assign(t, PRESETS[src.preset], { preset: src.preset });
+    // a preset resets structure to the defaults first, then applies its own choices
+    Object.assign(t, STRUCTURE_DEFAULTS, PRESETS[src.preset], { preset: src.preset });
   }
   for (const k of ["primary", "accent", "background", "surface", "foreground"] as const) {
     if (src[k] === undefined) continue;
@@ -109,6 +160,35 @@ export function validateTheme(input: unknown, base: Theme = DEFAULT_THEME): Them
     if (!isSafeLogoUrl(u)) return { ok: false, error: "Logo must be a plain https:// image link." };
     t.logoUrl = u;
   }
+  const pick = <T extends readonly (string | number)[]>(key: string, list: T, label: string): T[number] | undefined | "bad" => {
+    if (src[key] === undefined) return undefined;
+    return (list as readonly unknown[]).includes(src[key]) ? (src[key] as T[number]) : "bad";
+  };
+  const enums: [keyof Theme, readonly (string | number)[], string][] = [
+    ["radius", Object.keys(RADII), "corner style"], ["cardStyle", CARD_STYLES, "card style"], ["backdrop", BACKDROPS, "background style"],
+    ["heroLayout", HERO_LAYOUTS, "header layout"], ["columns", COLUMNS, "columns"], ["fontScale", FONT_SCALES, "text size"],
+    ["buttonStyle", BUTTON_STYLES, "button style"],
+  ];
+  for (const [k, list, label] of enums) {
+    const v = pick(k as string, list, label);
+    if (v === "bad") return { ok: false, error: `Unsupported ${label}.` };
+    if (v !== undefined) (t as any)[k] = v;
+  }
+  for (const k of ["showStats", "motion"] as const) {
+    if (src[k] === undefined) continue;
+    if (typeof src[k] !== "boolean") return { ok: false, error: "Invalid switch value." };
+    t[k] = src[k] as boolean;
+  }
+  for (const k of ["backdropImageUrl", "heroImageUrl"] as const) {
+    if (src[k] === undefined) continue;
+    const u = String(src[k]).trim();
+    if (!isSafeLogoUrl(u)) return { ok: false, error: "Image must be a plain https:// link." };
+    t[k] = u;
+  }
+  if (t.backdrop === "image" && !t.backdropImageUrl) t.backdrop = "solid";
+  if (src.heroTitle !== undefined) t.heroTitle = cleanText(src.heroTitle, 60);
+  if (src.heroSubtitle !== undefined) t.heroSubtitle = cleanText(src.heroSubtitle, 200);
+  if (src.ctaText !== undefined) t.ctaText = cleanText(src.ctaText, 24);
   if (src.tagline !== undefined) t.tagline = cleanText(src.tagline, 120);
   if (src.announcement !== undefined) t.announcement = cleanText(src.announcement, 200);
   if (src.footerText !== undefined) t.footerText = cleanText(src.footerText, 200);
@@ -146,18 +226,46 @@ export function buildThemeCss(theme: Theme): string {
       `--color-${name}-700:${mix(v, 68, "#000")}`,
     ].join(";");
   const dark = luminance(t.background) < 0.4;
+  const accentColor = t.buttonStyle === "solid" ? t.primary : t.accent;
+  const RADIUS_VARS: Record<Radius, string> = {
+    round: "",
+    soft: "--radius-md:6px;--radius-lg:8px;--radius-xl:10px;--radius-2xl:12px;--radius-3xl:14px;",
+    pill: "--radius-lg:1rem;--radius-xl:1.25rem;--radius-2xl:1.75rem;--radius-3xl:2.25rem;",
+    sharp: "--radius-md:0;--radius-lg:0;--radius-xl:0;--radius-2xl:0;--radius-3xl:0;--radius-full:2px;",
+  };
+  const SCALE = { small: "14px", normal: "", large: "17px" } as const;
+  const line = mix(t.foreground, 7, "transparent");
+  const BACKDROP_CSS: Record<string, string> = {
+    solid: "",
+    gradient: `background-image:linear-gradient(160deg,${t.background} 0%,${mix(t.primary, 24, t.background)} 100%)!important;background-attachment:fixed;`,
+    aurora: `background-image:radial-gradient(60% 50% at 12% 8%,${mix(t.primary, 34, "transparent")},transparent 70%),radial-gradient(55% 45% at 92% 20%,${mix(accentColor, 28, "transparent")},transparent 70%),radial-gradient(60% 50% at 50% 100%,${mix(t.primary, 20, "transparent")},transparent 70%)!important;background-attachment:fixed;`,
+    grid: `background-image:linear-gradient(${line} 1px,transparent 1px),linear-gradient(90deg,${line} 1px,transparent 1px)!important;background-size:44px 44px;`,
+    image: t.backdropImageUrl
+      ? `background-image:linear-gradient(${mix(t.background, 84, "transparent")},${mix(t.background, 84, "transparent")}),url("${t.backdropImageUrl}")!important;background-size:cover;background-position:center;background-attachment:fixed;`
+      : "",
+  };
+  const CARD_CSS: Record<string, string> = {
+    glass: "",
+    solid: `[data-store-card]{background:var(--store-surface)!important;backdrop-filter:none!important;border-color:${mix(t.foreground, 12, "transparent")}!important}`,
+    outline: `[data-store-card]{background:transparent!important;backdrop-filter:none!important;border:2px solid ${mix(t.primary, 60, "transparent")}!important}`,
+    elevated: `[data-store-card]{background:var(--store-surface)!important;backdrop-filter:none!important;border-color:transparent!important;box-shadow:0 20px 44px -20px rgba(0,0,0,.55)!important}`,
+  };
   return [
     ":root{",
-    `--store-primary:${t.primary};--store-accent:${t.accent};--store-bg:${t.background};--store-surface:${t.surface};--store-fg:${t.foreground};`,
+    `--store-primary:${t.primary};--store-accent:${accentColor};--store-bg:${t.background};--store-surface:${t.surface};--store-fg:${t.foreground};`,
     `--font-sans:${FONTS[t.font].stack};`,
     scale("violet", t.primary) + ";",
-    scale("fuchsia", t.accent) + ";",
+    scale("fuchsia", accentColor) + ";",
+    RADIUS_VARS[t.radius],
     `--background:${t.background};--foreground:${t.foreground};--card:${t.surface};--card-foreground:${t.foreground};`,
-    `--popover:${t.surface};--popover-foreground:${t.foreground};--primary:${t.primary};--accent:${t.accent};--ring:${t.primary};`,
+    `--popover:${t.surface};--popover-foreground:${t.foreground};--primary:${t.primary};--accent:${accentColor};--ring:${t.primary};`,
     `color-scheme:${dark ? "dark" : "light"};`,
     "}",
     `body{background:${t.background};color:${t.foreground};font-family:${FONTS[t.font].stack}}`,
-    `.bg-\\[\\#07040f\\]{background-color:var(--store-bg)!important}`,
+    SCALE[t.fontScale] ? `html{font-size:${SCALE[t.fontScale]}}` : "",
+    `.bg-\\[\\#07040f\\]{background-color:var(--store-bg)!important;${BACKDROP_CSS[t.backdrop] ?? ""}}`,
+    CARD_CSS[t.cardStyle] ?? "",
+    t.motion ? "" : "*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}",
     `.bg-\\[\\#0b0714\\]{background-color:var(--store-surface)!important}`,
     `.text-white,.text-zinc-100,.text-zinc-200{color:var(--store-fg)!important}`,
   ].join("");

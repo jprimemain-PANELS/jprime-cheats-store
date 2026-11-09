@@ -26,8 +26,3 @@ Without step 4 approvals still work but no address is created (the admin tab war
 - Co-admin own seller API (URL/key/master key) and JPRIME shared-stock with prepaid platform wallet.
 - Per-store Telegram notifications (skipped for co-admin stores).
 - The UPI payment page keeps its original colors.
-
-## 5. Your newer features (coupons, discounts, user ledger, bulk price tools, stock matching)
-All were made store-scoped: each store has its own coupons and discounts (stored in `app_settings` under a per-store key; your store keeps its original keys, so nothing is lost), its own stock counts/claims, ledger, bulk prices and VIP bulk tools.
-The new login design is kept; other stores show their own brand instead of JPRIME, and your tutorial video link and owner-only claims are hidden for them.
-Run `npm test` (store-isolation tests, 94) and `npm run test:logic` (your tests, 51; updated to pass the store id).

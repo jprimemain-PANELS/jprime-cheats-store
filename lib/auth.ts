@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { tdb } from "@/lib/tenant-db";
 import { currentTenant, OWNER_TENANT_ID, type Tenant } from "@/lib/tenant";
@@ -17,22 +17,30 @@ import { currentTenant, OWNER_TENANT_ID, type Tenant } from "@/lib/tenant";
 export const SESSION_COOKIE = "jp_session";
 const SESSION_TTL_SECONDS = 15 * 60; // 15 minutes; refreshed by the activity heartbeat
 
-/** Share production sessions between jprimecheats.store and www.jprimecheats.store. */
-function sessionCookieDomain(hostHeader?: string | null): string | undefined {
-  const host = String(hostHeader || "")
-    .split(",")[0]
-    .trim()
-    .toLowerCase()
-    .replace(/:\d+$/, "");
+function normHost(hostHeader?: string | null): string {
+  return String(hostHeader || "").split(",")[0].trim().toLowerCase().replace(/:\d+$/, "");
+}
 
-  if (
-    host === "jprimecheats.store" ||
-    host === "www.jprimecheats.store" ||
-    host.endsWith(".jprimecheats.store")
-  ) {
-    return ".jprimecheats.store";
+/**
+ * Share the OWNER store's session between jprimecheats.store and www.jprimecheats.store ONLY.
+ * Any other subdomain (e.g. a co-admin store) gets a host-only cookie: never a shared one.
+ */
+function sessionCookieDomain(hostHeader?: string | null): string | undefined {
+  const host = normHost(hostHeader);
+  return host === "jprimecheats.store" || host === "www.jprimecheats.store" ? ".jprimecheats.store" : undefined;
+}
+
+/**
+ * A store hosted UNDER jprimecheats.store (e.g. andrews.jprimecheats.store) would otherwise receive
+ * the owner's shared cookie too. Give such hosts their own cookie name so the two can never clash.
+ * Every other host keeps the original name (host-only cookies cannot reach sibling hosts).
+ */
+export function sessionCookieName(hostHeader?: string | null): string {
+  const host = normHost(hostHeader);
+  if (host.endsWith(".jprimecheats.store") && host !== "www.jprimecheats.store") {
+    return `jp_s_${crypto.createHash("sha256").update(host).digest("hex").slice(0, 12)}`;
   }
-  return undefined;
+  return SESSION_COOKIE;
 }
 
 export type SessionUser = {
@@ -188,7 +196,7 @@ export function attachSessionCookie(
   const secure = process.env.NODE_ENV === "production";
   const token = createSessionToken(username, storedPassword, userId, tenantId);
 
-  response.cookies.set(SESSION_COOKIE, token, {
+  response.cookies.set(sessionCookieName(hostHeader), token, {
     httpOnly: true,
     secure,
     sameSite: "lax",
@@ -215,7 +223,7 @@ export function clearSessionCookie(
   const domain = sessionCookieDomain(hostHeader);
   const secure = process.env.NODE_ENV === "production";
 
-  response.cookies.set(SESSION_COOKIE, "", {
+  response.cookies.set(sessionCookieName(hostHeader), "", {
     httpOnly: true,
     secure,
     sameSite: "lax",
@@ -241,7 +249,9 @@ export function clearSessionCookie(
 export async function getSessionUser(): Promise<SessionUser | null> {
   let token: string | undefined;
   try {
-    token = (await cookies()).get(SESSION_COOKIE)?.value;
+    let h = "";
+    try { const hh = await headers(); h = hh.get("host") || hh.get("x-forwarded-host") || ""; } catch { /* no request context */ }
+    token = (await cookies()).get(sessionCookieName(h))?.value;
   } catch {
     return null;
   }

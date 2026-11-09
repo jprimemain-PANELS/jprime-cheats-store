@@ -685,6 +685,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
     <>
       {/* PRODUCT CARD */}
       <Card
+        data-store-card
         className="group relative overflow-hidden rounded-3xl border border-white/10 bg-[#0c081a]/70 backdrop-blur-xl transition-all duration-500 hover:border-fuchsia-500/40 hover:shadow-[0_15px_40px_rgba(192,38,211,0.2)]"
         style={{
           animationDelay: `${index * 100}ms`,

@@ -26,6 +26,7 @@ export default function CoAdminManager() {
   const [stores, setStores] = useState<Store[]>([]);
   const [apps, setApps] = useState<App[]>([]);
   const [rootDomain, setRootDomain] = useState<string | null>(null);
+  const [dInfo, setDInfo] = useState<{ available: boolean; allowed: Record<string, boolean>; custom: Record<string, { host: string; live: boolean; dnsOk: boolean; note: string | null }>; vercelApi: boolean }>({ available: false, allowed: {}, custom: {}, vercelApi: false });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -38,7 +39,7 @@ export default function CoAdminManager() {
       const res = await fetch("/api/admin/tenants", { cache: "no-store" });
       const j = await res.json();
       if (!res.ok || !j.success) throw new Error(j.error || "Failed");
-      setStores(j.stores); setApps(j.applications); setRootDomain(j.rootDomain);
+      setStores(j.stores); setApps(j.applications); setRootDomain(j.rootDomain); if (j.domainInfo) setDInfo(j.domainInfo);
     } catch (e: any) {
       setMsg({ ok: false, text: e.message || "Could not load stores." });
     } finally { setLoading(false); }
@@ -156,6 +157,30 @@ export default function CoAdminManager() {
                         ) : null}
                       </div>
                     </div>
+                    {dInfo.available && (
+                      <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-slate-200">Own domain (big resellers)</span>
+                          <button disabled={!!busy} onClick={() => act({ action: "custom_allowed", id: s.id, allowed: !dInfo.allowed[s.id] }, s.id)} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50">
+                            Custom domain: {dInfo.allowed[s.id] ? "allowed" : "off"}
+                          </button>
+                        </div>
+                        {dInfo.custom[s.id] && (() => { const c = dInfo.custom[s.id]; return (
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-mono">{c.host} · {c.live ? "LIVE" : c.dnsOk ? "DNS proven, waiting for you to activate" : "waiting for DNS"}</span>
+                            <span className="flex gap-2">
+                              {!c.live && c.dnsOk && (
+                                <button disabled={!!busy} onClick={() => {
+                                  if (dInfo.vercelApi || window.confirm(`Did you already add ${c.host} in Vercel (Project > Settings > Domains)?`))
+                                    act({ action: "domain_activate", host: c.host, addedInVercel: true }, s.id);
+                                }} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer disabled:opacity-50">Activate</button>
+                              )}
+                              <button disabled={!!busy} onClick={() => { if (window.confirm(`Remove ${c.host}?`)) act({ action: "domain_remove", host: c.host }, s.id); }} className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50">Remove</button>
+                            </span>
+                          </div>
+                        ); })()}
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-center">
                       {[["Customers", s.customers], ["Resellers", s.resellers], ["Products", s.products], ["Orders", s.orders], ["Customer wallets", `₹${s.walletTotal.toLocaleString("en-IN")}`], ["Payment", s.paymentStatus === "not_configured" ? "Not set up" : s.paymentStatus]].map(([k, v]) => (
                         <div key={String(k)} className="rounded-lg bg-slate-950/60 border border-slate-800 px-2 py-2">

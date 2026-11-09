@@ -4,7 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { SessionTimeout } from '@/components/session-timeout'
 import { BrandProvider } from '@/components/brand-provider'
-import { OWNER_BRAND, type Brand } from '@/lib/brand'
+import { OWNER_BRAND, DEFAULT_LAYOUT, type Brand } from '@/lib/brand'
 import { StoreNotFound } from '@/components/store-not-found'
 import { currentTenant } from '@/lib/tenant'
 import { publicBrand } from '@/lib/tenant-admin'
@@ -23,6 +23,10 @@ async function loadBrand() {
       : {
           name: pb.name, isOwner: false, telegram: pb.telegram, logoUrl: pb.theme?.logoUrl ?? "",
           tagline: pb.theme?.tagline ?? "", announcement: pb.theme?.announcement ?? "", footerText: pb.theme?.footerText ?? "",
+          layout: pb.theme ? {
+            heroLayout: pb.theme.heroLayout, heroTitle: pb.theme.heroTitle, heroSubtitle: pb.theme.heroSubtitle,
+            heroImageUrl: pb.theme.heroImageUrl, ctaText: pb.theme.ctaText, columns: pb.theme.columns, showStats: pb.theme.showStats,
+          } : DEFAULT_LAYOUT,
         };
     return { tenant, brand, css: pb.theme ? buildThemeCss(pb.theme) : "" };
   } catch {

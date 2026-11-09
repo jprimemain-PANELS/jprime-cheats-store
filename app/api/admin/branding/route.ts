@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, requireTenantAdmin } from "@/lib/auth";
 import { getTheme, saveBranding } from "@/lib/tenant-admin";
-import { DEFAULT_THEME, PRESETS, FONTS } from "@/lib/theme";
+import { DEFAULT_THEME, PRESETS, FONTS, STRUCTURE_DEFAULTS } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   const theme = (await getTheme(auth.tenant.id)) ?? DEFAULT_THEME;
   return NextResponse.json({
     success: true, brandName: auth.tenant.brandName, telegram: auth.tenant.telegramUsername, kind: auth.tenant.kind, theme,
-    presets: PRESETS, fonts: Object.fromEntries(Object.entries(FONTS).map(([k, v]) => [k, v.label])),
+    presets: Object.fromEntries(Object.entries(PRESETS).map(([k, v]) => [k, { ...STRUCTURE_DEFAULTS, ...v }])), fonts: Object.fromEntries(Object.entries(FONTS).map(([k, v]) => [k, v.label])),
   }, { headers: NO_STORE });
 }
 

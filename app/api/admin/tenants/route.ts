@@ -4,6 +4,7 @@ import { isUuid } from "@/lib/tenant-db";
 import {
   approveApplication, createStoreDirect, ownerOverview, rejectApplication, setSharedStockAllowed, setStoreStatus,
 } from "@/lib/tenant-admin";
+import { activateCustomDomain, ownerDomainInfo, ownerRemoveCustomDomain, setCustomDomainAllowed } from "@/lib/domains";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -14,7 +15,8 @@ export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
   try {
-    return NextResponse.json({ success: true, ...(await ownerOverview()) }, { headers: NO_STORE });
+    const [ov, domainInfo] = await Promise.all([ownerOverview(), ownerDomainInfo()]);
+    return NextResponse.json({ success: true, ...ov, domainInfo }, { headers: NO_STORE });
   } catch {
     return fail("Could not load stores.", 500);
   }
@@ -42,6 +44,16 @@ export async function POST(request: NextRequest) {
     case "shared_stock":
       if (!isUuid(id)) return fail("Invalid id.");
       result = await setSharedStockAllowed(id, b?.allowed === true, actor);
+      break;
+    case "custom_allowed":
+      if (!isUuid(id)) return fail("Invalid id.");
+      result = await setCustomDomainAllowed(id, b?.allowed === true, actor);
+      break;
+    case "domain_activate":
+      result = await activateCustomDomain(String(b?.host ?? ""), b?.addedInVercel === true, actor);
+      break;
+    case "domain_remove":
+      result = await ownerRemoveCustomDomain(String(b?.host ?? ""), actor);
       break;
     case "create":
       result = await createStoreDirect({

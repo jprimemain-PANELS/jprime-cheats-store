@@ -15,13 +15,21 @@ import {
 import { Navbar } from "@/components/navbar";
 import { RecentActivity } from "@/components/recent-activity";
 import { Hero } from "@/components/hero";
+import { useBrand } from "@/components/brand-provider";
 import { ProductCard } from "@/components/product-card";
 import { FloatingSupport } from "@/components/floating-support";
 import { Footer } from "@/components/footer";
 import { useCatalogProducts } from "@/lib/useCatalogProducts";
 
+const GRID_COLS: Record<number, string> = {
+  2: "grid-cols-1 sm:grid-cols-2",
+  3: "grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
+  4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+};
+
 export default function Home() {
   const router = useRouter();
+  const brand = useBrand();
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [userData, setUserData] = useState<any>(null);
@@ -290,7 +298,7 @@ export default function Home() {
 
               {/* Mobile products */}
               {!catalogLoading && activeCategory === "mobile" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                <div className={`grid ${GRID_COLS[brand.layout.columns] ?? GRID_COLS[3]} gap-6 sm:gap-8`}>
                   {mobileProducts.map((product, index) => (
                     <div
                       key={product.id}
@@ -307,7 +315,7 @@ export default function Home() {
 
               {/* PC products */}
               {!catalogLoading && activeCategory === "pc" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                <div className={`grid ${GRID_COLS[brand.layout.columns] ?? GRID_COLS[3]} gap-6 sm:gap-8`}>
                   {pcProducts.map((product, index) => (
                     <div
                       key={product.id}
@@ -325,7 +333,7 @@ export default function Home() {
               {/* iOS products */}
               {!catalogLoading && activeCategory === "ios" && (
                 iosProducts.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                  <div className={`grid ${GRID_COLS[brand.layout.columns] ?? GRID_COLS[3]} gap-6 sm:gap-8`}>
                     {iosProducts.map((product, index) => (
                       <div
                         key={product.id}

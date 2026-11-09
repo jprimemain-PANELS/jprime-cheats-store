@@ -33,6 +33,7 @@ import {
   CreditCard,
   Bell,
   Palette,
+  Globe,
   Store,
 } from "lucide-react";
 
@@ -47,6 +48,7 @@ import GatewayManager from "@/components/admin/GatewayManager";
 import TelegramManager from "@/components/admin/TelegramManager";
 import CoAdminManager from "@/components/admin/CoAdminManager";
 import BrandingManager from "@/components/admin/BrandingManager";
+import DomainManager from "@/components/admin/DomainManager";
 import { useBrand } from "@/components/brand-provider";
 
 interface ManagedUser {
@@ -62,6 +64,7 @@ interface ManagedUser {
 type PriceOverride = { priceINR: number; resellerPrice?: number };
 type ProductStatus = "ONLINE" | "MAINTENANCE";
 type Tab =
+  | "domain"
   | "overview"
   | "inventory"
   | "pricing"
@@ -658,6 +661,7 @@ export default function AdminPage() {
         ] as { id: Tab; label: string; icon: any; count?: number }[])
       : []),
     { id: "branding", label: "Branding", icon: Palette },
+    { id: "domain", label: "Domain", icon: Globe },
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -1184,6 +1188,7 @@ export default function AdminPage() {
 
         {/* BRANDING (each store edits only its own) */}
         {activeTab === "branding" && <BrandingManager />}
+        {activeTab === "domain" && <DomainManager />}
 
         {/* PURCHASES */}
         {activeTab === "purchases" && (

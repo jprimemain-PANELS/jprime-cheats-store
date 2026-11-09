@@ -6,7 +6,19 @@ import { Loader2, Save } from "lucide-react";
 type Theme = {
   preset?: string; primary: string; accent: string; background: string; surface: string; foreground: string;
   font: string; logoUrl: string; tagline: string; announcement: string; footerText: string;
+  radius: string; cardStyle: string; backdrop: string; backdropImageUrl: string; heroLayout: string; heroTitle: string;
+  heroSubtitle: string; heroImageUrl: string; ctaText: string; columns: number; fontScale: string; buttonStyle: string;
+  showStats: boolean; motion: boolean;
 };
+const CHOICES: { key: keyof Theme; label: string; options: [string | number, string][] }[] = [
+  { key: "heroLayout", label: "Top banner layout", options: [["centered", "Centered"], ["left", "Left aligned"], ["split", "Text + picture"]] },
+  { key: "cardStyle", label: "Product cards", options: [["glass", "Glass"], ["solid", "Solid"], ["outline", "Outline"], ["elevated", "Shadow"]] },
+  { key: "radius", label: "Corners", options: [["sharp", "Square"], ["soft", "Slightly round"], ["round", "Round"], ["pill", "Very round"]] },
+  { key: "columns", label: "Products per row (large screens)", options: [[2, "2"], [3, "3"], [4, "4"]] },
+  { key: "backdrop", label: "Page background", options: [["solid", "Plain"], ["gradient", "Gradient"], ["aurora", "Glow"], ["grid", "Grid lines"], ["image", "Picture"]] },
+  { key: "buttonStyle", label: "Buttons", options: [["gradient", "Two-color gradient"], ["solid", "Single color"]] },
+  { key: "fontScale", label: "Text size", options: [["small", "Small"], ["normal", "Normal"], ["large", "Large"]] },
+];
 const field = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500";
 
 export default function BrandingManager() {
@@ -28,7 +40,7 @@ export default function BrandingManager() {
   }, []);
 
   if (!theme) return <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
-  const set = (k: keyof Theme, v: string) => setTheme({ ...theme, [k]: v, ...(["primary", "accent", "background", "surface", "foreground"].includes(k) ? { preset: "custom" } : {}) });
+  const set = (k: keyof Theme, v: string | number | boolean) => setTheme({ ...theme, [k]: v, ...(["primary", "accent", "background", "surface", "foreground"].includes(k) ? { preset: "custom" } : {}) });
 
   async function save() {
     setSaving(true); setMsg(null);
@@ -88,6 +100,34 @@ export default function BrandingManager() {
         </label>
       </div>
 
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-slate-200">Layout and style (this is what makes your store look different)</p>
+        {CHOICES.map((c) => (
+          <div key={c.key as string}>
+            <p className="text-[11px] text-slate-400 mb-1">{c.label}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {c.options.map(([v, l]) => (
+                <button key={String(v)} onClick={() => set(c.key, v)}
+                  className={`px-2.5 py-1 rounded-md border text-xs cursor-pointer ${String(theme[c.key]) === String(v) ? "border-indigo-500 bg-indigo-500/10 text-white" : "border-slate-700 text-slate-300 hover:bg-slate-800"}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {theme.backdrop === "image" && <label className="text-xs text-slate-400 block">Background picture link (https)<input className={field} value={theme.backdropImageUrl} onChange={(e) => set("backdropImageUrl", e.target.value)} placeholder="https://..." /></label>}
+        <div className="flex flex-wrap gap-4 text-xs text-slate-300">
+          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={theme.showStats} onChange={(e) => set("showStats", e.target.checked)} />Show the small info tiles under the banner</label>
+          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={theme.motion} onChange={(e) => set("motion", e.target.checked)} />Animations</label>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        <p className="text-xs font-semibold text-slate-200">Top banner text</p>
+        <label className="text-xs text-slate-400">Big title (leave empty to use your brand name)<input className={field} value={theme.heroTitle} maxLength={60} onChange={(e) => set("heroTitle", e.target.value)} /></label>
+        <label className="text-xs text-slate-400">Sub text<input className={field} value={theme.heroSubtitle} maxLength={200} onChange={(e) => set("heroSubtitle", e.target.value)} /></label>
+        <label className="text-xs text-slate-400">Button text<input className={field} value={theme.ctaText} maxLength={24} onChange={(e) => set("ctaText", e.target.value)} placeholder="Browse products" /></label>
+        {theme.heroLayout === "split" && <label className="text-xs text-slate-400">Banner picture link (https)<input className={field} value={theme.heroImageUrl} onChange={(e) => set("heroImageUrl", e.target.value)} placeholder="https://..." /></label>}
+      </div>
+
       <div className="grid gap-3">
         <label className="text-xs text-slate-400">Logo image link (https only)<input className={field} value={theme.logoUrl} onChange={(e) => set("logoUrl", e.target.value)} placeholder="https://..." /></label>
         <label className="text-xs text-slate-400">Tagline<input className={field} value={theme.tagline} maxLength={120} onChange={(e) => set("tagline", e.target.value)} /></label>
@@ -95,10 +135,22 @@ export default function BrandingManager() {
         <label className="text-xs text-slate-400">Footer text<input className={field} value={theme.footerText} maxLength={200} onChange={(e) => set("footerText", e.target.value)} /></label>
       </div>
 
-      <div className="rounded-xl p-4 border" style={{ background: theme.background, color: theme.foreground, borderColor: theme.primary }}>
-        <p className="text-sm font-bold">{brandName || "Your store"}</p>
-        <p className="text-xs opacity-70 mb-3">{theme.tagline || "Preview"}</p>
-        <span className="inline-block px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: `linear-gradient(90deg, ${theme.primary}, ${theme.accent})`, color: "#fff" }}>Buy now</span>
+      <div className="rounded-xl p-4 border space-y-3" style={{ background: theme.background, color: theme.foreground, borderColor: theme.primary }}>
+        <div className={theme.heroLayout === "centered" ? "text-center" : "text-left"}>
+          <p className="text-sm font-bold">{theme.heroTitle || brandName || "Your store"}</p>
+          <p className="text-xs opacity-70 mb-2">{theme.heroSubtitle || theme.tagline || "Preview"}</p>
+          <span className="inline-block px-3 py-1.5 text-xs font-semibold" style={{ borderRadius: theme.radius === "sharp" ? 0 : theme.radius === "pill" ? 999 : 10, background: theme.buttonStyle === "solid" ? theme.primary : `linear-gradient(90deg, ${theme.primary}, ${theme.accent})`, color: "#fff" }}>{theme.ctaText || "Browse products"}</span>
+        </div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${theme.columns}, minmax(0,1fr))` }}>
+          {Array.from({ length: theme.columns * 1 }).map((_, i) => (
+            <div key={i} className="h-14 text-[10px] p-2" style={{
+              borderRadius: theme.radius === "sharp" ? 0 : theme.radius === "soft" ? 8 : theme.radius === "pill" ? 26 : 16,
+              background: theme.cardStyle === "outline" ? "transparent" : theme.cardStyle === "glass" ? "rgba(255,255,255,.06)" : theme.surface,
+              border: theme.cardStyle === "outline" ? `2px solid ${theme.primary}` : "1px solid rgba(128,128,128,.25)",
+              boxShadow: theme.cardStyle === "elevated" ? "0 8px 18px rgba(0,0,0,.4)" : undefined,
+            }}>Product {i + 1}</div>
+          ))}
+        </div>
       </div>
 
       <button onClick={save} disabled={saving} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-50 cursor-pointer">
