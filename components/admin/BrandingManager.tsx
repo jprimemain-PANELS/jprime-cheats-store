@@ -7,7 +7,7 @@ type Theme = {
   preset?: string; primary: string; accent: string; background: string; surface: string; foreground: string;
   font: string; logoUrl: string; tagline: string; announcement: string; footerText: string;
   radius: string; cardStyle: string; backdrop: string; backdropImageUrl: string; heroLayout: string; heroTitle: string;
-  heroSubtitle: string; heroImageUrl: string; ctaText: string; columns: number; fontScale: string; buttonStyle: string;
+  heroSubtitle: string; heroImageUrl: string; loginCharacterUrl: string; loginPetUrl: string; ctaText: string; columns: number; fontScale: string; buttonStyle: string;
   showStats: boolean; motion: boolean;
 };
 const CHOICES: { key: keyof Theme; label: string; options: [string | number, string][] }[] = [
@@ -125,6 +125,8 @@ export default function BrandingManager() {
         <label className="text-xs text-slate-400">Big title (leave empty to use your brand name)<input className={field} value={theme.heroTitle} maxLength={60} onChange={(e) => set("heroTitle", e.target.value)} /></label>
         <label className="text-xs text-slate-400">Sub text<input className={field} value={theme.heroSubtitle} maxLength={200} onChange={(e) => set("heroSubtitle", e.target.value)} /></label>
         <label className="text-xs text-slate-400">Button text<input className={field} value={theme.ctaText} maxLength={24} onChange={(e) => set("ctaText", e.target.value)} placeholder="Browse products" /></label>
+        <label className="text-xs text-slate-400">Login page character picture link (https, transparent PNG)<input className={field} value={theme.loginCharacterUrl || ""} onChange={(e) => set("loginCharacterUrl", e.target.value)} placeholder="https://... (empty = default)" /></label>
+        <label className="text-xs text-slate-400">Login page pet picture link (https, transparent PNG)<input className={field} value={theme.loginPetUrl || ""} onChange={(e) => set("loginPetUrl", e.target.value)} placeholder="https://... (empty = default)" /></label>
         {theme.heroLayout === "split" && <label className="text-xs text-slate-400">Banner picture link (https)<input className={field} value={theme.heroImageUrl} onChange={(e) => set("heroImageUrl", e.target.value)} placeholder="https://..." /></label>}
       </div>
 

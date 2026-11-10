@@ -29,6 +29,10 @@ export interface CatalogTier {
   seller1Duration?: string;
 
   seller2VariantId?: string;
+
+  // JPRIME API stock (co-admin stores): the OWNER product + duration this tier sells
+  jprimeProductId?: string;
+  jprimeDuration?: string;
 }
 
 export interface CatalogProduct {
@@ -100,6 +104,10 @@ export function normalizeProduct(product: any): CatalogProduct {
               ),
 
               seller2VariantId: String(tier.seller2VariantId || ""),
+
+              ...(explicit === "JPRIME"
+                ? { jprimeProductId: String(tier.jprimeProductId || ""), jprimeDuration: String(tier.jprimeDuration || "") }
+                : {}),
             };
           })
         : [],
@@ -122,6 +130,8 @@ export function routingProblems(product: CatalogProduct): string[] {
       if (!String(tier.seller1Duration || "").trim()) problems.push(`${label}: Seller 1 duration is empty.`);
     } else if (supplier === "SELLER2") {
       if (!String(tier.seller2VariantId || "").trim()) problems.push(`${label}: Seller 2 variant ID is empty.`);
+    } else if (supplier === "JPRIME") {
+      if (!String(tier.jprimeProductId || "").trim() || !String(tier.jprimeDuration || "").trim()) problems.push(`${label}: choose the JPRIME product and duration.`);
     } else if (supplier === "LOCAL" && (hasSeller1Config(tier) || hasSeller2Config(tier))) {
       problems.push(`${label}: set to LOCAL but has Seller IDs saved. Check this is intended.`);
     }

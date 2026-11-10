@@ -11,6 +11,8 @@ import {
   type Supplier,
 } from "@/lib/delivery";
 import { claimLocalStockKey } from "@/lib/stock";
+import { creditWallet, debitWallet, logWalletTransaction } from "@/lib/wallet";
+import { jprimeAccess, jprimeSource, sellerCredsForTenant } from "@/lib/api-system";
 
 interface ReleaseProductParams {
   tenantId: string;
@@ -30,6 +32,10 @@ interface CatalogPrice {
   seller1Duration?: unknown;
 
   seller2VariantId?: unknown;
+
+  // JPRIME API stock (co-admin stores): which OWNER product + duration this tier sells
+  jprimeProductId?: unknown;
+  jprimeDuration?: unknown;
 }
 
 interface CatalogProduct {
@@ -159,18 +165,20 @@ function findCatalogPrice(
    SELLER 1
    ========================================================= */
 
+type SellerCreds = { apiKey: string; masterKey: string };
+
 async function purchaseFromSeller1(
   price: CatalogPrice,
   productName: string,
-  duration: string
+  duration: string,
+  creds?: SellerCreds
 ) {
-  const apiKey =
-    process.env.RESELLER_API_KEY;
+  // A co-admin store passes ITS OWN key (master key optional). The owner uses the environment keys, as before.
+  const apiKey = creds ? creds.apiKey : process.env.RESELLER_API_KEY;
 
-  const masterKey =
-    process.env.RESELLER_MASTER_KEY;
+  const masterKey = creds ? creds.masterKey : process.env.RESELLER_MASTER_KEY;
 
-  if (!apiKey || !masterKey) {
+  if (!apiKey || (!creds && !masterKey)) {
     console.error(
       "SELLER 1 API credentials are missing."
     );
@@ -228,8 +236,7 @@ async function purchaseFromSeller1(
             "Content-Type":
               "application/x-www-form-urlencoded",
 
-            "x-master-key":
-              masterKey,
+            ...(masterKey ? { "x-master-key": masterKey } : {}),
           },
 
           body:
@@ -341,10 +348,10 @@ async function purchaseFromSeller1(
 async function purchaseFromSeller2(
   price: CatalogPrice,
   productName: string,
-  duration: string
+  duration: string,
+  creds?: SellerCreds
 ) {
-  const apiToken =
-    process.env.SELLER2_API_TOKEN;
+  const apiToken = creds ? creds.apiKey : process.env.SELLER2_API_TOKEN;
 
   if (!apiToken) {
     console.error(
@@ -719,7 +726,19 @@ async function deliverBySupplier(
 ) {
   console.log("DELIVERY SUPPLIER:", supplier);
 
-  if (supplier !== "LOCAL" && tenantId !== OWNER_TENANT_ID) return NOT_CONFIGURED;
+  if (supplier === "JPRIME") {
+    return tenantId === OWNER_TENANT_ID ? NOT_CONFIGURED : deliverFromJprime(tenantId, price, productName);
+  }
+
+  if (supplier !== "LOCAL" && tenantId !== OWNER_TENANT_ID) {
+    // A co-admin store may only use a seller it was APPROVED for, with ITS OWN key. Never the owner's key.
+    if (supplier !== "SELLER1" && supplier !== "SELLER2") return NOT_CONFIGURED;
+    const creds = await sellerCredsForTenant(tenantId, supplier);
+    if (!creds) return NOT_CONFIGURED;
+    return supplier === "SELLER1"
+      ? purchaseFromSeller1(price, productName, duration, creds)
+      : purchaseFromSeller2(price, productName, duration, creds);
+  }
 
   if (supplier === "SELLER1") {
     return purchaseFromSeller1(price, productName, duration);
@@ -730,4 +749,52 @@ async function deliverBySupplier(
   }
 
   return deliverFromLocalStock(tenantId, productName, duration);
+}
+
+
+/**
+ * JPRIME API stock for a CO-ADMIN store.
+ * The owner's reseller price is taken from the store's wallet (the reseller wallet on the main site) FIRST, in one
+ * atomic step. If the seller then fails, the same amount is returned. If the wallet is too low, nothing is bought
+ * and the customer simply sees "out of stock". The customer never sees supplier names or the owner's product ids.
+ */
+export const LOW_CREDIT_MESSAGE = "Out of stock. The store admin's credit is low, please contact the admin.";
+
+async function deliverFromJprime(tenantId: string, price: CatalogPrice, storeProductName: string) {
+  const access = await jprimeAccess(tenantId);
+  if (!access.allowed || !access.payer) return NOT_CONFIGURED;
+
+  const src = await jprimeSource(price.jprimeProductId, price.jprimeDuration);
+  if (!src.ok) return { success: false as const, error: "This product is not available right now." };
+
+  const debit = await debitWallet(OWNER_TENANT_ID, access.payer, src.cost);
+  if (!debit.ok) {
+    return debit.reason === "insufficient"
+      ? { success: false as const, error: LOW_CREDIT_MESSAGE }
+      : { success: false as const, error: "This product is not available right now." };
+  }
+
+  const note = `JPRIME API stock: ${src.productName} (${src.duration}) for store ${tenantId.slice(0, 8)}`;
+  await logWalletTransaction({ tenantId: OWNER_TENANT_ID, username: access.payer, type: "debit", amount: src.cost, balance_after: debit.balance, description: note });
+
+  let delivered: { success: boolean; key?: string; error?: string };
+  try {
+    delivered = src.supplier === "SELLER1"
+      ? await purchaseFromSeller1(src.tier as CatalogPrice, src.productName, src.duration)
+      : await purchaseFromSeller2(src.tier as CatalogPrice, src.productName, src.duration);
+  } catch {
+    delivered = { success: false };
+  }
+
+  if (delivered.success && delivered.key) return { success: true as const, key: delivered.key };
+
+  // Seller failed: give the credit back exactly once.
+  const refund = await creditWallet(OWNER_TENANT_ID, access.payer, src.cost);
+  if (refund.ok) {
+    await logWalletTransaction({ tenantId: OWNER_TENANT_ID, username: access.payer, type: "refund", amount: src.cost, balance_after: refund.balance, description: `Refund: ${note}` });
+  } else {
+    console.error("JPRIME API REFUND FAILED - needs manual review:", { store: tenantId, payer: access.payer, amount: src.cost });
+  }
+  console.error("JPRIME API DELIVERY FAILED:", storeProductName);
+  return { success: false as const, error: "This product is not available right now. Please try again later." };
 }

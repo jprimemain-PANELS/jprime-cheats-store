@@ -157,6 +157,10 @@ export default function CoAdminManager() {
                         ) : null}
                       </div>
                     </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2">
+                      <span>Wallet that pays for this store (plan + JPRIME API stock): <b className="font-mono">{s.payer || "not linked"}</b></span>
+                      <button disabled={!!busy} onClick={() => { const u = window.prompt("Reseller username on the MAIN store whose wallet pays for this store:", s.payer || ""); if (u) act({ action: "set_payer", id: s.id, username: u }, s.id); }} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50">Set wallet user</button>
+                    </div>
                     {dInfo.available && (
                       <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300 space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">

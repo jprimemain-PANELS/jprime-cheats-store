@@ -47,6 +47,8 @@ export type Theme = {
   heroTitle: string;
   heroSubtitle: string;
   heroImageUrl: string;
+  loginCharacterUrl: string;
+  loginPetUrl: string;
   ctaText: string;
   columns: (typeof COLUMNS)[number];
   fontScale: (typeof FONT_SCALES)[number];
@@ -86,6 +88,8 @@ export const DEFAULT_THEME: Theme = {
   heroTitle: "",
   heroSubtitle: "",
   heroImageUrl: "",
+  loginCharacterUrl: "",
+  loginPetUrl: "",
   ctaText: "",
   columns: 3,
   fontScale: "normal",
@@ -179,7 +183,7 @@ export function validateTheme(input: unknown, base: Theme = DEFAULT_THEME): Them
     if (typeof src[k] !== "boolean") return { ok: false, error: "Invalid switch value." };
     t[k] = src[k] as boolean;
   }
-  for (const k of ["backdropImageUrl", "heroImageUrl"] as const) {
+  for (const k of ["backdropImageUrl", "heroImageUrl", "loginCharacterUrl", "loginPetUrl"] as const) {
     if (src[k] === undefined) continue;
     const u = String(src[k]).trim();
     if (!isSafeLogoUrl(u)) return { ok: false, error: "Image must be a plain https:// link." };

@@ -23,6 +23,8 @@ const ALLOWED_SERVICE_ROLE = new Set([
   "app/api/verify-wallet-payment/route.ts", // jprime_t_finalize_wallet_deposit RPC with tenant id
   "app/api/payment-webhook/route.ts",       // owner-only legacy webhook RPC (no tenant data read)
   "lib/payment-gateway.ts", // reads/writes ONLY app_settings (owner-level gateway config), never a tenant table
+  "lib/user-admin.ts",      // delete user: tenant-scoped via tdb + audit/tenants lookups; caller passes requireTenantAdmin
+  "lib/api-system.ts",      // API system: connections table + wallet-backed API stock lookups; callers pass tenant-admin guards
   "lib/subscription.ts",    // subscriptions + instant launch: tenants/applications/wallet RPCs; callers pass user/tenant-admin guards
   "lib/domains.ts",         // custom-domain flow: tenant_domains + audit only; callers pass owner/tenant-admin guards
   "lib/tenant-admin.ts",    // platform tables only (tenants/applications/settings/audit) + 003 RPCs; callers pass owner/tenant-admin guards

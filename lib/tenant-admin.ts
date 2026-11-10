@@ -234,3 +234,17 @@ export async function saveBranding(tenant: Tenant, actor: Actor, input: any):
   clearTenantCache();
   return { ok: true, theme: r.theme };
 }
+
+/** Owner links the wallet (a user on the MAIN store) that pays for a store's JPRIME API stock and plan. */
+export async function setStorePayer(tenantId: string, username: string, actor: { id: string | number | null; username: string }) {
+  const u = String(username ?? "").trim();
+  if (!u || u.length > 64) return { ok: false as const, reason: "Enter the reseller username (on the main store)." };
+  const user = await supabaseAdmin.from("users").select("id, role").eq("tenant_id", OWNER_TENANT_ID).eq("username", u).maybeSingle();
+  if (user.error || !user.data) return { ok: false as const, reason: "No such user on the main store." };
+  if (["admin", "coadmin"].includes(String((user.data as any).role).toLowerCase())) return { ok: false as const, reason: "Pick a reseller or customer account, not an admin." };
+  const r = await supabaseAdmin.from("tenants").update({ payer_username: u, updated_at: new Date().toISOString() }).eq("id", tenantId).eq("kind", "coadmin");
+  if (r.error) return { ok: false as const, reason: /payer_username|column/i.test(r.error.message ?? "") ? "Run supabase/tenant/005_SUBSCRIPTIONS.sql first." : "failed" };
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: "store.payer_set", target: u });
+  return { ok: true as const };
+}
+

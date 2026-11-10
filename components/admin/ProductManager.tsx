@@ -1,5 +1,6 @@
 "use client";
 
+import { changedByCleaning, cleanProductId, cleanProductText } from "@/lib/text-clean";
 import { useEffect, useState } from "react";
 import {
   Plus,
@@ -78,6 +79,12 @@ async function adminCatalogRequest(
 export default function ProductManager({ isOwner = true }: { isOwner?: boolean } = {}) {
   // Built-in product list, from an admin-only endpoint (used by "Import Existing").
   const [allProducts, setAllProducts] = useState<any[]>([]);
+
+  const [storeApi, setStoreApi] = useState<{ jprimeAllowed: boolean; sellers: { seller: string; name: string; keyReady: boolean }[]; catalog: { productId: string; name: string; tiers: { duration: string; cost: number }[] }[] }>({ jprimeAllowed: false, sellers: [], catalog: [] });
+  useEffect(() => {
+    if (isOwner) return;
+    fetch("/api/admin/api-system?for=products", { cache: "no-store" }).then((r) => r.json()).then((j) => { if (j?.success) setStoreApi(j); }).catch(() => {});
+  }, [isOwner]);
 
   useEffect(() => {
     if (!isOwner) return; // the built-in list belongs to the owner store only
@@ -216,11 +223,19 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
       if (!goOn) return;
     }
 
+    // Names/ids/durations are matching keys: fancy-font or hidden characters are converted to plain text
+    // (new products, and every product in a co-admin store). Existing owner products are left as they are.
+    const isNewProduct = !products.some((p) => p.id === selected.id);
+    const plain = !isOwner || isNewProduct;
+    if (plain && (changedByCleaning(selected.name) || changedByCleaning(selected.id) || selected.prices.some((t) => changedByCleaning(t.duration)))) {
+      alert("Fancy-font or hidden characters were found in the product name, ID or duration. They were converted to normal text so prices and stock match correctly.");
+    }
+
     const cleaned: Product = {
       ...selected,
 
-      id: selected.id.trim(),
-      name: selected.name.trim(),
+      id: plain ? cleanProductId(selected.id) : selected.id.trim(),
+      name: plain ? cleanProductText(selected.name) : selected.name.trim(),
 
       features: selected.features
         .map((x) => x.trim())
@@ -230,7 +245,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
         .filter((x) => x.duration.trim())
         .map((x) => ({
           ...x,
-          duration: x.duration.trim(),
+          duration: plain ? cleanProductText(x.duration) : x.duration.trim(),
           priceINR: String(x.priceINR || "").trim(),
           resellerPrice: String(x.resellerPrice || "").trim(),
           priceUSD: String(x.priceUSD || "").trim(),
@@ -817,15 +832,19 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
 
                     <input
                       value={selected.id}
+                      readOnly={!isOwner && selected.prices.some((t) => t.supplier === "JPRIME" && t.jprimeProductId)}
                       onChange={(e) =>
                         updateSelected(
                           "id",
                           e.target.value
                         )
                       }
-                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800 outline-none focus:border-cyan-500"
+                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800 outline-none focus:border-cyan-500 read-only:opacity-60"
                       placeholder="example-product"
                     />
+                    {!isOwner && selected.prices.some((t) => t.supplier === "JPRIME" && t.jprimeProductId) && (
+                      <p className="mt-1 text-[11px] text-zinc-500">Locked for JPRIME API stock.</p>
+                    )}
                   </div>
 
                   <div>
@@ -963,6 +982,9 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                   className="w-full p-3 rounded-xl bg-zinc-900 border border-zinc-800"
                   placeholder="https://..."
                 />
+                {!isOwner && (
+                  <p className="mt-1 text-[11px] text-zinc-500">Leave the video and features blank to use the JPRIME video and features for JPRIME API stock products.</p>
+                )}
 
               </section>
 
@@ -1188,13 +1210,57 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                                 </option>
                               </>
                             ) : (
-                              <option value="" disabled>
-                                JPRIME API stock (coming soon)
-                              </option>
+                              <>
+                                {storeApi.jprimeAllowed ? (
+                                  <option value="JPRIME">JPRIME API stock</option>
+                                ) : (
+                                  <option value="" disabled>JPRIME API stock (ask the platform owner to enable)</option>
+                                )}
+                                {storeApi.sellers.filter((x) => x.keyReady).map((x) => (
+                                  <option key={x.seller} value={x.seller}>{x.name} (my own key)</option>
+                                ))}
+                              </>
                             )}
                           </select>
 
                         </div>
+
+                        {/* JPRIME API STOCK (co-admin stores) */}
+                        {tier.supplier === "JPRIME" && (() => {
+                          const src = storeApi.catalog.find((c) => c.productId === tier.jprimeProductId);
+                          const cost = src?.tiers.find((t) => t.duration === tier.jprimeDuration)?.cost;
+                          // one product = one JPRIME product (the others in this list are the ones already chosen)
+                          const locked = selected.prices.find((t, i) => i !== index && t.supplier === "JPRIME" && t.jprimeProductId)?.jprimeProductId;
+                          return (
+                            <div className="mt-4 grid md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="text-xs text-zinc-400">JPRIME product</label>
+                                <select
+                                  value={tier.jprimeProductId || ""}
+                                  disabled={!!locked}
+                                  onChange={(e) => {
+                                    const c = storeApi.catalog.find((x) => x.productId === e.target.value);
+                                    updateTier(index, "jprimeProductId", e.target.value);
+                                    updateTier(index, "jprimeDuration", "");
+                                    if (c && selected) setSelected((p) => (p ? { ...p, id: c.productId, name: p.name || c.name } : p));
+                                  }}
+                                  className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                                >
+                                  <option value="">Choose a product...</option>
+                                  {storeApi.catalog.map((c) => <option key={c.productId} value={c.productId}>{c.name}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-xs text-zinc-400">JPRIME duration (your cost)</label>
+                                <select value={tier.jprimeDuration || ""} onChange={(e) => updateTier(index, "jprimeDuration", e.target.value)} className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                                  <option value="">Choose a duration...</option>
+                                  {(src?.tiers ?? []).map((t) => <option key={t.duration} value={t.duration}>{t.duration} - cost ₹{t.cost}</option>)}
+                                </select>
+                              </div>
+                              {cost ? <p className="md:col-span-2 text-xs text-amber-300">Your selling price must be at least ₹{cost}. The ₹{cost} is taken from your wallet for each sale.</p> : null}
+                            </div>
+                          );
+                        })()}
 
                         {/* SELLER 1 */}
 

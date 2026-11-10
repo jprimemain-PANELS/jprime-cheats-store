@@ -5,6 +5,8 @@ import { OWNER_TENANT_ID } from "@/lib/tenant";
 import { allProducts } from "@/lib/products";
 import { countLocalStock, fetchAllUnusedStock } from "@/lib/stock";
 import { stockCountKey } from "@/lib/delivery";
+import { cleanProductText } from "@/lib/text-clean";
+import { deleteUser } from "@/lib/user-admin";
 import { creditWallet, debitWallet, getBalance, logWalletTransaction } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
@@ -123,6 +125,9 @@ export async function POST(request: NextRequest) {
     const db = tdb(tenantId);
     const body = await request.json().catch(() => ({}));
     const action = String(body?.action || "");
+    // Product names/durations are matching KEYS. New stores get them cleaned (fancy fonts, hidden characters);
+    // the owner store's existing data is left exactly as it is.
+    const key = (v: unknown) => (tenantId === OWNER_TENANT_ID ? String(v ?? "").trim() : cleanProductText(v));
 
     /* ---------- stock ---------- */
     if (action === "stock_count") {
@@ -132,8 +137,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "add_stock") {
-      const productName = String(body.product_name || "").trim();
-      const duration = String(body.duration || "").trim();
+      const productName = key(body.product_name);
+      const duration = key(body.duration);
       const keys: string[] = (Array.isArray(body.keys) ? body.keys : [])
         .map((k: unknown) => String(k ?? "").trim())
         .filter(Boolean)
@@ -165,8 +170,8 @@ export async function POST(request: NextRequest) {
       const clean: any[] = [];
 
       for (const r of rows.slice(0, 200)) {
-        const product_name = String(r?.product_name || "").trim();
-        const duration = String(r?.duration || "").trim();
+        const product_name = key(r?.product_name);
+        const duration = key(r?.duration);
         const price = Number(r?.price_inr);
         const reseller =
           r?.reseller_price === null || r?.reseller_price === undefined || r?.reseller_price === ""
@@ -194,7 +199,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "set_status") {
-      const productName = String(body.product_name || "").trim();
+      const productName = key(body.product_name);
       const status = String(body.status || "");
       if (!productName || (status !== "ONLINE" && status !== "MAINTENANCE")) return fail("Invalid status.");
 
@@ -212,6 +217,14 @@ export async function POST(request: NextRequest) {
     }
 
     /* ---------- users / wallets ---------- */
+    if (action === "delete_user") {
+      const userId = String(body.userId ?? "").trim();
+      if (!userId) return fail("Missing user ID. Refresh the admin page and try again.");
+      const r = await deleteUser(tenantId, userId, { id: auth.user.id, username: auth.user.username });
+      if (!r.ok) return fail(r.error, r.status);
+      return NextResponse.json({ success: true }, { headers: NO_STORE });
+    }
+
     if (action === "update_user") {
       const userId = String(body.userId ?? "").trim();
       if (!userId) return fail("Missing user ID. Refresh the admin page and try again.");

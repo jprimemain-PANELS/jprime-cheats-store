@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardStoreTiers } from "@/lib/api-system";
 import { tdb } from "@/lib/tenant-db";
 import { requireTenantAdmin } from "@/lib/auth";
+import { cleanProductId, cleanProductText } from "@/lib/text-clean";
 
 export const dynamic = "force-dynamic";
 
@@ -77,17 +79,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // A co-admin store can only sell from its own (LOCAL) stock until the API system ships.
-    // Never trust the browser: enforce it here as well as in the form.
+    // A co-admin store may sell: its own LOCAL stock, JPRIME API stock (if the owner enabled it), or a seller
+    // it was APPROVED for on the API SYSTEM page. Never trust the browser: enforce it here as well as in the form.
     if (auth.tenant.kind !== "owner") {
-      const tiers: any[] = Array.isArray((product as any).prices) ? (product as any).prices : [];
-      if (tiers.some((t) => t && t.supplier && String(t.supplier).toUpperCase() !== "LOCAL")) {
-        return NextResponse.json({ success: false, error: "This store can only use Local Stock for now." }, { status: 400 });
-      }
+      const guard = await guardStoreTiers(auth.tenant.id, product as any);
+      if (!guard.ok) return NextResponse.json({ success: false, error: guard.error }, { status: 400 });
     }
 
-    const productId = String(product.id || "").trim();
-    const productName = String(product.name || "").trim();
+    let productId = String(product.id || "").trim();
+    let productName = String(product.name || "").trim();
+
+    // Product id / name / duration are matching KEYS (prices, stock, orders). Fancy-font text breaks them, so
+    // NEW products (and everything in a co-admin store) are cleaned to plain text. An EXISTING product of the
+    // owner store is saved exactly as before, so nothing already working can change.
+    const existing = productId
+      ? await tdb(auth.tenant.id).from("products_catalog").select("id").eq("product_id", productId).maybeSingle()
+      : { data: null as any };
+    if (auth.tenant.kind !== "owner" || !existing.data) {
+      productId = cleanProductId(productId);
+      productName = cleanProductText(productName);
+      if (!productId) return NextResponse.json({ success: false, error: "Product ID must use plain letters, numbers and hyphens." }, { status: 400 });
+      (product as any).id = productId;
+      (product as any).name = productName;
+      if (Array.isArray((product as any).prices)) {
+        for (const t of (product as any).prices) if (t && typeof t.duration === "string") t.duration = cleanProductText(t.duration);
+      }
+    }
 
     if (!productId || !productName) {
       return NextResponse.json(

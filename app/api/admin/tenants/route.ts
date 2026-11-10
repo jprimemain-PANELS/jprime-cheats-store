@@ -3,6 +3,7 @@ import { rateLimit, requireAdmin } from "@/lib/auth";
 import { isUuid } from "@/lib/tenant-db";
 import {
   approveApplication, createStoreDirect, ownerOverview, rejectApplication, setSharedStockAllowed, setStoreStatus,
+  setStorePayer,
 } from "@/lib/tenant-admin";
 import { activateCustomDomain, ownerDomainInfo, ownerRemoveCustomDomain, setCustomDomainAllowed } from "@/lib/domains";
 
@@ -44,6 +45,10 @@ export async function POST(request: NextRequest) {
     case "shared_stock":
       if (!isUuid(id)) return fail("Invalid id.");
       result = await setSharedStockAllowed(id, b?.allowed === true, actor);
+      break;
+    case "set_payer":
+      if (!isUuid(id)) return fail("Invalid id.");
+      result = await setStorePayer(id, String(b?.username ?? ""), actor);
       break;
     case "custom_allowed":
       if (!isUuid(id)) return fail("Invalid id.");

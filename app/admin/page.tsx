@@ -33,6 +33,7 @@ import {
   CreditCard,
   Bell,
   Palette,
+  Plug,
   Globe,
   Store,
 } from "lucide-react";
@@ -50,6 +51,7 @@ import CoAdminManager from "@/components/admin/CoAdminManager";
 import BrandingManager from "@/components/admin/BrandingManager";
 import DomainManager from "@/components/admin/DomainManager";
 import SubscriptionManager from "@/components/admin/SubscriptionManager";
+import ApiSystemManager from "@/components/admin/ApiSystemManager";
 import StoreTelegramManager from "@/components/admin/StoreTelegramManager";
 import { useBrand } from "@/components/brand-provider";
 
@@ -66,6 +68,7 @@ interface ManagedUser {
 type PriceOverride = { priceINR: number; resellerPrice?: number };
 type ProductStatus = "ONLINE" | "MAINTENANCE";
 type Tab =
+  | "api"
   | "subscription"
   | "domain"
   | "overview"
@@ -611,6 +614,21 @@ export default function AdminPage() {
     setIsManageModalOpen(true);
   };
 
+  const handleDeleteUser = async (u: ManagedUser) => {
+    if (u.id == null) { alert("This user record has no ID. Refresh the admin page and try again."); return; }
+    const ok = window.confirm(
+      `Delete @${u.username}?\n\nThe login is removed and cannot be undone. Purchase and wallet history stay for your records.\nAn account with wallet money cannot be deleted (take the balance out first).`
+    );
+    if (!ok) return;
+    try {
+      await adminPost({ action: "delete_user", userId: String(u.id) });
+      alert(`@${u.username} deleted.`);
+      loadDashboard();
+    } catch (err: any) {
+      alert(err?.message || "Could not delete this user.");
+    }
+  };
+
   const handleSaveUserChanges = async () => {
     if (!selectedUser) return;
     setIsSavingUser(true);
@@ -656,6 +674,7 @@ export default function AdminPage() {
     { id: "status", label: "Status", icon: Power, count: allProducts.length },
     { id: "products", label: "Products", icon: Package },
     { id: "vip", label: "VIP Prices", icon: Crown },
+    { id: "api", label: "API System", icon: Plug },
     { id: "gateway", label: "Payments", icon: CreditCard },
     { id: "telegram", label: "Telegram", icon: Bell },
     ...(isOwnerAdmin
@@ -1192,6 +1211,7 @@ export default function AdminPage() {
         {activeTab === "branding" && <BrandingManager />}
         {activeTab === "domain" && <DomainManager />}
         {activeTab === "subscription" && !isOwnerAdmin && <SubscriptionManager />}
+        {activeTab === "api" && <ApiSystemManager />}
 
         {/* PURCHASES */}
         {activeTab === "purchases" && (
@@ -1329,6 +1349,16 @@ export default function AdminPage() {
                               <Settings className="h-3.5 w-3.5" />
                               Manage
                             </button>
+                            {u.role !== "admin" && u.role !== "coadmin" && (
+                              <button
+                                onClick={() => handleDeleteUser(u)}
+                                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-rose-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                                aria-label={`Delete ${u.username}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Delete
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

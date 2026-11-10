@@ -1,9 +1,9 @@
 /** Plain (server + client safe) brand type and the owner store's default brand. */
 export type BrandLayout = {
-  heroLayout: "centered" | "left" | "split"; heroTitle: string; heroSubtitle: string; heroImageUrl: string;
+  heroLayout: "centered" | "left" | "split"; heroTitle: string; heroSubtitle: string; heroImageUrl: string; loginCharacterUrl: string; loginPetUrl: string;
   ctaText: string; columns: 2 | 3 | 4; showStats: boolean;
 };
-export const DEFAULT_LAYOUT: BrandLayout = { heroLayout: "centered", heroTitle: "", heroSubtitle: "", heroImageUrl: "", ctaText: "", columns: 3, showStats: true };
+export const DEFAULT_LAYOUT: BrandLayout = { heroLayout: "centered", heroTitle: "", heroSubtitle: "", heroImageUrl: "", loginCharacterUrl: "", loginPetUrl: "", ctaText: "", columns: 3, showStats: true };
 
 export type Brand = {
   layout: BrandLayout;

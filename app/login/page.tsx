@@ -466,19 +466,22 @@ const BackgroundLayer = () => (
 /* One copy of the Kelly image. Each copy is masked to a body region
    (legs / torso / head / arms / clothing) so the regions can move
    independently while the feet stay anchored. */
-const KellyLayer = ({ className, nested = false }: { className: string; nested?: boolean }) => (
+const KellyLayer = ({ className, nested = false }: { className: string; nested?: boolean }) => {
+  const kellySrc = useBrand().layout?.loginCharacterUrl || KELLY_IMAGE;
+  return (
   <div className={`k-layer ${className}`}>
     {nested ? (
       <div className="k-nod">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={KELLY_IMAGE} alt="" draggable={false} />
+        <img src={kellySrc} alt="" draggable={false} />
       </div>
     ) : (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={KELLY_IMAGE} alt="" draggable={false} />
+      <img src={kellySrc} alt="" draggable={false} />
     )}
   </div>
-);
+  );
+};
 
 /* Kelly: big, stands BEHIND the card on the RIGHT side. The PNG already
    faces the right direction, so it is NOT mirrored in code any more.
@@ -508,7 +511,9 @@ const KellyBackdrop = () => (
 );
 
 /* Pet: sits on the top edge of the card, mirrored, jumping + shaking. */
-const PetMascot = () => (
+const PetMascot = () => {
+  const petSrc = useBrand().layout?.loginPetUrl || PET_IMAGE;
+  return (
   <div
     className="pet-spot pointer-events-none absolute z-30 select-none"
     style={{ width: SIZES.petWidth, left: 22, top: -Math.round(SIZES.petWidth * 0.62) }}
@@ -519,11 +524,12 @@ const PetMascot = () => (
     <div className="pet-jump relative">
       <div className="pet-shake">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={PET_IMAGE} alt="" draggable={false} className="pet-img block w-full h-auto" />
+        <img src={petSrc} alt="" draggable={false} className="pet-img block w-full h-auto" />
       </div>
     </div>
   </div>
-);
+  );
+};
 
 /* ------------------------------------------------------------------ */
 /*  4. UI KIT                                                          */

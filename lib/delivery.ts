@@ -6,7 +6,7 @@
  * customer stock counter and the real key reservation all agree with each other.
  */
 
-export type Supplier = "LOCAL" | "SELLER1" | "SELLER2";
+export type Supplier = "LOCAL" | "SELLER1" | "SELLER2" | "JPRIME";
 export type DeliveryMode = "API" | "LOCAL";
 
 type TierLike = {
@@ -35,6 +35,7 @@ export function normalizeSupplier(value: unknown): Supplier | null {
     .replace(/[\s_-]+/g, "");
   if (s === "SELLER1") return "SELLER1";
   if (s === "SELLER2") return "SELLER2";
+  if (s === "JPRIME" || s === "JPRIMEAPI" || s === "JPRIMESTOCK") return "JPRIME";
   if (s === "LOCAL" || s === "LOCALSTOCK") return "LOCAL";
   return null;
 }
@@ -93,7 +94,7 @@ export function resolveCatalogSupplier(tier: TierLike): SupplierResolution {
  */
 export function deliveryModeForTier(tier: TierLike, productFulfillmentType?: unknown): DeliveryMode {
   const supplier = normalizeSupplier(tier.supplier);
-  if (supplier === "SELLER1" || supplier === "SELLER2") return "API";
+  if (supplier === "SELLER1" || supplier === "SELLER2" || supplier === "JPRIME") return "API";
   if (supplier === "LOCAL") return "LOCAL";
 
   // No explicit supplier (old data): read what the configuration says.
