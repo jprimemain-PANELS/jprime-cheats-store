@@ -152,13 +152,13 @@ function StoreView({ d, reload }: { d: any; reload: () => void }) {
           </div>
           {kind && (
             <div className="space-y-2">
-              <label className="block text-xs text-slate-400">{kind === "own_api" ? "Name of your API (example: My Panel API)" : "Seller name (example: bb team admin)"}<input className={field} maxLength={60} value={f.sellerName} onChange={set("sellerName")} /></label>
+              <label className="block text-xs text-slate-400">{kind === "own_api" ? "Name of your API (example: My Panel API)" : "Seller name (example: My Supplier)"}<input className={field} maxLength={60} value={f.sellerName} onChange={set("sellerName")} /></label>
               <label className="block text-xs text-slate-400">API key<input className={field} autoComplete="off" value={f.apiKey} onChange={set("apiKey")} /></label>
               <label className="block text-xs text-slate-400">Master key (only if you have one)<input className={field} autoComplete="off" value={f.masterKey} onChange={set("masterKey")} /></label>
               <label className="block text-xs text-slate-400">Endpoint URL (example: https://seller.com/api/buy.php)<input className={field} value={f.endpointUrl} onChange={set("endpointUrl")} placeholder="https://" /></label>
               <label className="block text-xs text-slate-400">Paste the full API code or documents here, with product IDs and all details, so the platform team can build it for you in 2 to 3 days.
                 <textarea className={field + " h-44 font-mono text-xs"} maxLength={8000} value={f.notes} onChange={set("notes")} /></label>
-              <p className="text-[10px] text-slate-500">{f.notes.length}/8000 characters. If you want to use the platform's own sellers (bb team admin or whitex seller hub), just write the seller name above. The owner approves it and you then add your own key.</p>
+              <p className="text-[10px] text-slate-500">{f.notes.length}/8000 characters. Write all the details of the API here. The platform team will check it and build it for you.</p>
               <div className="flex gap-2">
                 <button disabled={busy === "new"} onClick={submit} className={`${btn} bg-emerald-600 hover:bg-emerald-500 text-white`}>{busy === "new" ? "Sending..." : "Send to platform owner"}</button>
                 <button onClick={() => { setAdding(false); setKind(""); }} className={`${btn} border border-slate-700 text-slate-300`}>Cancel</button>

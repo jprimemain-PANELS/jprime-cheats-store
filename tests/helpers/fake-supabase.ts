@@ -18,6 +18,7 @@ export function seed(table: string, rows: Row[]) {
 }
 const rows = (t: string) => (tables[t] ??= []);
 
+let tick = 0;
 class Query implements PromiseLike<any> {
   private mode: "select" | "insert" | "update" | "delete" | "upsert" = "select";
   private filters: Array<(r: Row) => boolean> = [];
@@ -74,7 +75,7 @@ class Query implements PromiseLike<any> {
     const match = (r: Row) => this.filters.every((f) => f(r));
     let out: Row[] = [];
     if (this.mode === "insert") {
-      const list = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((r: Row) => ({ id: randomUUID(), ...r }));
+      const list = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((r: Row) => ({ id: randomUUID(), created_at: new Date(Date.now() + (++tick)).toISOString(), ...r }));
       all.push(...list);
       out = list;
     } else if (this.mode === "update") {

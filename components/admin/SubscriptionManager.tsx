@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Loader2, Wallet } from "lucide-react";
 
 type Plan = { label: string; price: number; days: number; note: string };
-type S = { owner?: boolean; available: boolean; expiresAt: string | null; expired: boolean; daysLeft: number | null; walletBalance: number | null; plans: Record<string, Plan>; trialDays: number };
+type S = { owner?: boolean; available: boolean; expiresAt: string | null; expired: boolean; daysLeft: number | null; payer: string | null; walletBalance: number | null; plans: Record<string, Plan>; trialDays: number };
 
 export default function SubscriptionManager() {
   const [s, setS] = useState<S | null>(null);
@@ -15,6 +15,19 @@ export default function SubscriptionManager() {
     try { const r = await fetch("/api/admin/subscription", { cache: "no-store" }); const j = await r.json(); if (j.success) setS(j); } catch {}
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const [lu, setLu] = useState("");
+  const [lp, setLp] = useState("");
+  async function link() {
+    setBusy("link"); setMsg(null);
+    try {
+      const r = await fetch("/api/admin/subscription", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "link", username: lu, password: lp }) });
+      const j = await r.json();
+      if (!r.ok || !j.success) setMsg({ ok: false, text: j.error || "Could not connect." });
+      else { setMsg({ ok: true, text: "Connected. Your wallet is now used for your plan and JPRIME API stock." }); setLu(""); setLp(""); await load(); }
+    } catch { setMsg({ ok: false, text: "Network error." }); }
+    setBusy(null);
+  }
 
   async function pay(plan: string, p: Plan) {
     if (!window.confirm(`Pay ₹${p.price} from your wallet for the ${p.label} plan (${p.days} days)?`)) return;
@@ -45,9 +58,19 @@ export default function SubscriptionManager() {
           <p className="text-sm text-white mt-1">{status}</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <p className="flex items-center gap-1.5 text-xs text-slate-400"><Wallet className="h-3.5 w-3.5" />Your wallet balance</p>
+          <p className="flex items-center gap-1.5 text-xs text-slate-400"><Wallet className="h-3.5 w-3.5" />{s.payer ? <>Your reseller account <b className="text-white">{s.payer}</b> wallet balance</> : "Your wallet balance"}</p>
           <p className="text-2xl font-bold text-white mt-1">{s.walletBalance === null ? "—" : `₹${s.walletBalance.toLocaleString("en-IN")}`}</p>
           <a href="https://jprimecheats.store" className="text-[11px] text-indigo-300 underline">Add money on the main website</a>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+        <p className="text-sm font-semibold text-white">{s.payer ? "Your main website account" : "Connect your main website account"}</p>
+        <p className="text-[11px] text-slate-400">{s.payer ? `Plan and JPRIME API stock are paid from ${s.payer}'s wallet. To change it, enter another account below.` : "Enter the username and password you use on jprimecheats.store. Your wallet pays for your plan and for JPRIME API stock sales."}</p>
+        <div className="grid sm:grid-cols-3 gap-2">
+          <input value={lu} onChange={(e) => setLu(e.target.value)} placeholder="Main website username" className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white" />
+          <input type="password" value={lp} onChange={(e) => setLp(e.target.value)} placeholder="Main website password" className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white" />
+          <button disabled={!!busy || !lu || !lp} onClick={link} className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50 cursor-pointer">{busy === "link" ? "Checking..." : s.payer ? "Change account" : "Connect"}</button>
         </div>
       </div>
 

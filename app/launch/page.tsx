@@ -146,6 +146,7 @@ export default function LaunchPage() {
                     <p className="text-xs font-mono text-fuchsia-300 break-all">shop.rajstore.com</p>
                   </button>
                 </div>
+                {!opts?.customDomain && <p className="mt-1.5 text-[11px] text-amber-300/80">Own domain is coming soon. Please use the free address for now.</p>}
               </div>
 
               <div>

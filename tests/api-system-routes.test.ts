@@ -61,9 +61,9 @@ describe("API SYSTEM routes", () => {
     const mk = (o: any = {}) => ({ id: "pubg-x", name: "X", videoUrl: "", features: [""], prices: [{ duration: "1 Day", priceINR: "60", supplier: "JPRIME", jprimeProductId: "pubg-x", jprimeDuration: "1 day", ...o }] });
     expect(await guardStoreTiers(TENANT_B, { id: "a", prices: [{ duration: "1", priceINR: "5", supplier: "LOCAL" }] })).toMatchObject({ ok: true });
     expect(await guardStoreTiers(TENANT_B, { id: "a", prices: [{ duration: "1", priceINR: "5", supplier: "SELLER1" }] })).toMatchObject({ ok: false });
-    expect(await guardStoreTiers(TENANT_B, mk())).toMatchObject({ ok: false }); // shared stock off
-    const t = tables.tenants.find((x) => x.id === TENANT_B) as any; t.shared_stock_allowed = true; t.payer_username = "raj";
-    expect(await guardStoreTiers(TENANT_B, mk({ priceINR: "20" }))).toMatchObject({ ok: false }); // below cost 28
+    expect(await guardStoreTiers(TENANT_B, mk())).toMatchObject({ ok: false }); // no wallet linked
+    const t = tables.tenants.find((x) => x.id === TENANT_B) as any; t.payer_username = "raj";
+    expect(await guardStoreTiers(TENANT_B, mk({ priceINR: "20" }))).toMatchObject({ ok: true }); // the store sets its own price
     const good: any = mk();
     expect(await guardStoreTiers(TENANT_B, good)).toMatchObject({ ok: true });
     expect(good.id).toBe("pubg-x"); expect(good.videoUrl).toBe("https://v.example/x.mp4"); expect(good.features).toEqual(["Aim", "ESP"]);

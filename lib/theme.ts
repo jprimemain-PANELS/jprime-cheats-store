@@ -20,6 +20,8 @@ export type FontKey = keyof typeof FONTS;
 export const RADII = { sharp: "sharp", soft: "soft", round: "round", pill: "pill" } as const;
 export const CARD_STYLES = ["glass", "solid", "outline", "elevated"] as const;
 export const BACKDROPS = ["solid", "gradient", "aurora", "grid", "image"] as const;
+export const LOGIN_CARDS = ["original", "glass", "frost", "neon", "minimal", "aurora"] as const;
+export const LOGIN_BGS = ["original", "aurora", "particles", "beams", "waves", "stars"] as const;
 export const HERO_LAYOUTS = ["centered", "left", "split"] as const;
 export const FONT_SCALES = ["small", "normal", "large"] as const;
 export const BUTTON_STYLES = ["gradient", "solid"] as const;
@@ -48,6 +50,8 @@ export type Theme = {
   heroSubtitle: string;
   heroImageUrl: string;
   loginCharacterUrl: string;
+  loginCard: (typeof LOGIN_CARDS)[number];
+  loginBg: (typeof LOGIN_BGS)[number];
   loginPetUrl: string;
   ctaText: string;
   columns: (typeof COLUMNS)[number];
@@ -89,6 +93,8 @@ export const DEFAULT_THEME: Theme = {
   heroSubtitle: "",
   heroImageUrl: "",
   loginCharacterUrl: "",
+  loginCard: "original",
+  loginBg: "original",
   loginPetUrl: "",
   ctaText: "",
   columns: 3,
@@ -171,7 +177,7 @@ export function validateTheme(input: unknown, base: Theme = DEFAULT_THEME): Them
   const enums: [keyof Theme, readonly (string | number)[], string][] = [
     ["radius", Object.keys(RADII), "corner style"], ["cardStyle", CARD_STYLES, "card style"], ["backdrop", BACKDROPS, "background style"],
     ["heroLayout", HERO_LAYOUTS, "header layout"], ["columns", COLUMNS, "columns"], ["fontScale", FONT_SCALES, "text size"],
-    ["buttonStyle", BUTTON_STYLES, "button style"],
+    ["buttonStyle", BUTTON_STYLES, "button style"], ["loginCard", LOGIN_CARDS, "login card"], ["loginBg", LOGIN_BGS, "login background"],
   ];
   for (const [k, list, label] of enums) {
     const v = pick(k as string, list, label);

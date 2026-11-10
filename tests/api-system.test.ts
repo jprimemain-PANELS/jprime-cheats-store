@@ -82,8 +82,9 @@ describe("JPRIME API stock (co-admin sells the owner's API product)", () => {
   });
   it("refused with no charge when: shared stock is off, no wallet user is linked, or the owner product is gone/maintenance/not an API tier", async () => {
     const t = tables.tenants.find((x) => x.id === TENANT_B) as any;
-    t.shared_stock_allowed = false; expect(await release()).toMatchObject({ success: false });
-    t.shared_stock_allowed = true; t.payer_username = null; expect(await release()).toMatchObject({ success: false });
+    t.shared_stock_allowed = false; expect(await release()).toMatchObject({ success: true }); // no owner switch needed: the linked wallet is enough
+    tables.wallets = []; seed("wallets", [{ tenant_id: OWNER_TENANT_ID, username: "rajreseller", balance: 100 }]); calls = [];
+    t.payer_username = null; expect(await release()).toMatchObject({ success: false });
     t.payer_username = "rajreseller";
     expect(await release("Raj PUBG", "Gone")).toMatchObject({ success: false, error: "This product is not available right now." });
     (tables.products_catalog[0] as any).data.status = "MAINTENANCE";

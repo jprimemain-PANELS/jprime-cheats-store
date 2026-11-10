@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { OWNER_TENANT_ID, clearTenantCache, type Tenant } from "@/lib/tenant";
 import { checkSlug, platformRootDomain, slugProblem, submitApplication, approveApplication, setStoreStatus } from "@/lib/tenant-admin";
+import { verifyPassword } from "@/lib/auth";
 import { parseCustomDomain, requestCustomDomain, domainState } from "@/lib/domains";
 
 /**
@@ -45,6 +46,26 @@ export async function subscriptionState(tenantId: string): Promise<SubState> {
     daysLeft: ms === null ? null : Math.max(0, Math.ceil(ms / 86_400_000)), trialUsed: row.trial_used === true,
     payer: row.payer_username ?? null, walletBalance: bal,
   };
+}
+
+/**
+ * The store admin links THEIR OWN main-store reseller account (username + password are checked) so the
+ * plan and JPRIME API stock are paid from that wallet. Nothing is stored except the username.
+ */
+export async function linkWalletAccount(tenant: Tenant, username: string, password: string, actor: Actor) {
+  if (tenant.kind !== "coadmin") return { ok: false as const, error: "Only co-admin stores link a wallet." };
+  const u = String(username ?? "").trim();
+  if (!u || !password || u.length > 64 || password.length > 200) return { ok: false as const, error: "Enter your main website username and password." };
+  const r = await supabaseAdmin.from("users").select("id, role, password").eq("tenant_id", OWNER_TENANT_ID).eq("username", u).maybeSingle();
+  const row: any = r.data;
+  const bad = { ok: false as const, error: "Wrong username or password for the main website (jprimecheats.store)." };
+  if (r.error || !row || !verifyPassword(password, String(row.password ?? ""))) return bad;
+  if (["admin", "coadmin"].includes(String(row.role).toLowerCase())) return { ok: false as const, error: "Use your reseller account from the main website, not an admin account." };
+  const up = await supabaseAdmin.from("tenants").update({ payer_username: u, updated_at: new Date().toISOString() }).eq("id", tenant.id).eq("kind", "coadmin");
+  if (up.error) return { ok: false as const, error: "Could not link right now. Try again." };
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenant.id, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: "store.payer_self_link", target: u });
+  clearTenantCache();
+  return { ok: true as const };
 }
 
 export async function subscribe(tenant: Tenant, plan: string, actor: Actor) {

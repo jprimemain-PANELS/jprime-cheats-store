@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useBrand } from "@/components/brand-provider";
 import type { LucideIcon } from "lucide-react";
 import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Play, ChevronRight } from "lucide-react";
+import { LoginBackground, type LoginBgKind } from "@/components/login-backgrounds";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 
 /* ------------------------------------------------------------------ */
@@ -544,7 +545,7 @@ type FieldProps = {
 };
 
 const Field = ({ icon: Icon, type, placeholder, value, onChange }: FieldProps) => (
-  <div className="relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
+  <div className="lg-field relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
     <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
     <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
       <Icon className="h-4 w-4 stroke-[1.8]" />
@@ -568,7 +569,7 @@ const BrandHeader = ({ isLogin }: { isLogin: boolean }) => {
       <span className="text-[9px] font-medium tracking-wider text-white/60 uppercase">{brand.isOwner ? "JPRIME GLOBAL" : brand.name}</span>
     </div>
 
-    <h1 className="text-[26px] font-extrabold tracking-tight uppercase leading-none text-white">
+    <h1 className="lg-title text-[26px] font-extrabold tracking-tight uppercase leading-none text-white">
       {brand.isOwner ? (<>JPRIME{" "}
       <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">STORE</span></>) : (
       <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent break-words">{brand.name}</span>)}
@@ -585,7 +586,7 @@ const SubmitButton = ({ isLogin, onClick }: { isLogin: boolean; onClick: () => v
   <div className="mt-4 relative z-20">
     <button
       onClick={onClick}
-      className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white py-3 rounded-xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_26px_-6px_rgba(192,38,211,0.6)] cursor-pointer"
+      className="lg-submit w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white py-3 rounded-xl font-bold text-xs tracking-[0.2em] transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_26px_-6px_rgba(192,38,211,0.6)] cursor-pointer"
     >
       <span>{isLogin ? "LOG IN" : "SIGN UP"}</span>
       <ArrowRight className="h-3.5 w-3.5 stroke-[2.5]" />
@@ -594,10 +595,25 @@ const SubmitButton = ({ isLogin, onClick }: { isLogin: boolean; onClick: () => v
 );
 
 /* Account switch: ONE slim horizontal row (icon + short text + button) */
+const ForgotPassword = ({ username }: { username: string }) => {
+  const [state, setState] = useState<"idle" | "busy" | "sent">("idle");
+  async function ask() {
+    if (!username.trim()) { alert("Type your username in the box above first."); return; }
+    setState("busy");
+    try { await fetch("/api/auth/forgot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username }) }); } catch {}
+    setState("sent");
+  }
+  return state === "sent" ? (
+    <p className="mt-3 text-center text-[11px] text-emerald-300/90">Request sent to the store admin. They will give you a new password.</p>
+  ) : (
+    <button type="button" disabled={state === "busy"} onClick={ask} className="mt-3 block w-full text-center text-[11px] text-white/60 hover:text-white underline cursor-pointer">Forgot password?</button>
+  );
+};
+
 const SwitchBar = ({ isLogin, onToggle }: { isLogin: boolean; onToggle: () => void }) => {
   const brand = useBrand();
   return (
-  <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-white/10 bg-[#10091f]/90 px-3 py-2">
+  <div className="lg-switch mt-3 flex items-center gap-2.5 rounded-xl border border-white/10 bg-[#10091f]/90 px-3 py-2">
     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500/25 to-fuchsia-500/25 text-fuchsia-300 ring-1 ring-fuchsia-400/20">
       {isLogin ? <UserPlus className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
     </span>
@@ -725,23 +741,28 @@ const useAuthForm = () => {
 export default function LoginPage() {
   const brand = useBrand();
   const { isLogin, form, setField, toggleMode, submit } = useAuthForm();
+  const cardKind = brand.isOwner ? "original" : brand.layout?.loginCard || "original";
+  const bgKind = brand.isOwner ? "original" : brand.layout?.loginBg || "original";
+  // A themed (non-original) login hides the default mascot unless the store chose its own pictures
+  const showKelly = brand.isOwner || (cardKind === "original" && bgKind === "original") || !!brand.layout?.loginCharacterUrl;
+  const showPet = brand.isOwner || (cardKind === "original" && bgKind === "original") || !!brand.layout?.loginPetUrl;
 
   return (
-    <div className="min-h-screen bg-[#07040f] text-white flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden font-sans antialiased selection:bg-fuchsia-500 selection:text-white">
-      <BackgroundLayer />
+    <div data-login-card={cardKind} className="min-h-screen bg-[#07040f] text-white flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden font-sans antialiased selection:bg-fuchsia-500 selection:text-white">
+      {bgKind === "original" ? <BackgroundLayer /> : <LoginBackground kind={bgKind as LoginBgKind} />}
 
       <main className="relative z-10 w-full flex flex-col" style={{ maxWidth: SIZES.cardMaxWidth }}>
         {/* wrapper lets the pet sit on the card edge without being clipped */}
         <div className="card-wrap relative mt-10">
           {/* Kelly stands behind the card (desktop: right side of screen, mobile: peeks over the card) */}
-          <KellyBackdrop />
-          <PetMascot />
+          {showKelly && <KellyBackdrop />}
+          {showPet && <PetMascot />}
 
           <section className="login-panel relative z-10 overflow-hidden rounded-3xl border border-violet-300/20 bg-[#080511]/92 p-3 shadow-[0_28px_80px_rgba(0,0,0,0.7)] backdrop-blur-2xl">
             <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-400/80 to-transparent" />
             <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-violet-600/10 blur-3xl" />
 
-            <div className="relative z-10 rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.055] to-white/[0.015] px-4 pb-4 pt-5">
+            <div className="lg-inner relative z-10 rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.055] to-white/[0.015] px-4 pb-4 pt-5">
               <BrandHeader isLogin={isLogin} />
 
               <div className="mb-3 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
@@ -772,6 +793,7 @@ export default function LoginPage() {
               </div>
 
               <SubmitButton isLogin={isLogin} onClick={submit} />
+              {isLogin && <ForgotPassword username={form.username} />}
             </div>
 
             <SwitchBar isLogin={isLogin} onToggle={toggleMode} />
@@ -794,6 +816,46 @@ const LoginStyles = () => (
   <style
     dangerouslySetInnerHTML={{
       __html: `
+    /* ---- themed login cards (only when a store picked one; "original" has no rules here) ---- */
+    [data-login-card]:not([data-login-card="original"]){--lg-a:var(--store-primary,#7c3aed);--lg-b:var(--store-accent,#c026d3);--lg-s:var(--store-surface,#0b0714);--lg-f:var(--store-fg,#fff)}
+    :where([data-login-card]:not([data-login-card="original"])) .login-panel{border:1px solid color-mix(in srgb,var(--lg-b) 30%,transparent)!important;background:color-mix(in srgb,var(--lg-s) 92%,transparent)!important}
+    :where([data-login-card]:not([data-login-card="original"])) .lg-title span{background:linear-gradient(90deg,var(--lg-a),var(--lg-b))!important;-webkit-background-clip:text!important;background-clip:text!important}
+    :where([data-login-card]:not([data-login-card="original"])) .lg-submit{background:linear-gradient(90deg,var(--lg-a),var(--lg-b))!important;box-shadow:0 8px 26px -8px var(--lg-b)!important}
+    :where([data-login-card]:not([data-login-card="original"])) .lg-field:focus-within{border-color:var(--lg-b)!important}
+    :where([data-login-card]:not([data-login-card="original"])) .lg-field span{color:var(--lg-b)!important}
+    :where([data-login-card]:not([data-login-card="original"])) .lg-switch{background:color-mix(in srgb,var(--lg-s) 85%,transparent)!important}
+    :where([data-login-card]:not([data-login-card="original"])) .lg-switch button{border-color:var(--lg-b)!important;color:var(--lg-f)!important}
+    :where([data-login-card]:not([data-login-card="original"])) .lg-switch > span:first-child{color:var(--lg-b)!important}
+    /* Glass Glow */
+    [data-login-card="glass"] .login-panel{border-radius:28px!important;backdrop-filter:blur(22px)!important;background:linear-gradient(160deg,color-mix(in srgb,var(--lg-b) 22%,transparent),color-mix(in srgb,var(--lg-s) 80%,transparent) 42%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 30px 80px -20px rgba(0,0,0,.8)!important}
+    [data-login-card="glass"] .lg-inner{background:transparent!important;border-color:rgba(255,255,255,.08)!important}
+    /* Frost Light */
+    [data-login-card="frost"] .login-panel{border-radius:26px!important;background:linear-gradient(180deg,color-mix(in srgb,var(--lg-a) 30%,#fff),#fff 38%)!important;border-color:color-mix(in srgb,var(--lg-a) 35%,#fff)!important;box-shadow:0 30px 70px -25px color-mix(in srgb,var(--lg-a) 70%,#000)!important}
+    [data-login-card="frost"] .lg-inner{background:transparent!important;border-color:transparent!important}
+    [data-login-card="frost"] .login-panel h1,[data-login-card="frost"] .login-panel p,[data-login-card="frost"] .login-panel .lg-switch>span:nth-child(2),[data-login-card="frost"] .login-panel input,[data-login-card="frost"] .login-panel button:not(.lg-submit){color:#1b1236!important}
+    [data-login-card="frost"] .login-panel .lg-title span{-webkit-text-fill-color:transparent}
+    [data-login-card="frost"] .login-panel input::placeholder{color:rgba(27,18,54,.45)!important}
+    [data-login-card="frost"] .lg-field{background:rgba(255,255,255,.85)!important;border:1.5px solid color-mix(in srgb,var(--lg-a) 55%,#fff)!important;border-radius:14px!important}
+    [data-login-card="frost"] .lg-switch{background:rgba(255,255,255,.7)!important;border-color:color-mix(in srgb,var(--lg-a) 30%,#fff)!important}
+    [data-login-card="frost"] .login-panel .rounded-full{background:rgba(255,255,255,.7)!important;border-color:color-mix(in srgb,var(--lg-a) 30%,#fff)!important}
+    [data-login-card="frost"] .login-panel .rounded-full span{color:#1b1236!important}
+    /* Neon Outline */
+    [data-login-card="neon"] .login-panel{border-radius:14px!important;background:#05030a!important;border:2px solid var(--lg-b)!important;box-shadow:0 0 0 1px color-mix(in srgb,var(--lg-b) 40%,transparent),0 0 28px color-mix(in srgb,var(--lg-b) 55%,transparent),inset 0 0 22px color-mix(in srgb,var(--lg-b) 18%,transparent)!important;backdrop-filter:none!important}
+    [data-login-card="neon"] .lg-inner{background:transparent!important;border-color:transparent!important}
+    [data-login-card="neon"] .lg-field{border-radius:8px!important;border-color:color-mix(in srgb,var(--lg-b) 45%,transparent)!important}
+    [data-login-card="neon"] .lg-submit{border-radius:8px!important;box-shadow:0 0 18px var(--lg-b)!important}
+    /* Clean Minimal */
+    [data-login-card="minimal"] .login-panel{border-radius:16px!important;background:var(--lg-s)!important;border:1px solid rgba(255,255,255,.1)!important;box-shadow:0 14px 40px -18px rgba(0,0,0,.7)!important;backdrop-filter:none!important}
+    [data-login-card="minimal"] .login-panel>div.pointer-events-none{display:none}
+    [data-login-card="minimal"] .lg-inner{background:transparent!important;border-color:transparent!important}
+    [data-login-card="minimal"] .lg-submit{box-shadow:none!important;background:var(--lg-a)!important;border-radius:10px!important}
+    [data-login-card="minimal"] .lg-field{border-radius:10px!important}
+    /* Aurora Border (animated rotating colour edge) */
+    @property --lgAng{syntax:"<angle>";initial-value:0deg;inherits:false}
+    [data-login-card="aurora"] .login-panel{border:2px solid transparent!important;border-radius:24px!important;background:linear-gradient(var(--lg-s),var(--lg-s)) padding-box,conic-gradient(from var(--lgAng),var(--lg-a),var(--lg-b),#38bdf8,var(--lg-a)) border-box!important;animation:lgSpin 6s linear infinite;box-shadow:0 0 40px -10px var(--lg-b)!important}
+    [data-login-card="aurora"] .lg-inner{background:transparent!important;border-color:transparent!important}
+    @keyframes lgSpin{to{--lgAng:360deg}}
+    @media (prefers-reduced-motion:reduce){[data-login-card="aurora"] .login-panel{animation:none}}
     @keyframes formReveal {
       from { opacity: 0; transform: translateY(-4px); }
       to { opacity: 1; transform: translateY(0); }

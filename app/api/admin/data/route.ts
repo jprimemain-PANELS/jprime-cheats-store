@@ -6,7 +6,7 @@ import { allProducts } from "@/lib/products";
 import { countLocalStock, fetchAllUnusedStock } from "@/lib/stock";
 import { stockCountKey } from "@/lib/delivery";
 import { cleanProductText } from "@/lib/text-clean";
-import { deleteUser } from "@/lib/user-admin";
+import { adminResetPassword, deleteUser, resetRequests } from "@/lib/user-admin";
 import { creditWallet, debitWallet, getBalance, logWalletTransaction } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
@@ -223,6 +223,18 @@ export async function POST(request: NextRequest) {
       const r = await deleteUser(tenantId, userId, { id: auth.user.id, username: auth.user.username });
       if (!r.ok) return fail(r.error, r.status);
       return NextResponse.json({ success: true }, { headers: NO_STORE });
+    }
+
+    if (action === "reset_password") {
+      const userId = String(body.userId ?? "").trim();
+      if (!userId) return fail("Missing user ID. Refresh the admin page and try again.");
+      const r = await adminResetPassword(tenantId, userId, { id: auth.user.id, username: auth.user.username });
+      if (!r.ok) return fail(r.error, r.status);
+      return NextResponse.json({ success: true, username: r.username, password: r.password }, { headers: NO_STORE });
+    }
+
+    if (action === "password_requests") {
+      return NextResponse.json({ success: true, users: await resetRequests(tenantId) }, { headers: NO_STORE });
     }
 
     if (action === "update_user") {

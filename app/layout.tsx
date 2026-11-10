@@ -25,7 +25,7 @@ async function loadBrand() {
           tagline: pb.theme?.tagline ?? "", announcement: pb.theme?.announcement ?? "", footerText: pb.theme?.footerText ?? "",
           layout: pb.theme ? {
             heroLayout: pb.theme.heroLayout, heroTitle: pb.theme.heroTitle, heroSubtitle: pb.theme.heroSubtitle,
-            heroImageUrl: pb.theme.heroImageUrl, loginCharacterUrl: pb.theme.loginCharacterUrl, loginPetUrl: pb.theme.loginPetUrl, ctaText: pb.theme.ctaText, columns: pb.theme.columns, showStats: pb.theme.showStats,
+            heroImageUrl: pb.theme.heroImageUrl, loginCharacterUrl: pb.theme.loginCharacterUrl, loginPetUrl: pb.theme.loginPetUrl, loginCard: pb.theme.loginCard, loginBg: pb.theme.loginBg, ctaText: pb.theme.ctaText, columns: pb.theme.columns, showStats: pb.theme.showStats,
           } : DEFAULT_LAYOUT,
         };
     return { tenant, brand, css: pb.theme ? buildThemeCss(pb.theme) : "" };

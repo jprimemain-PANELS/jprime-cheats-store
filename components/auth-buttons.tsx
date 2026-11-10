@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
+import { ChangePasswordButton } from "@/components/change-password";
 
 export function AuthButtons() {
   const router = useRouter();
@@ -66,6 +67,8 @@ export function AuthButtons() {
           <span className="hidden sm:inline">Launch Your Own Website</span>
         </button>
       )}
+
+      <ChangePasswordButton />
 
       <button
         onClick={logout}

@@ -5,6 +5,7 @@ import {
   approveApplication, createStoreDirect, ownerOverview, rejectApplication, setSharedStockAllowed, setStoreStatus,
   setStorePayer,
 } from "@/lib/tenant-admin";
+import { ownerResetStoreAdmin } from "@/lib/user-admin";
 import { activateCustomDomain, ownerDomainInfo, ownerRemoveCustomDomain, setCustomDomainAllowed } from "@/lib/domains";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,10 @@ export async function POST(request: NextRequest) {
     case "set_payer":
       if (!isUuid(id)) return fail("Invalid id.");
       result = await setStorePayer(id, String(b?.username ?? ""), actor);
+      break;
+    case "reset_store_admin":
+      if (!isUuid(id)) return fail("Invalid id.");
+      result = await ownerResetStoreAdmin(id, actor);
       break;
     case "custom_allowed":
       if (!isUuid(id)) return fail("Invalid id.");

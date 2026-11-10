@@ -7,7 +7,7 @@ type Theme = {
   preset?: string; primary: string; accent: string; background: string; surface: string; foreground: string;
   font: string; logoUrl: string; tagline: string; announcement: string; footerText: string;
   radius: string; cardStyle: string; backdrop: string; backdropImageUrl: string; heroLayout: string; heroTitle: string;
-  heroSubtitle: string; heroImageUrl: string; loginCharacterUrl: string; loginPetUrl: string; ctaText: string; columns: number; fontScale: string; buttonStyle: string;
+  heroSubtitle: string; heroImageUrl: string; loginCharacterUrl: string; loginPetUrl: string; loginCard: string; loginBg: string; ctaText: string; columns: number; fontScale: string; buttonStyle: string;
   showStats: boolean; motion: boolean;
 };
 const CHOICES: { key: keyof Theme; label: string; options: [string | number, string][] }[] = [
@@ -16,6 +16,8 @@ const CHOICES: { key: keyof Theme; label: string; options: [string | number, str
   { key: "radius", label: "Corners", options: [["sharp", "Square"], ["soft", "Slightly round"], ["round", "Round"], ["pill", "Very round"]] },
   { key: "columns", label: "Products per row (large screens)", options: [[2, "2"], [3, "3"], [4, "4"]] },
   { key: "backdrop", label: "Page background", options: [["solid", "Plain"], ["gradient", "Gradient"], ["aurora", "Glow"], ["grid", "Grid lines"], ["image", "Picture"]] },
+  { key: "loginCard", label: "Login page card design", options: [["original", "Original"], ["glass", "Glass Glow"], ["frost", "Frost Light"], ["neon", "Neon Outline"], ["minimal", "Clean Minimal"], ["aurora", "Aurora Border"]] },
+  { key: "loginBg", label: "Login page background animation", options: [["original", "Original"], ["aurora", "Aurora Glow"], ["particles", "Particle Network"], ["beams", "Grid Beams"], ["waves", "Silk Waves"], ["stars", "Star Warp"]] },
   { key: "buttonStyle", label: "Buttons", options: [["gradient", "Two-color gradient"], ["solid", "Single color"]] },
   { key: "fontScale", label: "Text size", options: [["small", "Small"], ["normal", "Normal"], ["large", "Large"]] },
 ];

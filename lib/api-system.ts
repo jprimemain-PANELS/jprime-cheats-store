@@ -1,6 +1,13 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { OWNER_TENANT_ID, tdb } from "@/lib/tenant-db";
-import { resolveCatalogSupplier } from "@/lib/delivery";
+import { resolveCatalogSupplier, inferSupplier } from "@/lib/delivery";
+
+/** Explicit supplier, or (old data) the one the configuration implies. Only API suppliers count. */
+function apiSupplierOf(tier: any): "SELLER1" | "SELLER2" | null {
+  const r = resolveCatalogSupplier(tier);
+  const s = r.ok ? r.supplier : inferSupplier(tier);
+  return s === "SELLER1" || s === "SELLER2" ? s : null;
+}
 import { cleanProductText } from "@/lib/text-clean";
 import type { Tenant } from "@/lib/tenant";
 
@@ -176,7 +183,7 @@ export async function jprimeAccess(tenantId: string): Promise<{ allowed: boolean
   const row: any = r.data;
   if (r.error || !row || row.kind !== "coadmin") return { allowed: false, payer: null };
   const payer = String(row.payer_username ?? "").trim();
-  return { allowed: row.shared_stock_allowed === true && !!payer, payer: payer || null };
+  return { allowed: row.status === "active" && !!payer, payer: payer || null };
 }
 
 const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return Number.isFinite(n) ? n : 0; };
@@ -192,11 +199,11 @@ export async function jprimeSource(productId: unknown, duration: unknown) {
   if (data.status === "MAINTENANCE") return { ok: false as const };
   const tier = (Array.isArray(data.prices) ? data.prices : []).find((t: any) => String(t?.duration ?? "").trim() === dur);
   if (!tier) return { ok: false as const };
-  const sup = resolveCatalogSupplier(tier);
-  if (!sup.ok || (sup.supplier !== "SELLER1" && sup.supplier !== "SELLER2")) return { ok: false as const };
+  const sup = apiSupplierOf(tier);
+  if (!sup) return { ok: false as const };
   const cost = num(tier.resellerPrice) || num(tier.priceINR);
   if (!(cost > 0)) return { ok: false as const };
-  return { ok: true as const, cost, supplier: sup.supplier, tier, productName: String(row.name ?? data.name ?? pid), productId: pid, duration: dur };
+  return { ok: true as const, cost, supplier: sup, tier: { ...tier, supplier: sup }, productName: String(row.name ?? data.name ?? pid), productId: pid, duration: dur };
 }
 
 /** What a co-admin may pick: names, durations and THEIR cost. Never supplier ids. */
@@ -209,9 +216,9 @@ export async function jprimeCatalog() {
     if (data.status === "MAINTENANCE") continue;
     const tiers: { duration: string; cost: number }[] = [];
     for (const t of Array.isArray(data.prices) ? data.prices : []) {
-      const s = resolveCatalogSupplier(t);
+      const s = apiSupplierOf(t);
       const cost = num(t?.resellerPrice) || num(t?.priceINR);
-      if (s.ok && (s.supplier === "SELLER1" || s.supplier === "SELLER2") && cost > 0 && String(t?.duration ?? "").trim()) tiers.push({ duration: String(t.duration).trim(), cost });
+      if (s && cost > 0 && String(t?.duration ?? "").trim()) tiers.push({ duration: String(t.duration).trim(), cost });
     }
     if (tiers.length) out.push({ productId: String(row.product_id), name: String(row.name ?? data.name ?? row.product_id), category: data.category ?? "mobile", tiers });
   }
@@ -243,8 +250,6 @@ export async function guardStoreTiers(tenantId: string, product: any): Promise<{
       if (!src.ok) return { ok: false, error: `"${t.duration}": the chosen JPRIME product or duration is not available.` };
       if (jprimeSourceId && jprimeSourceId !== src.productId) return { ok: false, error: "One product can use only one JPRIME product. Create another product for a different one." };
       jprimeSourceId = src.productId;
-      const sell = num(t.priceINR); const resell = String(t.resellerPrice ?? "").trim() ? num(t.resellerPrice) : sell;
-      if (sell < src.cost || resell < src.cost) return { ok: false, error: `"${t.duration}": your price must be at least ₹${src.cost} (your cost). Raise the price.` };
       t.supplier = "JPRIME"; t.jprimeProductId = src.productId; t.jprimeDuration = src.duration;
       for (const k of ["seller1Pid", "seller1Duration", "seller2VariantId", "sellerDuration"]) delete t[k];
       continue;

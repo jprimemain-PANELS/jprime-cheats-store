@@ -159,6 +159,15 @@ export default function CoAdminManager() {
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2">
                       <span>Wallet that pays for this store (plan + JPRIME API stock): <b className="font-mono">{s.payer || "not linked"}</b></span>
+                      <button disabled={!!busy} onClick={async () => {
+                        if (!window.confirm(`Create a NEW password for the admin of "${s.brandName}"? Their old password stops working.`)) return;
+                        try {
+                          const r = await fetch("/api/admin/tenants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reset_store_admin", id: s.id }) });
+                          const j = await r.json();
+                          if (!r.ok || !j.success) setMsg({ ok: false, text: j.error || "Could not reset." });
+                          else window.prompt(`New password for store admin @${j.username} (copy it now, shown only once):`, j.password);
+                        } catch { setMsg({ ok: false, text: "Network error." }); }
+                      }} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50">Reset admin password</button>
                       <button disabled={!!busy} onClick={() => { const u = window.prompt("Reseller username on the MAIN store whose wallet pays for this store:", s.payer || ""); if (u) act({ action: "set_payer", id: s.id, username: u }, s.id); }} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50">Set wallet user</button>
                     </div>
                     {dInfo.available && (

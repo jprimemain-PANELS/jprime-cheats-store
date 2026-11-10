@@ -511,6 +511,15 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
     });
   }
 
+  function patchTier(index: number, patch: Partial<PriceTier>, productPatch?: Record<string, any>) {
+    setSelected((prev) => {
+      if (!prev) return prev;
+      const prices = [...prev.prices];
+      prices[index] = { ...prices[index], ...patch };
+      return { ...prev, ...(productPatch ?? {}), prices };
+    });
+  }
+
   function addDuration() {
     if (!selected) return;
 
@@ -907,7 +916,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                               deliveryModeForTier(t, undefined)
                             );
                             const api = modes.filter((m) => m === "API").length;
-                            if (api === modes.length) return "API (bb team admin / whitex seller hub)";
+                            if (api === modes.length) return isOwner ? "API (bb team admin / whitex seller hub)" : "API";
                             if (api === 0) return "LOCAL STOCK";
                             return "MIXED (set per duration below)";
                           })()}
@@ -983,7 +992,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                   placeholder="https://..."
                 />
                 {!isOwner && (
-                  <p className="mt-1 text-[11px] text-zinc-500">Leave the video and features blank to use the JPRIME video and features for JPRIME API stock products.</p>
+                  <p className="mt-1 text-[11px] text-zinc-500">Leave video and features blank to use the JPRIME video and features.</p>
                 )}
 
               </section>
@@ -1240,9 +1249,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                                   disabled={!!locked}
                                   onChange={(e) => {
                                     const c = storeApi.catalog.find((x) => x.productId === e.target.value);
-                                    updateTier(index, "jprimeProductId", e.target.value);
-                                    updateTier(index, "jprimeDuration", "");
-                                    if (c && selected) setSelected((p) => (p ? { ...p, id: c.productId, name: p.name || c.name } : p));
+                                    patchTier(index, { jprimeProductId: e.target.value, jprimeDuration: "" } as any, c ? { id: c.productId, name: selected.name || c.name } : undefined);
                                   }}
                                   className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
                                 >
@@ -1257,7 +1264,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                                   {(src?.tiers ?? []).map((t) => <option key={t.duration} value={t.duration}>{t.duration} - cost ₹{t.cost}</option>)}
                                 </select>
                               </div>
-                              {cost ? <p className="md:col-span-2 text-xs text-amber-300">Your selling price must be at least ₹{cost}. The ₹{cost} is taken from your wallet for each sale.</p> : null}
+                              {cost ? <p className="md:col-span-2 text-xs text-amber-300">Your cost is ₹{cost}. It is taken from your wallet automatically for each sale. You choose your own selling price.</p> : null}
                             </div>
                           );
                         })()}

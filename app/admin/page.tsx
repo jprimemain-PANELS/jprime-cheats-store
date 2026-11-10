@@ -1,5 +1,6 @@
 "use client";
 
+import { ChangePasswordButton } from "@/components/change-password";
 import { useEffect, useState, useMemo } from "react";
 import type { ReactNode } from "react";
 import {
@@ -614,6 +615,24 @@ export default function AdminPage() {
     setIsManageModalOpen(true);
   };
 
+  const [resetAsked, setResetAsked] = useState<string[]>([]);
+  useEffect(() => {
+    if (activeTab !== "users") return;
+    adminPost({ action: "password_requests" }).then((j: any) => setResetAsked(Array.isArray(j?.users) ? j.users : [])).catch(() => {});
+  }, [activeTab]);
+
+  const handleResetPassword = async (u: ManagedUser) => {
+    if (u.id == null) { alert("This user record has no ID. Refresh the admin page and try again."); return; }
+    if (!window.confirm(`Reset the password of @${u.username}?\n\nA new password is created and shown to you once. Their old password stops working.`)) return;
+    try {
+      const j: any = await adminPost({ action: "reset_password", userId: String(u.id) });
+      window.prompt(`New password for @${u.username} (copy it now, it is shown only once). Send it to the user:`, j.password);
+      setResetAsked((a) => a.filter((x) => x !== u.username));
+    } catch (err: any) {
+      alert(err?.message || "Could not reset this password.");
+    }
+  };
+
   const handleDeleteUser = async (u: ManagedUser) => {
     if (u.id == null) { alert("This user record has no ID. Refresh the admin page and try again."); return; }
     const ok = window.confirm(
@@ -708,6 +727,7 @@ export default function AdminPage() {
                 <Activity className="h-3.5 w-3.5" />
                 <span className="font-medium">System Live</span>
               </div>
+              <ChangePasswordButton label className="flex items-center gap-2 bg-slate-800 hover:bg-indigo-600/20 border border-slate-700 text-slate-300 text-xs font-semibold px-3.5 py-2 rounded-xl transition-all cursor-pointer [&_svg]:h-3.5 [&_svg]:w-3.5 [&_span]:text-xs" />
               <button
                 onClick={handleExitAdminConsole}
                 className="flex items-center gap-2 bg-slate-800 hover:bg-rose-600/20 hover:text-rose-400 border border-slate-700 hover:border-rose-500/30 text-slate-300 text-xs font-semibold px-3.5 py-2 rounded-xl transition-all cursor-pointer"
@@ -1314,7 +1334,7 @@ export default function AdminPage() {
                   ) : (
                     filteredUsers.map((u, index) => (
                       <tr key={u.id ? `${u.id}-${index}` : `${u.username}-${index}`} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3.5 px-4 font-semibold text-white">@{u.username}</td>
+                        <td className="py-3.5 px-4 font-semibold text-white">@{u.username}{resetAsked.includes(u.username) && <span className="ml-2 rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">forgot password</span>}</td>
                         <td className="py-3.5 px-4 text-slate-400">{u.mobile_number || u.phone || "—"}</td>
                         <td className="py-3.5 px-4 text-slate-400">{u.email}</td>
                         <td className="py-3.5 px-4">
@@ -1349,6 +1369,14 @@ export default function AdminPage() {
                               <Settings className="h-3.5 w-3.5" />
                               Manage
                             </button>
+                            {u.role !== "admin" && u.role !== "coadmin" && (
+                              <button
+                                onClick={() => handleResetPassword(u)}
+                                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-amber-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                              >
+                                Reset password
+                              </button>
+                            )}
                             {u.role !== "admin" && u.role !== "coadmin" && (
                               <button
                                 onClick={() => handleDeleteUser(u)}
