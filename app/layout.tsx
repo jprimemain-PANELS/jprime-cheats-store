@@ -6,6 +6,9 @@ import { SessionTimeout } from '@/components/session-timeout'
 import { BrandProvider } from '@/components/brand-provider'
 import { OWNER_BRAND, DEFAULT_LAYOUT, type Brand } from '@/lib/brand'
 import { StoreNotFound } from '@/components/store-not-found'
+import { StoreMoved } from '@/components/store-moved'
+import { movedTo } from '@/lib/domains'
+import { headers } from 'next/headers'
 import { currentTenant } from '@/lib/tenant'
 import { publicBrand } from '@/lib/tenant-admin'
 import { buildThemeCss } from '@/lib/theme'
@@ -63,6 +66,17 @@ export default async function RootLayout({
         <body suppressHydrationWarning><StoreNotFound /></body>
       </html>
     );
+  }
+  if (loaded.tenant.kind === "coadmin") {
+    const h = await headers();
+    const to = await movedTo(loaded.tenant.id, h.get("host") || h.get("x-forwarded-host") || "");
+    if (to) {
+      return (
+        <html lang="en" className="dark bg-background" suppressHydrationWarning>
+          <body suppressHydrationWarning><StoreMoved name={loaded.brand.name} to={to} /></body>
+        </html>
+      );
+    }
   }
   return (
     <html lang="en" className="dark bg-background" suppressHydrationWarning>

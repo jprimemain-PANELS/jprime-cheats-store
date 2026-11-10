@@ -1,6 +1,16 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { OWNER_TENANT_ID, tdb } from "@/lib/tenant-db";
-import { resolveCatalogSupplier, inferSupplier } from "@/lib/delivery";
+import { resolveCatalogSupplier, inferSupplier, deliveryModeForTier } from "@/lib/delivery";
+
+/** Where an OWNER tier gets its keys: one of the two sellers, or the owner's local key stock. */
+function sourceOf(tier: any, data: any): "SELLER1" | "SELLER2" | "LOCAL" | null {
+  if (deliveryModeForTier(tier, data?.fulfillmentType) === "LOCAL") {
+    const r = resolveCatalogSupplier(tier);
+    if (r.ok && r.supplier !== "LOCAL") return r.supplier === "SELLER1" || r.supplier === "SELLER2" ? r.supplier : null;
+    return "LOCAL";
+  }
+  return apiSupplierOf(tier);
+}
 
 /** Explicit supplier, or (old data) the one the configuration implies. Only API suppliers count. */
 function apiSupplierOf(tier: any): "SELLER1" | "SELLER2" | null {
@@ -199,7 +209,7 @@ export async function jprimeSource(productId: unknown, duration: unknown) {
   if (data.status === "MAINTENANCE") return { ok: false as const };
   const tier = (Array.isArray(data.prices) ? data.prices : []).find((t: any) => String(t?.duration ?? "").trim() === dur);
   if (!tier) return { ok: false as const };
-  const sup = apiSupplierOf(tier);
+  const sup = sourceOf(tier, data);
   if (!sup) return { ok: false as const };
   const cost = num(tier.resellerPrice) || num(tier.priceINR);
   if (!(cost > 0)) return { ok: false as const };
@@ -214,11 +224,11 @@ export async function jprimeCatalog() {
   for (const row of (r.data as any[]) ?? []) {
     const data = row.data && typeof row.data === "object" ? row.data : {};
     if (data.status === "MAINTENANCE") continue;
-    const tiers: { duration: string; cost: number }[] = [];
+    const tiers: { duration: string; cost: number; price: number }[] = [];
     for (const t of Array.isArray(data.prices) ? data.prices : []) {
-      const s = apiSupplierOf(t);
+      const s = sourceOf(t, data);
       const cost = num(t?.resellerPrice) || num(t?.priceINR);
-      if (s && cost > 0 && String(t?.duration ?? "").trim()) tiers.push({ duration: String(t.duration).trim(), cost });
+      if (s && cost > 0 && String(t?.duration ?? "").trim()) tiers.push({ duration: String(t.duration).trim(), cost, price: num(t?.priceINR) || cost });
     }
     if (tiers.length) out.push({ productId: String(row.product_id), name: String(row.name ?? data.name ?? row.product_id), category: data.category ?? "mobile", tiers });
   }

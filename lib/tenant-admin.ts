@@ -131,7 +131,7 @@ export async function ownerOverview() {
       id: a.id, brandName: a.brand_name, slug: a.slug, telegram: a.telegram_username, inventoryMode: a.inventory_mode,
       email: a.contact_email, phone: a.contact_phone, coadminUsername: a.coadmin_username, createdAt: a.created_at,
     })),
-    stores: (tenants.data as any[]).map((t) => {
+    stores: (tenants.data as any[]).filter((t) => !String(t.slug).startsWith("deleted-")).map((t) => {
       const s = st.get(t.id) ?? {};
       return {
         id: t.id, slug: t.slug, brandName: t.brand_name, status: t.status, inventoryMode: t.inventory_mode,

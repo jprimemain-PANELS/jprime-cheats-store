@@ -159,6 +159,10 @@ export default function CoAdminManager() {
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2">
                       <span>Wallet that pays for this store (plan + JPRIME API stock): <b className="font-mono">{s.payer || "not linked"}</b></span>
+                      <button disabled={!!busy} onClick={() => {
+                        const c = window.prompt(`DELETE the store "${s.brandName}"?\n\nIts website address stops working immediately. Customer and money history is kept.\n\nType the store name to confirm: ${s.slug}`);
+                        if (c) act({ action: "delete_store", id: s.id, confirm: c }, s.id);
+                      }} className="px-3 py-1.5 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 cursor-pointer disabled:opacity-50">Delete store</button>
                       <button disabled={!!busy} onClick={async () => {
                         if (!window.confirm(`Create a NEW password for the admin of "${s.brandName}"? Their old password stops working.`)) return;
                         try {

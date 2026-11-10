@@ -235,3 +235,48 @@ export async function ownerDomainInfo() {
   for (const r of (d.data as any[]) ?? []) custom[r.tenant_id] = { host: r.host, live: r.verified === true, dnsOk: r.dns_verified === true, note: r.last_check_note ?? null };
   return { available: true as const, allowed, custom, vercelApi: vercelConfigured() };
 }
+
+/**
+ * When a store upgraded to its OWN domain (live), its old free address only shows a "we moved" page.
+ * Returns the new host when `host` is NOT the custom host itself, else null. Tolerant: before 004 -> null.
+ */
+const movedCache = new Map<string, { at: number; to: string | null }>();
+export async function movedTo(tenantId: string, host: string): Promise<string | null> {
+  const h = normalizeHost(host);
+  const key = `${tenantId}|${h}`;
+  const hit = movedCache.get(key);
+  if (hit && Date.now() - hit.at < 30_000) return hit.to;
+  let to: string | null = null;
+  try {
+    const r = await supabaseAdmin.from("tenant_domains").select("host").eq("tenant_id", tenantId).eq("kind", "custom").eq("verified", true).limit(1);
+    const row: any = (r.data as any[])?.[0];
+    if (!r.error && row?.host && normalizeHost(row.host) !== h) to = String(row.host);
+  } catch { to = null; }
+  movedCache.set(key, { at: Date.now(), to });
+  return to;
+}
+
+/**
+ * Owner: delete a co-admin store. Its addresses are removed (the free address and any own domain stop working,
+ * and the name becomes free again). Money history and data are kept for accounting; the store is suspended and
+ * hidden from the list. The owner store can never be deleted. Reversible only by editing the database.
+ */
+export async function deleteStore(tenantId: string, confirmSlug: string, actor: { id: string | number | null; username: string }) {
+  if (tenantId === OWNER_TENANT_ID) return { ok: false as const, reason: "The main store cannot be deleted." };
+  const t = await supabaseAdmin.from("tenants").select("id, slug, kind, brand_name").eq("id", tenantId).maybeSingle();
+  const row: any = t.data;
+  if (t.error || !row || row.kind !== "coadmin") return { ok: false as const, reason: "Store not found." };
+  if (String(row.slug).startsWith("deleted-")) return { ok: false as const, reason: "Already deleted." };
+  if (String(confirmSlug ?? "").trim().toLowerCase() !== String(row.slug).toLowerCase()) return { ok: false as const, reason: "Type the store name exactly to confirm." };
+  const doms = await supabaseAdmin.from("tenant_domains").select("host, kind").eq("tenant_id", tenantId);
+  for (const d of ((doms.data as any[]) ?? [])) {
+    if (d.kind === "custom") await ownerRemoveCustomDomain(String(d.host), actor).catch(() => null);
+  }
+  const del = await supabaseAdmin.from("tenant_domains").delete().eq("tenant_id", tenantId);
+  if (del.error) return { ok: false as const, reason: "Could not remove the store addresses." };
+  const up = await supabaseAdmin.from("tenants").update({ status: "suspended", slug: `deleted-${String(row.id).slice(0, 8)}`, updated_at: new Date().toISOString() }).eq("id", tenantId);
+  if (up.error) return { ok: false as const, reason: "Addresses removed but the store could not be marked deleted. Suspend it manually." };
+  clearTenantCache();
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: "store.deleted", target: String(row.slug) });
+  return { ok: true as const };
+}

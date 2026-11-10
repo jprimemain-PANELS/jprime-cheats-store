@@ -35,6 +35,7 @@ import {
   Bell,
   Palette,
   Plug,
+  BookOpen,
   Globe,
   Store,
 } from "lucide-react";
@@ -51,6 +52,7 @@ import TelegramManager from "@/components/admin/TelegramManager";
 import CoAdminManager from "@/components/admin/CoAdminManager";
 import BrandingManager from "@/components/admin/BrandingManager";
 import DomainManager from "@/components/admin/DomainManager";
+import SetupGuide from "@/components/admin/SetupGuide";
 import SubscriptionManager from "@/components/admin/SubscriptionManager";
 import ApiSystemManager from "@/components/admin/ApiSystemManager";
 import StoreTelegramManager from "@/components/admin/StoreTelegramManager";
@@ -72,6 +74,7 @@ type Tab =
   | "api"
   | "subscription"
   | "domain"
+  | "guide"
   | "overview"
   | "inventory"
   | "pricing"
@@ -701,6 +704,7 @@ export default function AdminPage() {
       : []),
     { id: "branding", label: "Branding", icon: Palette },
     { id: "domain", label: "Domain", icon: Globe },
+    { id: "guide", label: "Setup Guide", icon: BookOpen },
     ...(!isOwnerAdmin ? ([{ id: "subscription", label: "Subscription", icon: CreditCard }] as { id: Tab; label: string; icon: any; count?: number }[]) : []),
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
@@ -1230,6 +1234,7 @@ export default function AdminPage() {
         {/* BRANDING (each store edits only its own) */}
         {activeTab === "branding" && <BrandingManager />}
         {activeTab === "domain" && <DomainManager />}
+        {activeTab === "guide" && <SetupGuide />}
         {activeTab === "subscription" && !isOwnerAdmin && <SubscriptionManager />}
         {activeTab === "api" && <ApiSystemManager />}
 

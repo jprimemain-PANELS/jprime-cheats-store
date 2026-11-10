@@ -6,7 +6,7 @@ import {
   setStorePayer,
 } from "@/lib/tenant-admin";
 import { ownerResetStoreAdmin } from "@/lib/user-admin";
-import { activateCustomDomain, ownerDomainInfo, ownerRemoveCustomDomain, setCustomDomainAllowed } from "@/lib/domains";
+import { deleteStore, activateCustomDomain, ownerDomainInfo, ownerRemoveCustomDomain, setCustomDomainAllowed } from "@/lib/domains";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -54,6 +54,10 @@ export async function POST(request: NextRequest) {
     case "reset_store_admin":
       if (!isUuid(id)) return fail("Invalid id.");
       result = await ownerResetStoreAdmin(id, actor);
+      break;
+    case "delete_store":
+      if (!isUuid(id)) return fail("Invalid id.");
+      result = await deleteStore(id, String(b?.confirm ?? ""), actor);
       break;
     case "custom_allowed":
       if (!isUuid(id)) return fail("Invalid id.");

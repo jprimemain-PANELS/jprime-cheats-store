@@ -105,6 +105,20 @@ describe("JPRIME API stock (co-admin sells the owner's API product)", () => {
     expect(await release("Loop", "1 Day", OWNER_TENANT_ID)).toMatchObject({ success: false });
     expect(calls).toHaveLength(0);
   });
+  it("owner LOCAL-stock products can be sold through JPRIME too: key claimed from OWNER stock, cost taken; none left = refund", async () => {
+    tables.wallets = []; seed("wallets", [{ tenant_id: OWNER_TENANT_ID, username: "rajreseller", balance: 1000 }]);
+    tables.stock_keys = [];
+    seed("stock_keys", [{ tenant_id: OWNER_TENANT_ID, product_name: "PUBG X", duration: "30 days", key_code: "LOCAL-KEY-1", is_used: false }]);
+    const b = tables.products_catalog.find((x) => x.tenant_id === TENANT_B) as any;
+    b.data.prices.push(bTier({ duration: "30 Days", jprimeDuration: "30 days" }));
+    const ok = await release("Raj PUBG", "30 Days");
+    expect(ok).toMatchObject({ success: true, key: "LOCAL-KEY-1" });
+    expect(wallet("rajreseller")).toBe(750);
+    expect(calls).toHaveLength(0); // no seller API involved
+    const none = await release("Raj PUBG", "30 Days");
+    expect(none.success).toBe(false);
+    expect(wallet("rajreseller")).toBe(750); // refunded
+  });
 });
 
 describe("co-admin's OWN seller key", () => {
@@ -130,4 +144,5 @@ describe("co-admin's OWN seller key", () => {
     expect(await release("Own Product")).toMatchObject({ success: false });
     expect(calls).toHaveLength(0);
   });
+
 });

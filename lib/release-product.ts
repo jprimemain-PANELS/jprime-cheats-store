@@ -779,9 +779,15 @@ async function deliverFromJprime(tenantId: string, price: CatalogPrice, storePro
 
   let delivered: { success: boolean; key?: string; error?: string };
   try {
-    delivered = src.supplier === "SELLER1"
-      ? await purchaseFromSeller1(src.tier as CatalogPrice, src.productName, src.duration)
-      : await purchaseFromSeller2(src.tier as CatalogPrice, src.productName, src.duration);
+    if (src.supplier === "LOCAL") {
+      // the owner's own key stock: claimed atomically by the same function the owner store uses
+      const got: any = await deliverFromLocalStock(OWNER_TENANT_ID, src.productName, src.duration);
+      delivered = got?.success && got.key ? { success: true, key: got.key } : { success: false };
+    } else {
+      delivered = src.supplier === "SELLER1"
+        ? await purchaseFromSeller1(src.tier as CatalogPrice, src.productName, src.duration)
+        : await purchaseFromSeller2(src.tier as CatalogPrice, src.productName, src.duration);
+    }
   } catch {
     delivered = { success: false };
   }

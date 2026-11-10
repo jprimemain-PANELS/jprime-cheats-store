@@ -80,7 +80,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
   // Built-in product list, from an admin-only endpoint (used by "Import Existing").
   const [allProducts, setAllProducts] = useState<any[]>([]);
 
-  const [storeApi, setStoreApi] = useState<{ jprimeAllowed: boolean; sellers: { seller: string; name: string; keyReady: boolean }[]; catalog: { productId: string; name: string; tiers: { duration: string; cost: number }[] }[] }>({ jprimeAllowed: false, sellers: [], catalog: [] });
+  const [storeApi, setStoreApi] = useState<{ jprimeAllowed: boolean; sellers: { seller: string; name: string; keyReady: boolean }[]; catalog: { productId: string; name: string; tiers: { duration: string; cost: number; price: number }[] }[] }>({ jprimeAllowed: false, sellers: [], catalog: [] });
   useEffect(() => {
     if (isOwner) return;
     fetch("/api/admin/api-system?for=products", { cache: "no-store" }).then((r) => r.json()).then((j) => { if (j?.success) setStoreApi(j); }).catch(() => {});
@@ -520,6 +520,41 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
     });
   }
 
+  const commonSupplier = (() => {
+    const list = (selected?.prices ?? []).map((t) => normalizeSupplier(t.supplier) ?? (t.supplier === "JPRIME" ? "JPRIME" : ""));
+    return list.length && list.every((x) => x === list[0]) ? String(list[0] || "") : "";
+  })();
+
+  function setSource(v: string) {
+    setSelected((prev) => {
+      if (!prev) return prev;
+      const prices = prev.prices.map((t) => ({ ...t, supplier: v as any, ...(v === "JPRIME" ? {} : { jprimeProductId: "", jprimeDuration: "" }) }));
+      return { ...prev, prices: prices.length ? prices : [{ duration: "", priceINR: "", resellerPrice: "", supplier: v as any, seller1Pid: "", seller1Duration: "", seller2VariantId: "" } as any] };
+    });
+  }
+
+  /** Co-admin picks one JPRIME product: its durations arrive ready, the name is filled (still editable). */
+  function pickJprimeProduct(productId: string) {
+    const c = storeApi.catalog.find((x) => x.productId === productId);
+    setSelected((prev) => {
+      if (!prev) return prev;
+      if (!c) return { ...prev, prices: prev.prices.map((t) => ({ ...t, jprimeProductId: "", jprimeDuration: "" })) };
+      const old = storeApi.catalog.find((x) => x.productId === (prev.prices.find((t) => t.jprimeProductId)?.jprimeProductId || ""));
+      const keepName = prev.name && (!old || prev.name !== old.name);
+      const prices = c.tiers.map((t) => {
+        const had = prev.prices.find((p) => p.jprimeProductId === c.productId && p.jprimeDuration === t.duration);
+        return {
+          duration: t.duration,
+          priceINR: had?.priceINR || String(t.price || t.cost),
+          resellerPrice: had?.resellerPrice || "",
+          supplier: "JPRIME", jprimeProductId: c.productId, jprimeDuration: t.duration,
+          seller1Pid: "", seller1Duration: "", seller2VariantId: "",
+        } as any;
+      });
+      return { ...prev, id: c.productId, name: keepName ? prev.name : c.name, prices };
+    });
+  }
+
   function addDuration() {
     if (!selected) return;
 
@@ -903,6 +938,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                     </select>
                   </div>
 
+                  {isOwner ? (
                   <div>
                     <label className="text-xs text-zinc-400">
                       Delivery (from durations)
@@ -922,6 +958,25 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                           })()}
                     </div>
                   </div>
+                  ) : (
+                  <div>
+                    <label className="text-xs text-zinc-400">Delivery (from durations)</label>
+                    <select
+                      value={commonSupplier}
+                      onChange={(e) => setSource(e.target.value)}
+                      className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
+                    >
+                      <option value="" disabled>{commonSupplier === "" ? "Choose where keys come from..." : ""}</option>
+                      <option value="LOCAL">Local Stock (keys I add myself)</option>
+                      {storeApi.sellers.filter((x) => x.keyReady).map((x) => (
+                        <option key={x.seller} value={x.seller}>{x.name} (my own API)</option>
+                      ))}
+                      {storeApi.jprimeAllowed
+                        ? <option value="JPRIME">JPRIME API stock (use platform products)</option>
+                        : <option value="JPRIME" disabled>JPRIME API stock (connect your wallet in Subscription first)</option>}
+                    </select>
+                  </div>
+                  )}
 
                   <div>
                     <label className="text-xs text-zinc-400">
@@ -971,6 +1026,21 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                 </div>
 
               </section>
+
+              {!isOwner && commonSupplier === "JPRIME" && (
+                <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 space-y-3">
+                  <h4 className="font-bold text-lg">JPRIME products</h4>
+                  <p className="text-xs text-zinc-400">Choose a JPRIME product. Its durations appear below with your cost. Then set your own selling prices. The product name is filled in for you: change it to any name you like.</p>
+                  <select
+                    value={selected.prices.find((t) => t.jprimeProductId)?.jprimeProductId || ""}
+                    onChange={(e) => pickJprimeProduct(e.target.value)}
+                    className="w-full p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                  >
+                    <option value="">Choose a JPRIME product...</option>
+                    {storeApi.catalog.map((c) => <option key={c.productId} value={c.productId}>{c.name}</option>)}
+                  </select>
+                </section>
+              )}
 
               {/* VIDEO */}
 
@@ -1121,6 +1191,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
 
                             <input
                               value={tier.duration}
+                              readOnly={!isOwner && tier.supplier === "JPRIME"}
                               onChange={(e) =>
                                 updateTier(
                                   index,
@@ -1128,7 +1199,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                                   e.target.value
                                 )
                               }
-                              className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                              className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800 read-only:opacity-60"
                               placeholder="1 day"
                             />
                           </div>
@@ -1177,9 +1248,9 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
 
                         </div>
 
-                        {/* SUPPLIER */}
+                        {/* SUPPLIER (owner only: co-admins choose one delivery source for the whole product) */}
 
-                        <div className="mt-5">
+                        {isOwner && (<div className="mt-5">
 
                           <label className="text-xs text-zinc-400">
                             Internal Supplier
@@ -1232,41 +1303,13 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                             )}
                           </select>
 
-                        </div>
+                        </div>)}
 
-                        {/* JPRIME API STOCK (co-admin stores) */}
+                        {/* JPRIME API STOCK: read-only line (the product is chosen once, above) */}
                         {tier.supplier === "JPRIME" && (() => {
                           const src = storeApi.catalog.find((c) => c.productId === tier.jprimeProductId);
                           const cost = src?.tiers.find((t) => t.duration === tier.jprimeDuration)?.cost;
-                          // one product = one JPRIME product (the others in this list are the ones already chosen)
-                          const locked = selected.prices.find((t, i) => i !== index && t.supplier === "JPRIME" && t.jprimeProductId)?.jprimeProductId;
-                          return (
-                            <div className="mt-4 grid md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="text-xs text-zinc-400">JPRIME product</label>
-                                <select
-                                  value={tier.jprimeProductId || ""}
-                                  disabled={!!locked}
-                                  onChange={(e) => {
-                                    const c = storeApi.catalog.find((x) => x.productId === e.target.value);
-                                    patchTier(index, { jprimeProductId: e.target.value, jprimeDuration: "" } as any, c ? { id: c.productId, name: selected.name || c.name } : undefined);
-                                  }}
-                                  className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
-                                >
-                                  <option value="">Choose a product...</option>
-                                  {storeApi.catalog.map((c) => <option key={c.productId} value={c.productId}>{c.name}</option>)}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="text-xs text-zinc-400">JPRIME duration (your cost)</label>
-                                <select value={tier.jprimeDuration || ""} onChange={(e) => updateTier(index, "jprimeDuration", e.target.value)} className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800">
-                                  <option value="">Choose a duration...</option>
-                                  {(src?.tiers ?? []).map((t) => <option key={t.duration} value={t.duration}>{t.duration} - cost ₹{t.cost}</option>)}
-                                </select>
-                              </div>
-                              {cost ? <p className="md:col-span-2 text-xs text-amber-300">Your cost is ₹{cost}. It is taken from your wallet automatically for each sale. You choose your own selling price.</p> : null}
-                            </div>
-                          );
+                          return <p className="mt-4 text-xs text-amber-300">JPRIME {tier.jprimeDuration || tier.duration}{cost ? ` · your cost ₹${cost} is taken from your wallet for each sale` : ""}. Set your own selling price above.</p>;
                         })()}
 
                         {/* SELLER 1 */}
