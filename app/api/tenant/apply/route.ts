@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { clientIp, rateLimit, requireUser } from "@/lib/auth";
 import { myApplication, submitApplication } from "@/lib/tenant-admin";
 import { launchOptions, launchStore } from "@/lib/subscription";
+import { getStoreOptions } from "@/lib/store-options";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -11,9 +12,11 @@ const fail = (error: string, status: number) => NextResponse.json({ success: fal
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
-  const eligible = ["reseller", "vip_reseller", "vip reseller", "vip"].includes(auth.user.role);
+  let eligible = ["reseller", "vip_reseller", "vip reseller", "vip"].includes(auth.user.role);
+  const fromCoadmin = auth.tenant.kind === "coadmin";
+  if (fromCoadmin && !(await getStoreOptions(auth.tenant.id)).resellerLaunch) eligible = false;
   return NextResponse.json(
-    { success: true, eligible, application: await myApplication(auth.user, auth.tenant), options: await launchOptions() },
+    { success: true, eligible, needsMainAccount: fromCoadmin, application: await myApplication(auth.user, auth.tenant), options: await launchOptions() },
     { headers: NO_STORE }
   );
 }
@@ -33,11 +36,13 @@ export async function POST(request: NextRequest) {
       brandName: b?.brandName, slug: String(b?.slug ?? "").trim().toLowerCase(), telegramUsername: b?.telegramUsername,
       contactEmail: b?.contactEmail, contactPhone: b?.contactPhone, coadminUsername: b?.coadminUsername, coadminPassword: b?.coadminPassword,
       domainChoice: b?.domainChoice === "custom" ? "custom" : "free", customDomain: b?.customDomain,
+      mainUsername: b?.mainUsername, mainPassword: b?.mainPassword,
     });
     return l.ok
       ? NextResponse.json({ success: true, launched: true, url: l.url, expiresAt: l.expiresAt, custom: l.custom }, { headers: NO_STORE })
       : fail(l.error, l.status);
   }
+  if (auth.tenant.kind === "coadmin") return fail("Launching a website is not available here.", 403);
   const r = await submitApplication(auth.user, auth.tenant, {
     brandName: b?.brandName, slug: b?.slug, telegramUsername: b?.telegramUsername, inventoryMode: b?.inventoryMode,
     contactEmail: b?.contactEmail, contactPhone: b?.contactPhone, coadminUsername: b?.coadminUsername, coadminPassword: b?.coadminPassword,

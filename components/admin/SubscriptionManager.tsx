@@ -65,13 +65,26 @@ export default function SubscriptionManager() {
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-2">
-        <p className="text-sm font-semibold text-white">{s.payer ? "Your main website account" : "Connect your main website account"}</p>
-        <p className="text-[11px] text-slate-400">{s.payer ? `Plan and JPRIME API stock are paid from ${s.payer}'s wallet. To change it, enter another account below.` : "Enter the username and password you use on jprimecheats.store. Your wallet pays for your plan and for JPRIME API stock sales."}</p>
-        <div className="grid sm:grid-cols-3 gap-2">
-          <input value={lu} onChange={(e) => setLu(e.target.value)} placeholder="Main website username" className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white" />
-          <input type="password" value={lp} onChange={(e) => setLp(e.target.value)} placeholder="Main website password" className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white" />
-          <button disabled={!!busy || !lu || !lp} onClick={link} className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50 cursor-pointer">{busy === "link" ? "Checking..." : s.payer ? "Change account" : "Connect"}</button>
-        </div>
+        <p className="text-sm font-semibold text-white">{s.payer ? "Your main website account (locked)" : "Connect your main website account"}</p>
+        {s.payer ? (
+          <>
+            <p className="text-[11px] text-slate-400">Your plan and JPRIME API stock are paid from this wallet. It is locked so it cannot be switched. If you need a change, contact the platform owner.</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <input value={s.payer} readOnly disabled aria-label="Main website username (locked)" className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-slate-300 cursor-not-allowed opacity-80" />
+              <input value="••••••••••" readOnly disabled aria-label="Main website password (locked)" className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-slate-300 tracking-widest cursor-not-allowed opacity-80" />
+            </div>
+            <p className="text-[10px] text-slate-500">For safety, passwords are stored scrambled (hashed) by the system, so nobody - not even us - can read it. Use "Forgot password" on the main website if you lose it.</p>
+          </>
+        ) : (
+          <>
+            <p className="text-[11px] text-slate-400">Enter the username and password you use on jprimecheats.store. Your wallet pays for your plan and for JPRIME API stock sales. You can do this only once.</p>
+            <div className="grid sm:grid-cols-3 gap-2">
+              <input value={lu} onChange={(e) => setLu(e.target.value)} placeholder="Main website username" className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white" />
+              <input type="password" value={lp} onChange={(e) => setLp(e.target.value)} placeholder="Main website password" className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white" />
+              <button disabled={!!busy || !lu || !lp} onClick={link} className="rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50 cursor-pointer">{busy === "link" ? "Checking..." : "Connect"}</button>
+            </div>
+          </>
+        )}
       </div>
 
       {msg && <div className={`rounded-lg border px-3 py-2 text-xs ${msg.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>{msg.text}</div>}

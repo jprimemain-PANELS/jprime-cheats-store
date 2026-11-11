@@ -21,6 +21,7 @@ export type Tenant = {
   sharedStockAllowed: boolean;
   telegramUsername: string | null;
   planExpiresAt: string | null;       // null = never expires
+  banned: boolean;                    // owner banned this store: visitors see a "banned" page, nothing can be bought
   subscriptionExpired: boolean;       // status is shown as "suspended" while true (no new purchases)
 };
 
@@ -35,6 +36,7 @@ const OWNER_TENANT: Tenant = {
   telegramUsername: null,
   planExpiresAt: null,
   subscriptionExpired: false,
+  banned: false,
 };
 
 const BUILTIN_OWNER_HOSTS = ["jprimecheats.store", "www.jprimecheats.store"];
@@ -79,10 +81,11 @@ function rowToTenant(row: any): Tenant {
   return {
     planExpiresAt: row.plan_expires_at ? String(row.plan_expires_at) : null,
     subscriptionExpired: expired,
+    banned: row.kind !== "owner" && row.banned === true,
     id: String(row.id),
     slug: String(row.slug),
     kind: row.kind === "owner" ? "owner" : "coadmin",
-    status: (expired && row.status === "active" ? "suspended" : row.status) as TenantStatus,
+    status: ((expired || (row.kind !== "owner" && row.banned === true)) && row.status === "active" ? "suspended" : row.status) as TenantStatus,
     brandName: String(row.brand_name ?? ""),
     inventoryMode: row.inventory_mode === "shared_stock" ? "shared_stock" : "own_api",
     sharedStockAllowed: row.shared_stock_allowed === true,

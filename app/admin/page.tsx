@@ -66,6 +66,8 @@ interface ManagedUser {
   phone?: string;
   role: string;
   wallet_balance?: number;
+  created_at?: string;
+  join_no?: number;
 }
 
 type PriceOverride = { priceINR: number; resellerPrice?: number };
@@ -355,8 +357,16 @@ export default function AdminPage() {
 
     const walletMap = new Map(walletsData.map((w: any) => [w.username, w.balance]));
 
+    // Join number: 1 = oldest account. Newest members have the biggest number.
+    const joinOrder = [...usersData].sort((a: any, b: any) => {
+      const ta = a?.created_at ? Date.parse(a.created_at) : 0;
+      const tb = b?.created_at ? Date.parse(b.created_at) : 0;
+      return ta - tb || String(a?.id ?? "").localeCompare(String(b?.id ?? ""), undefined, { numeric: true });
+    });
+    const joinNo = new Map<any, number>(joinOrder.map((u: any, i: number) => [u, i + 1]));
     const enrichedUsers: ManagedUser[] = usersData.map((u: any) => ({
       ...u,
+      join_no: joinNo.get(u),
       wallet_balance: walletMap.get(u.username) ?? 0,
     }));
 
@@ -1323,6 +1333,7 @@ export default function AdminPage() {
               <table className="w-full text-left text-xs text-slate-200">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-4">ID</th>
                     <th className="py-3 px-4">User</th>
                     <th className="py-3 px-4">Contact</th>
                     <th className="py-3 px-4">Email</th>
@@ -1334,11 +1345,15 @@ export default function AdminPage() {
                 <tbody className="divide-y divide-slate-800/60">
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-500">No matching users found</td>
+                      <td colSpan={7} className="py-8 text-center text-slate-500">No matching users found</td>
                     </tr>
                   ) : (
                     filteredUsers.map((u, index) => (
                       <tr key={u.id ? `${u.id}-${index}` : `${u.username}-${index}`} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span className="font-bold tabular-nums text-indigo-300">#{u.join_no ?? "—"}</span>
+                          {u.created_at && <span className="block text-[10px] text-slate-500">{new Date(u.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>}
+                        </td>
                         <td className="py-3.5 px-4 font-semibold text-white">@{u.username}{resetAsked.includes(u.username) && <span className="ml-2 rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">forgot password</span>}</td>
                         <td className="py-3.5 px-4 text-slate-400">{u.mobile_number || u.phone || "—"}</td>
                         <td className="py-3.5 px-4 text-slate-400">{u.email}</td>

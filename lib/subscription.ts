@@ -3,6 +3,7 @@ import { OWNER_TENANT_ID, clearTenantCache, type Tenant } from "@/lib/tenant";
 import { checkSlug, platformRootDomain, slugProblem, submitApplication, approveApplication, setStoreStatus } from "@/lib/tenant-admin";
 import { verifyPassword } from "@/lib/auth";
 import { parseCustomDomain, requestCustomDomain, domainState } from "@/lib/domains";
+import { getStoreOptions } from "@/lib/store-options";
 
 /**
  * Store subscriptions + self-service launch. Server only.
@@ -52,15 +53,25 @@ export async function subscriptionState(tenantId: string): Promise<SubState> {
  * The store admin links THEIR OWN main-store reseller account (username + password are checked) so the
  * plan and JPRIME API stock are paid from that wallet. Nothing is stored except the username.
  */
-export async function linkWalletAccount(tenant: Tenant, username: string, password: string, actor: Actor) {
-  if (tenant.kind !== "coadmin") return { ok: false as const, error: "Only co-admin stores link a wallet." };
+/** Proves a main-website (owner tenant) account by password. Never trusts a bare username. */
+export async function verifyMainAccount(username: string, password: string) {
   const u = String(username ?? "").trim();
   if (!u || !password || u.length > 64 || password.length > 200) return { ok: false as const, error: "Enter your main website username and password." };
   const r = await supabaseAdmin.from("users").select("id, role, password").eq("tenant_id", OWNER_TENANT_ID).eq("username", u).maybeSingle();
   const row: any = r.data;
-  const bad = { ok: false as const, error: "Wrong username or password for the main website (jprimecheats.store)." };
-  if (r.error || !row || !verifyPassword(password, String(row.password ?? ""))) return bad;
+  if (r.error || !row || !verifyPassword(password, String(row.password ?? ""))) return { ok: false as const, error: "Wrong username or password for the main website (jprimecheats.store)." };
   if (["admin", "coadmin"].includes(String(row.role).toLowerCase())) return { ok: false as const, error: "Use your reseller account from the main website, not an admin account." };
+  return { ok: true as const, username: u };
+}
+
+export async function linkWalletAccount(tenant: Tenant, username: string, password: string, actor: Actor) {
+  if (tenant.kind !== "coadmin") return { ok: false as const, error: "Only co-admin stores link a wallet." };
+  // Once linked, a store admin cannot switch it (only the platform owner can) - stops moving to a cheaper/other account.
+  const cur = await supabaseAdmin.from("tenants").select("payer_username").eq("id", tenant.id).maybeSingle();
+  if ((cur.data as any)?.payer_username) return { ok: false as const, error: "Your wallet account is already linked and locked. Contact the platform owner to change it." };
+  const v = await verifyMainAccount(username, password);
+  if (!v.ok) return v;
+  const u = v.username;
   const up = await supabaseAdmin.from("tenants").update({ payer_username: u, updated_at: new Date().toISOString() }).eq("id", tenant.id).eq("kind", "coadmin");
   if (up.error) return { ok: false as const, error: "Could not link right now. Try again." };
   await supabaseAdmin.from("audit_log").insert({ tenant_id: tenant.id, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: "store.payer_self_link", target: u });
@@ -106,6 +117,7 @@ export async function launchOptions(): Promise<LaunchOptions> {
 export type LaunchInput = {
   brandName: string; slug: string; telegramUsername: string; contactEmail: string; contactPhone: string;
   coadminUsername: string; coadminPassword: string; domainChoice: "free" | "custom"; customDomain?: string;
+  mainUsername?: string; mainPassword?: string;   // needed when launching from a co-admin store
 };
 
 /**
@@ -118,6 +130,14 @@ export async function launchStore(
 ): Promise<{ ok: true; url: string; expiresAt: string; custom: any } | { ok: false; error: string; status: number }> {
   const opts = await launchOptions();
   if (!opts.selfService) return { ok: false, error: "Instant launch is not open yet. Please try again later.", status: 503 };
+  // From a co-admin store: only if the owner allowed it, and the payer must be PROVEN main-website account.
+  let payer = applicant.username;
+  if (tenant.kind === "coadmin") {
+    if (!(await getStoreOptions(tenant.id)).resellerLaunch) return { ok: false, error: "Launching a website is not available here.", status: 403 };
+    const v = await verifyMainAccount(String(input.mainUsername ?? ""), String(input.mainPassword ?? ""));
+    if (!v.ok) return { ok: false, error: v.error, status: 400 };
+    payer = v.username;
+  }
   const wantCustom = input.domainChoice === "custom";
   let customHost = "";
   if (wantCustom) {
@@ -142,7 +162,7 @@ export async function launchStore(
   const made: any = await approveApplication(appId, actor);
   if (!made?.ok || !made.tenant_id) return { ok: false, error: made?.reason === "slug_taken" ? "That name was just taken. Pick another." : "Could not create your store. Please try again.", status: 409 };
 
-  const trial = await supabaseAdmin.rpc("jprime_tenant_start_trial", { p_tenant: made.tenant_id, p_payer: applicant.username, p_days: TRIAL_DAYS });
+  const trial = await supabaseAdmin.rpc("jprime_tenant_start_trial", { p_tenant: made.tenant_id, p_payer: payer, p_days: TRIAL_DAYS });
   if (trial.error || !(trial.data as any)?.ok) {
     await setStoreStatus(made.tenant_id, "suspended", "self-service launch: trial setup failed", actor);
     return { ok: false, error: "Your store was created but could not be switched on. Contact support.", status: 500 };
@@ -152,7 +172,7 @@ export async function launchStore(
   if (wantCustom) {
     // the owner's "allowed" switch is turned on by the reseller's own choice at launch
     await supabaseAdmin.from("tenants").update({ custom_domain_allowed: true }).eq("id", made.tenant_id).eq("kind", "coadmin");
-    const t: Tenant = { id: made.tenant_id, slug: input.slug, kind: "coadmin", status: "active", brandName: input.brandName, inventoryMode: "own_api", sharedStockAllowed: false, telegramUsername: input.telegramUsername.replace(/^@/, ""), planExpiresAt: null, subscriptionExpired: false };
+    const t: Tenant = { id: made.tenant_id, slug: input.slug, kind: "coadmin", status: "active", brandName: input.brandName, inventoryMode: "own_api", sharedStockAllowed: false, telegramUsername: input.telegramUsername.replace(/^@/, ""), planExpiresAt: null, subscriptionExpired: false, banned: false };
     const r = await requestCustomDomain(t, actor, customHost);
     custom = r.ok ? (await domainState(made.tenant_id)).custom : { error: r.error };
   }

@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { ChangePasswordButton } from "@/components/change-password";
+import { useBrand } from "@/components/brand-provider";
 
-export function AuthButtons() {
+export function AuthButtons({ className = "" }: { className?: string }) {
   const router = useRouter();
+  const brand = useBrand();
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [canLaunch, setCanLaunch] = useState(false);
@@ -48,7 +50,7 @@ export function AuthButtons() {
   }
 
   return (
-    <div className="flex items-center gap-2 sm:gap-3">
+    <div className={`flex items-center gap-2 sm:gap-3 ${className}`}>
       {isAdmin && (
         <button
           onClick={() => router.push("/admin")}
@@ -58,7 +60,7 @@ export function AuthButtons() {
         </button>
       )}
 
-      {canLaunch && (
+      {canLaunch && (brand.isOwner || brand.options.resellerLaunch) && (
         <button
           onClick={() => router.push("/launch")}
           className="inline-flex items-center bg-gradient-to-r from-violet-600 to-fuchsia-600 px-2.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold text-white hover:brightness-110 transition-all whitespace-nowrap"

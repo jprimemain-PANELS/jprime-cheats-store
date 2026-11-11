@@ -27,7 +27,6 @@ import { Renderer, Program, Mesh, Triangle } from "ogl";
 // IMPORTANT: put these two PNG files (transparent background) inside /public
 const KELLY_IMAGE = "/kelly.png"; // yellow jacket girl
 const PET_IMAGE = "/pet.png"; // red jelly pet
-const TUTORIAL_URL = "https://youtu.be/F0UKQlnyXE4?si=n6qZtG91u6nddqSa";
 
 // Change these to resize things.
 const SIZES = {
@@ -642,9 +641,9 @@ const SwitchBar = ({ isLogin, onToggle }: { isLogin: boolean; onToggle: () => vo
 };
 
 /* Tutorial: slim help banner */
-const TutorialCard = () => (
+const TutorialCard = ({ url }: { url: string }) => (
   <a
-    href={TUTORIAL_URL}
+    href={url}
     target="_blank"
     rel="noopener noreferrer"
     aria-label="Open the How to Use the Site YouTube tutorial"
@@ -809,7 +808,7 @@ export default function LoginPage() {
           </section>
         </div>
 
-        {brand.isOwner && <TutorialCard />}
+        {brand.options.tutorialOn && /^https:\/\//i.test(brand.options.tutorialUrl) && <TutorialCard url={brand.options.tutorialUrl} />}
       </main>
 
       <LoginStyles />

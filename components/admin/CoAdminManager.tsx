@@ -8,6 +8,7 @@ type Store = {
   telegram: string | null; createdAt: string; domains: { host: string; verified: boolean }[];
   customers: number; resellers: number; products: number; orders: number; walletTotal: number;
   lastPurchaseAt: string | null; paymentStatus: string; planExpiresAt?: string | null; payer?: string | null;
+  banned?: boolean; resellerLaunch?: boolean;
 };
 type App = {
   id: string; brandName: string; slug: string; telegram: string | null; inventoryMode: string;
@@ -141,7 +142,7 @@ export default function CoAdminManager() {
                   <div key={s.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="text-sm font-bold text-white">{s.brandName} <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full border ${badge[s.status] || badge.pending}`}>{s.status}</span></p>
+                        <p className="text-sm font-bold text-white">{s.brandName} <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full border ${badge[s.status] || badge.pending}`}>{s.status}</span>{s.banned && <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full border border-rose-500/40 bg-rose-500/10 text-rose-300">BANNED</span>}</p>
                         <p className="text-xs text-slate-400 font-mono">
                           {s.domains.length ? s.domains.map((d) => `${d.host}${d.verified ? "" : " (unverified)"}`).join(", ") : "no domain"}
                         </p>
@@ -172,6 +173,13 @@ export default function CoAdminManager() {
                           else window.prompt(`New password for store admin @${j.username} (copy it now, shown only once):`, j.password);
                         } catch { setMsg({ ok: false, text: "Network error." }); }
                       }} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50">Reset admin password</button>
+                      <button disabled={!!busy} onClick={() => {
+                        if (s.banned) { if (window.confirm(`Unban "${s.brandName}"? Its website works again.`)) act({ action: "unban", id: s.id }, s.id); }
+                        else if (window.confirm(`BAN "${s.brandName}"? Visitors will only see "This website is banned by the admin". Data is kept.`)) act({ action: "ban", id: s.id }, s.id);
+                      }} className={`px-3 py-1.5 rounded-lg border cursor-pointer disabled:opacity-50 ${s.banned ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10" : "border-rose-500/40 text-rose-300 hover:bg-rose-500/10"}`}>{s.banned ? "Unban" : "Ban"}</button>
+                      <button disabled={!!busy} onClick={() => act({ action: "reseller_launch", id: s.id, allowed: !s.resellerLaunch }, s.id)} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50" title="Let this store's resellers see Launch your website">
+                        Co-admin reseller can launch website: {s.resellerLaunch ? "ON" : "OFF"}
+                      </button>
                       <button disabled={!!busy} onClick={() => { const u = window.prompt("Reseller username on the MAIN store whose wallet pays for this store:", s.payer || ""); if (u) act({ action: "set_payer", id: s.id, username: u }, s.id); }} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50">Set wallet user</button>
                     </div>
                     {dInfo.available && (

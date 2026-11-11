@@ -21,7 +21,8 @@ export default function LaunchPage() {
   const [existing, setExisting] = useState<{ brandName: string; slug: string; status: string } | null>(null);
   const [done, setDone] = useState<Done>(null);
   const [choice, setChoice] = useState<"free" | "custom">("free");
-  const [f, setF] = useState({ brandName: "", slug: "", customDomain: "", telegramUsername: "", contactPhone: "", contactEmail: "", coadminUsername: "", coadminPassword: "" });
+  const [f, setF] = useState({ brandName: "", slug: "", customDomain: "", telegramUsername: "", contactPhone: "", contactEmail: "", coadminUsername: "", coadminPassword: "", mainUsername: "", mainPassword: "" });
+  const [needsMain, setNeedsMain] = useState(false);
   const [slugMsg, setSlugMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -35,7 +36,7 @@ export default function LaunchPage() {
         if (res.status === 401) { window.location.href = "/login"; return; }
         const j = await res.json();
         if (!j.eligible) { setState("denied"); return; }
-        setOpts(j.options ?? null); setExisting(j.application && j.application.status !== "rejected" ? j.application : null); setState("ready");
+        setNeedsMain(j.needsMainAccount === true); setOpts(j.options ?? null); setExisting(j.application && j.application.status !== "rejected" ? j.application : null); setState("ready");
       } catch { setState("denied"); }
     })();
   }, []);
@@ -176,6 +177,16 @@ export default function LaunchPage() {
                 <div><label className={label}>4. Admin username for your store</label><input className={field} autoComplete="off" value={f.coadminUsername} onChange={set("coadminUsername")} /></div>
                 <div><label className={label}>Admin password (8+ letters)</label><input className={field} type="password" autoComplete="new-password" value={f.coadminPassword} onChange={set("coadminPassword")} /></div>
               </div>
+
+              {needsMain && (
+                <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 space-y-2">
+                  <p className="text-xs text-amber-200">Your plan is paid from your main-website wallet (jprimecheats.store). Enter that account to confirm it is yours.</p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div><label className={label}>Main website username</label><input className={field} autoComplete="off" value={f.mainUsername} onChange={set("mainUsername")} /></div>
+                    <div><label className={label}>Main website password</label><input className={field} type="password" autoComplete="off" value={f.mainPassword} onChange={set("mainPassword")} /></div>
+                  </div>
+                </div>
+              )}
 
               {opts?.plans && (
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">

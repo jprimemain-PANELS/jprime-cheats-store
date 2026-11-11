@@ -5,8 +5,9 @@ import {
   approveApplication, createStoreDirect, ownerOverview, rejectApplication, setSharedStockAllowed, setStoreStatus,
   setStorePayer,
 } from "@/lib/tenant-admin";
+import { resellerLaunchMap, setResellerLaunch } from "@/lib/store-options";
 import { ownerResetStoreAdmin } from "@/lib/user-admin";
-import { deleteStore, activateCustomDomain, ownerDomainInfo, ownerRemoveCustomDomain, setCustomDomainAllowed } from "@/lib/domains";
+import { setStoreBanned, deleteStore, activateCustomDomain, ownerDomainInfo, ownerRemoveCustomDomain, setCustomDomainAllowed } from "@/lib/domains";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -18,7 +19,9 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
   try {
     const [ov, domainInfo] = await Promise.all([ownerOverview(), ownerDomainInfo()]);
-    return NextResponse.json({ success: true, ...ov, domainInfo }, { headers: NO_STORE });
+    const launch = await resellerLaunchMap((ov.stores as any[]).map((s) => String(s.id)));
+    const stores = (ov.stores as any[]).map((s) => ({ ...s, resellerLaunch: launch[String(s.id)] === true }));
+    return NextResponse.json({ success: true, ...ov, stores, domainInfo }, { headers: NO_STORE });
   } catch {
     return fail("Could not load stores.", 500);
   }
@@ -54,6 +57,15 @@ export async function POST(request: NextRequest) {
     case "reset_store_admin":
       if (!isUuid(id)) return fail("Invalid id.");
       result = await ownerResetStoreAdmin(id, actor);
+      break;
+    case "ban":
+    case "unban":
+      if (!isUuid(id)) return fail("Invalid id.");
+      result = await setStoreBanned(id, action === "ban", actor);
+      break;
+    case "reseller_launch":
+      if (!isUuid(id)) return fail("Invalid id.");
+      result = await setResellerLaunch(id, b?.allowed === true);
       break;
     case "delete_store":
       if (!isUuid(id)) return fail("Invalid id.");

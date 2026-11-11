@@ -29,6 +29,7 @@ const ALLOWED_SERVICE_ROLE = new Set([
   "lib/domains.ts",         // custom-domain flow: tenant_domains + audit only; callers pass owner/tenant-admin guards
   "lib/tenant-admin.ts",    // platform tables only (tenants/applications/settings/audit) + 003 RPCs; callers pass owner/tenant-admin guards
   "lib/telegram.ts",        // reads ONLY app_settings (owner telegram destinations); skips non-owner stores
+  "lib/store-options.ts",   // reads ONLY app_settings keys prefixed per store (store_options); owner-only writes of resellerLaunch
 ]);
 
 describe("static tenant-isolation guard", () => {

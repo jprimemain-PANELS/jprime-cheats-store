@@ -134,7 +134,7 @@ export async function ownerOverview() {
     stores: (tenants.data as any[]).filter((t) => !String(t.slug).startsWith("deleted-")).map((t) => {
       const s = st.get(t.id) ?? {};
       return {
-        id: t.id, slug: t.slug, brandName: t.brand_name, status: t.status, inventoryMode: t.inventory_mode,
+        id: t.id, slug: t.slug, brandName: t.brand_name, status: t.status, banned: t.banned === true, inventoryMode: t.inventory_mode,
         sharedStockAllowed: t.shared_stock_allowed === true, telegram: t.telegram_username, createdAt: t.created_at,
         planExpiresAt: t.plan_expires_at ?? null, payer: t.payer_username ?? null,
         domains: (dom.get(t.id) ?? []).map((d) => ({ host: d.host, verified: d.verified === true })),

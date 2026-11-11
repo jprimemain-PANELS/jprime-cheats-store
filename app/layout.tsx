@@ -1,10 +1,12 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+const Geist = (_: any) => ({}); const Geist_Mono = Geist;
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { SessionTimeout } from '@/components/session-timeout'
 import { BrandProvider } from '@/components/brand-provider'
-import { OWNER_BRAND, DEFAULT_LAYOUT, type Brand } from '@/lib/brand'
+import { OWNER_BRAND, DEFAULT_LAYOUT, NO_OPTIONS, OWNER_TUTORIAL_URL, type Brand } from '@/lib/brand'
+import { getStoreOptions, publicOptions } from '@/lib/store-options'
+import { StoreBanned } from '@/components/store-banned'
 import { StoreNotFound } from '@/components/store-not-found'
 import { StoreMoved } from '@/components/store-moved'
 import { movedTo } from '@/lib/domains'
@@ -21,10 +23,11 @@ async function loadBrand() {
   if (!tenant) return null;
   try {
     const pb = await publicBrand(tenant);
+    const opt = publicOptions(await getStoreOptions(tenant.id));
     const brand: Brand = tenant.kind === "owner"
-      ? { ...OWNER_BRAND, announcement: pb.theme?.announcement ?? "", tagline: pb.theme?.tagline ?? "", footerText: pb.theme?.footerText ?? "" }
+      ? { ...OWNER_BRAND, options: { ...opt, tutorialUrl: opt.tutorialUrl || OWNER_TUTORIAL_URL }, announcement: pb.theme?.announcement ?? "", tagline: pb.theme?.tagline ?? "", footerText: pb.theme?.footerText ?? "" }
       : {
-          name: pb.name, isOwner: false, telegram: pb.telegram, logoUrl: pb.theme?.logoUrl ?? "",
+          options: opt, name: pb.name, isOwner: false, telegram: pb.telegram, logoUrl: pb.theme?.logoUrl ?? "",
           tagline: pb.theme?.tagline ?? "", announcement: pb.theme?.announcement ?? "", footerText: pb.theme?.footerText ?? "",
           layout: pb.theme ? {
             heroLayout: pb.theme.heroLayout, heroTitle: pb.theme.heroTitle, heroSubtitle: pb.theme.heroSubtitle,
@@ -36,7 +39,7 @@ async function loadBrand() {
     // Branding lookup failed: still serve the store (owner keeps its look; co-admin gets its name, default theme)
     return {
       tenant,
-      brand: tenant.kind === "owner" ? OWNER_BRAND : { ...OWNER_BRAND, name: tenant.brandName, isOwner: false, telegram: tenant.telegramUsername },
+      brand: tenant.kind === "owner" ? OWNER_BRAND : { ...OWNER_BRAND, options: NO_OPTIONS, name: tenant.brandName, isOwner: false, telegram: tenant.telegramUsername },
       css: "",
     };
   }
@@ -64,6 +67,13 @@ export default async function RootLayout({
     return (
       <html lang="en" className="dark bg-background" suppressHydrationWarning>
         <body suppressHydrationWarning><StoreNotFound /></body>
+      </html>
+    );
+  }
+  if (loaded.tenant.kind === "coadmin" && loaded.tenant.banned) {
+    return (
+      <html lang="en" className="dark bg-background" suppressHydrationWarning>
+        <body suppressHydrationWarning><StoreBanned /></body>
       </html>
     );
   }

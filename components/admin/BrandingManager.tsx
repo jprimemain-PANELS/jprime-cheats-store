@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
+import StoreOptionsCard from "@/components/admin/StoreOptionsCard";
 
 type Theme = {
   preset?: string; primary: string; accent: string; background: string; surface: string; foreground: string;
@@ -73,6 +74,8 @@ export default function BrandingManager() {
         <p className="text-xs text-slate-400">Colors, font, logo and text for your customers' website.</p>
       </div>
       {msg && <div className={`rounded-lg border px-3 py-2 text-xs ${msg.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>{msg.text}</div>}
+
+      <StoreOptionsCard />
 
       {kind === "coadmin" && (
         <div className="grid sm:grid-cols-2 gap-3">

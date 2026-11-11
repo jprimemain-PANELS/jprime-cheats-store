@@ -276,7 +276,20 @@ export async function deleteStore(tenantId: string, confirmSlug: string, actor: 
   if (del.error) return { ok: false as const, reason: "Could not remove the store addresses." };
   const up = await supabaseAdmin.from("tenants").update({ status: "suspended", slug: `deleted-${String(row.id).slice(0, 8)}`, updated_at: new Date().toISOString() }).eq("id", tenantId);
   if (up.error) return { ok: false as const, reason: "Addresses removed but the store could not be marked deleted. Suspend it manually." };
+  // free the reseller's "one store" slot and the old name so they can launch again with the same account
+  await supabaseAdmin.from("tenant_applications").update({ status: "rejected", review_note: "store deleted", reviewed_at: new Date().toISOString() })
+    .eq("slug", String(row.slug)).in("status", ["pending", "approved"]);
   clearTenantCache();
   await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: "store.deleted", target: String(row.slug) });
+  return { ok: true as const };
+}
+
+/** Owner: ban / unban a store. Visitors see a banned page; nothing can be bought; data and addresses are kept. */
+export async function setStoreBanned(tenantId: string, banned: boolean, actor: { id: string | number | null; username: string }) {
+  if (tenantId === OWNER_TENANT_ID) return { ok: false as const, reason: "The main store cannot be banned." };
+  const up = await supabaseAdmin.from("tenants").update({ banned, updated_at: new Date().toISOString() }).eq("id", tenantId).eq("kind", "coadmin");
+  if (up.error) return { ok: false as const, reason: "Run supabase/tenant/007_BAN_AND_OPTIONS.sql in Supabase first." };
+  clearTenantCache();
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: banned ? "store.banned" : "store.unbanned", target: tenantId });
   return { ok: true as const };
 }

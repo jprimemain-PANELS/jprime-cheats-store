@@ -5,7 +5,12 @@ export type BrandLayout = {
 };
 export const DEFAULT_LAYOUT: BrandLayout = { heroLayout: "centered", heroTitle: "", heroSubtitle: "", heroImageUrl: "", loginCharacterUrl: "", loginPetUrl: "", loginCard: "original", loginBg: "original", ctaText: "", columns: 3, showStats: true };
 
+export type BrandOptions = { tutorialOn: boolean; tutorialUrl: string; upgradeOn: boolean; upgradePrice: number; resellerLaunch: boolean };
+export const OWNER_TUTORIAL_URL = "https://youtu.be/F0UKQlnyXE4?si=n6qZtG91u6nddqSa";
+export const NO_OPTIONS: BrandOptions = { tutorialOn: false, tutorialUrl: "", upgradeOn: false, upgradePrice: 99, resellerLaunch: false };
+
 export type Brand = {
+  options: BrandOptions;
   layout: BrandLayout;
   name: string;
   isOwner: boolean;
@@ -17,5 +22,6 @@ export type Brand = {
 };
 
 export const OWNER_BRAND: Brand = { layout: DEFAULT_LAYOUT,
+  options: { ...NO_OPTIONS, tutorialOn: true, tutorialUrl: OWNER_TUTORIAL_URL },
   name: "JPRIME CHEATS", isOwner: true, telegram: "JPRIMEADMIN", logoUrl: "", tagline: "", announcement: "", footerText: "",
 };

@@ -107,17 +107,18 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
             }`}
           >
             {/* Logo */}
-            <div className="flex items-center gap-2 sm:gap-4 animate-in fade-in slide-in-from-left-2 duration-500">
-              <AuthButtons />
+            <div className="flex min-w-0 items-center gap-2 sm:gap-4 animate-in fade-in slide-in-from-left-2 duration-500">
+              {/* account buttons live in the menu on phones so they never cover the wallet */}
+              <div className="hidden md:block shrink-0"><AuthButtons /></div>
               <StoreLogo
                 size={50}
-                className="rounded-xl transition-transform duration-300 hover:scale-105 hover:rotate-2 w-9 h-9 sm:w-12 sm:h-12"
+                className="shrink-0 rounded-xl transition-transform duration-300 hover:scale-105 hover:rotate-2 w-9 h-9 sm:w-12 sm:h-12"
               />
-              <div className="hidden sm:block">
-                <h1 className="text-lg font-semibold tracking-tight text-white">
+              <div className="min-w-0">
+                <h1 className="truncate max-w-[34vw] sm:max-w-[260px] text-sm sm:text-lg font-semibold tracking-tight text-white" title={brand.name}>
                   {brand.name}
                 </h1>
-                <p className="text-xs text-white/50">{brand.isOwner ? "Premium FF Panel" : brand.tagline}</p>
+                <p className="hidden sm:block truncate max-w-[260px] text-xs text-white/50">{brand.isOwner ? "Premium FF Panel" : brand.tagline}</p>
               </div>
             </div>
 
@@ -173,7 +174,7 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
             </div>
 
             {/* Mobile Actions Header */}
-            <div className="flex md:hidden items-center gap-2">
+            <div className="flex md:hidden shrink-0 items-center gap-2">
               {/* Mobile Wallet Quick-Trigger Button */}
               <button
                 onClick={() => setWalletModalOpen(true)}
@@ -204,11 +205,13 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
                   <div className="flex flex-col gap-6 pt-8">
                     <div className="flex items-center gap-3 px-2">
                       <StoreLogo size={50} className="rounded-xl" />
-                      <div>
-                        <h2 className="text-lg font-semibold text-white">{brand.name}</h2>
+                      <div className="min-w-0">
+                        <h2 className="break-words text-lg font-semibold text-white">{brand.name}</h2>
                         <p className="text-xs text-white/50">{brand.isOwner ? "Premium FF Panel" : brand.tagline}</p>
                       </div>
                     </div>
+
+                    <AuthButtons className="flex-wrap px-2" />
 
                     <div className="flex flex-col gap-2">
                       {/* Wallet Option Inside Sheet Drawer */}
