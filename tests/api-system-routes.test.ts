@@ -73,15 +73,22 @@ describe("API SYSTEM routes", () => {
     expect(await guardStoreTiers(TENANT_B, mk({ jprimeProductId: "nope" }))).toMatchObject({ ok: false });
     expect(await guardStoreTiers(TENANT_B, { ...mk(), id: "other-id" })).toMatchObject({ ok: false }); // id must stay locked
   });
-  it("the picker lists the saved catalogue AND the built-in products that were never imported", async () => {
-    const { jprimeCatalog } = await import("@/lib/api-system");
+  it("the picker mirrors the storefront: saved catalogue only (old built-in names never leak); built-ins only when nothing is saved", async () => {
+    const { jprimeCatalog, jprimeHidden } = await import("@/lib/api-system");
     const { allProducts } = await import("@/lib/products");
     const list = await jprimeCatalog();
-    expect(list.some((p: any) => p.productId === "pubg-x")).toBe(true);
-    const builtIn = allProducts.find((p) => p.status === "ONLINE" && p.prices.length);
-    expect(builtIn).toBeTruthy();
-    expect(list.some((p: any) => p.productId === builtIn!.id)).toBe(true);
+    expect(list.map((p: any) => p.productId)).toEqual(["pubg-x"]);
     // never leaks supplier ids
     expect(JSON.stringify(list)).not.toMatch(/seller1Pid|seller2VariantId|sellerPid/);
+    tables.products_catalog = [];
+    seed("products_catalog", [
+      { tenant_id: OWNER_TENANT_ID, product_id: "pubg-x", name: "PUBG X", data: { id: "pubg-x", name: "PUBG X", prices: [{ duration: "1 day", priceINR: "40", supplier: "LOCAL" }] } },
+      { tenant_id: OWNER_TENANT_ID, product_id: "m", name: "In Maint", data: { status: "MAINTENANCE", prices: [{ duration: "1 day", priceINR: "40", supplier: "LOCAL" }] } },
+      { tenant_id: OWNER_TENANT_ID, product_id: "z", name: "Zero Price", data: { prices: [{ duration: "1 day", priceINR: "0", supplier: "LOCAL" }] } },
+    ]);
+    expect((await jprimeCatalog()).map((p: any) => p.productId)).toEqual(["pubg-x"]);
+    expect((await jprimeHidden()).map((h) => h.name).sort()).toEqual(["In Maint", "Zero Price"]);
+    tables.products_catalog = [];
+    expect((await jprimeCatalog()).some((p: any) => p.productId === allProducts[0].id)).toBe(true);
   });
 });

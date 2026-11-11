@@ -227,7 +227,7 @@ async function ownerProducts(): Promise<OwnerProduct[]> {
     seen.add(name);
     list.push({ productId: String(row.product_id), name, category: String(data.category ?? "mobile"), data });
   }
-  for (const p of allProducts) {
+  for (const p of list.length ? [] : allProducts) {
     const name = String(p.name).trim();
     if (seen.has(name)) continue;
     list.push({
@@ -273,6 +273,22 @@ export async function jprimeSource(productId: unknown, duration: unknown) {
   const cost = num(tier.resellerPrice) || num(tier.priceINR);
   if (!(cost > 0)) return { ok: false as const };
   return { ok: true as const, cost, supplier: sup, tier: { ...tier, supplier: sup }, productName: row.name, productId: pid, duration: dur };
+}
+
+/** Owner only: products co-admins cannot pick, and exactly why (so nothing is a mystery). */
+export async function jprimeHidden() {
+  const out: { name: string; reason: string }[] = [];
+  for (const p of await ownerProducts()) {
+    if (p.data.status === "MAINTENANCE") { out.push({ name: p.name, reason: "Product is in Maintenance (Status tab). Set it ONLINE." }); continue; }
+    if (tiersOf(p).length) continue;
+    const prices: any[] = Array.isArray(p.data.prices) ? p.data.prices : [];
+    if (!prices.length) { out.push({ name: p.name, reason: "No durations/prices saved." }); continue; }
+    const t = prices.find((x) => String(x?.duration ?? "").trim());
+    if (!t) out.push({ name: p.name, reason: "Durations have no name." });
+    else if (!(num(t.resellerPrice) || num(t.priceINR))) out.push({ name: p.name, reason: "Price is missing or 0." });
+    else out.push({ name: p.name, reason: "No delivery set: open it in Products and choose Local Stock or a Seller for each duration." });
+  }
+  return out;
 }
 
 /** What a co-admin may pick: names, durations and THEIR cost. Never supplier ids. */

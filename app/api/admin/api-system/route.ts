@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, requireTenantAdmin } from "@/lib/auth";
 import {
-  SELLERS, approvedSellers, createConnection, deleteConnection, jprimeAccess, jprimeCatalog, listConnections,
+  SELLERS, approvedSellers, createConnection, deleteConnection, jprimeAccess, jprimeCatalog, jprimeHidden, listConnections,
   ownerDecide, ownerListConnections, updateConnectionKeys,
 } from "@/lib/api-system";
 import { subscriptionState } from "@/lib/subscription";
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const env1 = !!(process.env.RESELLER_API_KEY && process.env.RESELLER_MASTER_KEY);
     const env2 = !!process.env.SELLER2_API_TOKEN;
     return NextResponse.json({
-      success: true, owner: true, available: o.available, requests: o.items,
+      success: true, owner: true, available: o.available, requests: o.items, hidden: await jprimeHidden(),
       sellers: [
         { id: "SELLER1", name: SELLERS.SELLER1.name, connected: env1, stores: o.items.filter((x) => x.status === "approved" && x.assignedSeller === "SELLER1").length },
         { id: "SELLER2", name: SELLERS.SELLER2.name, connected: env2, stores: o.items.filter((x) => x.status === "approved" && x.assignedSeller === "SELLER2").length },

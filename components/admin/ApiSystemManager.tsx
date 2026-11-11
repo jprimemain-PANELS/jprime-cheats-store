@@ -44,6 +44,14 @@ function OwnerView({ d, reload }: { d: any; reload: () => void }) {
       </div>
       {!d.available && <p className="text-xs text-amber-300">Run supabase/tenant/006_API_SYSTEM.sql in Supabase to switch on store requests.</p>}
       {msg && <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{msg}</p>}
+      {Array.isArray(d.hidden) && d.hidden.length > 0 && (
+        <details className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-amber-300">{d.hidden.length} of your products are NOT offered to co-admins (click to see why)</summary>
+          <ul className="mt-2 space-y-1 text-xs text-slate-300">
+            {d.hidden.map((h: any) => <li key={h.name}><b className="text-white">{h.name}</b>: {h.reason}</li>)}
+          </ul>
+        </details>
+      )}
       <h3 className="text-sm font-bold text-white">Store requests ({d.requests.length})</h3>
       {d.requests.length === 0 && <p className="text-xs text-slate-400">No requests yet.</p>}
       {d.requests.map((r: any) => (
@@ -113,7 +121,7 @@ function StoreView({ d, reload }: { d: any; reload: () => void }) {
         </div>
         <p className="text-xs text-slate-400">Sell the platform's ready API products. Choose <b>JPRIME API stock</b> when you add a product. The platform price is taken from your wallet balance for each sale. If your balance is low, your customers see "out of stock". The product ID cannot be changed.</p>
         <p className="flex items-center gap-1.5 text-xs text-slate-300"><Wallet className="h-3.5 w-3.5" />Your wallet balance: <b>{j.walletBalance === null ? "not linked" : `₹${Number(j.walletBalance).toLocaleString("en-IN")}`}</b></p>
-        {!j.allowed && <p className="text-[11px] text-amber-300">{!j.sharedStockOn ? "Ask the platform owner to switch on JPRIME API stock for your store." : "The platform owner must link your wallet. Contact the owner."}</p>}
+        {!j.allowed && <p className="text-[11px] text-amber-300">Connect your main website account in the Subscription tab to switch on JPRIME API stock.</p>}
         <p className="text-[10px] text-slate-500">This card cannot be edited.</p>
       </div>
 
