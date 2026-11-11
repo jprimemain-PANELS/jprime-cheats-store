@@ -73,4 +73,15 @@ describe("API SYSTEM routes", () => {
     expect(await guardStoreTiers(TENANT_B, mk({ jprimeProductId: "nope" }))).toMatchObject({ ok: false });
     expect(await guardStoreTiers(TENANT_B, { ...mk(), id: "other-id" })).toMatchObject({ ok: false }); // id must stay locked
   });
+  it("the picker lists the saved catalogue AND the built-in products that were never imported", async () => {
+    const { jprimeCatalog } = await import("@/lib/api-system");
+    const { allProducts } = await import("@/lib/products");
+    const list = await jprimeCatalog();
+    expect(list.some((p: any) => p.productId === "pubg-x")).toBe(true);
+    const builtIn = allProducts.find((p) => p.status === "ONLINE" && p.prices.length);
+    expect(builtIn).toBeTruthy();
+    expect(list.some((p: any) => p.productId === builtIn!.id)).toBe(true);
+    // never leaks supplier ids
+    expect(JSON.stringify(list)).not.toMatch(/seller1Pid|seller2VariantId|sellerPid/);
+  });
 });

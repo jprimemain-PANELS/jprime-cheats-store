@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { OWNER_TENANT_ID, tdb } from "@/lib/tenant-db";
+import { allProducts } from "@/lib/products";
 import { resolveCatalogSupplier, inferSupplier, deliveryModeForTier } from "@/lib/delivery";
 
 /** Where an OWNER tier gets its keys: one of the two sellers, or the owner's local key stock. */
@@ -199,38 +200,88 @@ export async function jprimeAccess(tenantId: string): Promise<{ allowed: boolean
 const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return Number.isFinite(n) ? n : 0; };
 
 /** One owner tier by (product id, duration): cost = the owner's reseller price. */
+type OwnerProduct = { productId: string; name: string; category: string; data: any };
+
+/**
+ * ALL of the owner's products: the saved catalogue plus the built-in products that were never imported,
+ * with the owner's current price overrides (product_prices) applied, so the cost is the price the owner really uses.
+ */
+async function ownerProducts(): Promise<OwnerProduct[]> {
+  const [cat, ov] = await Promise.all([
+    tdb(OWNER_TENANT_ID).from("products_catalog").select("product_id, name, data"),
+    tdb(OWNER_TENANT_ID).from("product_prices").select("product_name, duration, price_inr, reseller_price").limit(5000),
+  ]);
+  if (cat.error) return [];
+  const over = new Map<string, { retail: number | null; reseller: number | null }>();
+  const maint = new Set<string>();
+  for (const o of ((ov.data as any[]) ?? [])) {
+    const name = String(o.product_name ?? "").trim();
+    if (String(o.duration) === "__status__") { if (Number(o.price_inr) === 1) maint.add(name); continue; }
+    over.set(`${name}|${String(o.duration ?? "").trim()}`, { retail: Number(o.price_inr) > 0 ? Number(o.price_inr) : null, reseller: Number(o.reseller_price) > 0 ? Number(o.reseller_price) : null });
+  }
+  const list: OwnerProduct[] = [];
+  const seen = new Set<string>();
+  for (const row of ((cat.data as any[]) ?? [])) {
+    const data = row.data && typeof row.data === "object" ? row.data : {};
+    const name = String(row.name ?? data.name ?? row.product_id).trim();
+    seen.add(name);
+    list.push({ productId: String(row.product_id), name, category: String(data.category ?? "mobile"), data });
+  }
+  for (const p of allProducts) {
+    const name = String(p.name).trim();
+    if (seen.has(name)) continue;
+    list.push({
+      productId: String(p.id), name, category: String(p.category),
+      data: {
+        status: p.status, fulfillmentType: p.fulfillmentType,
+        prices: (p.prices ?? []).map((t: any) => ({
+          duration: t.duration, priceINR: t.priceINR, resellerPrice: t.resellerPrice,
+          seller1Pid: p.sellerPid !== undefined ? String(p.sellerPid) : "", seller1Duration: t.sellerDuration ?? "",
+          seller2VariantId: t.seller2VariantId !== undefined ? String(t.seller2VariantId) : "",
+        })),
+      },
+    });
+  }
+  return list.map((p) => {
+    const prices = (Array.isArray(p.data.prices) ? p.data.prices : []).map((t: any) => {
+      const o = over.get(`${p.name}|${String(t?.duration ?? "").trim()}`);
+      return o ? { ...t, ...(o.retail ? { priceINR: String(o.retail) } : {}), ...(o.reseller ? { resellerPrice: String(o.reseller) } : {}) } : t;
+    });
+    return { ...p, data: { ...p.data, status: maint.has(p.name) ? "MAINTENANCE" : p.data.status, prices } };
+  });
+}
+
+function tiersOf(p: OwnerProduct) {
+  const tiers: { duration: string; cost: number; price: number }[] = [];
+  for (const t of Array.isArray(p.data.prices) ? p.data.prices : []) {
+    const s = sourceOf(t, p.data);
+    const cost = num(t?.resellerPrice) || num(t?.priceINR);
+    if (s && cost > 0 && String(t?.duration ?? "").trim()) tiers.push({ duration: String(t.duration).trim(), cost, price: num(t?.priceINR) || cost });
+  }
+  return tiers;
+}
+
 export async function jprimeSource(productId: unknown, duration: unknown) {
   const pid = String(productId ?? "").trim(); const dur = String(duration ?? "").trim();
   if (!pid || !dur) return { ok: false as const };
-  const r = await tdb(OWNER_TENANT_ID).from("products_catalog").select("product_id, name, data").eq("product_id", pid).maybeSingle();
-  const row: any = r.data;
-  if (r.error || !row) return { ok: false as const };
-  const data = row.data && typeof row.data === "object" ? row.data : {};
-  if (data.status === "MAINTENANCE") return { ok: false as const };
-  const tier = (Array.isArray(data.prices) ? data.prices : []).find((t: any) => String(t?.duration ?? "").trim() === dur);
+  const row = (await ownerProducts()).find((p) => p.productId === pid);
+  if (!row || row.data.status === "MAINTENANCE") return { ok: false as const };
+  const tier = (Array.isArray(row.data.prices) ? row.data.prices : []).find((t: any) => String(t?.duration ?? "").trim() === dur);
   if (!tier) return { ok: false as const };
-  const sup = sourceOf(tier, data);
+  const sup = sourceOf(tier, row.data);
   if (!sup) return { ok: false as const };
   const cost = num(tier.resellerPrice) || num(tier.priceINR);
   if (!(cost > 0)) return { ok: false as const };
-  return { ok: true as const, cost, supplier: sup, tier: { ...tier, supplier: sup }, productName: String(row.name ?? data.name ?? pid), productId: pid, duration: dur };
+  return { ok: true as const, cost, supplier: sup, tier: { ...tier, supplier: sup }, productName: row.name, productId: pid, duration: dur };
 }
 
 /** What a co-admin may pick: names, durations and THEIR cost. Never supplier ids. */
 export async function jprimeCatalog() {
-  const r = await tdb(OWNER_TENANT_ID).from("products_catalog").select("product_id, name, data");
-  if (r.error) return [] as any[];
   const out: any[] = [];
-  for (const row of (r.data as any[]) ?? []) {
-    const data = row.data && typeof row.data === "object" ? row.data : {};
-    if (data.status === "MAINTENANCE") continue;
-    const tiers: { duration: string; cost: number; price: number }[] = [];
-    for (const t of Array.isArray(data.prices) ? data.prices : []) {
-      const s = sourceOf(t, data);
-      const cost = num(t?.resellerPrice) || num(t?.priceINR);
-      if (s && cost > 0 && String(t?.duration ?? "").trim()) tiers.push({ duration: String(t.duration).trim(), cost, price: num(t?.priceINR) || cost });
-    }
-    if (tiers.length) out.push({ productId: String(row.product_id), name: String(row.name ?? data.name ?? row.product_id), category: data.category ?? "mobile", tiers });
+  for (const p of await ownerProducts()) {
+    if (p.data.status === "MAINTENANCE") continue;
+    const tiers = tiersOf(p);
+    if (tiers.length) out.push({ productId: p.productId, name: p.name, category: p.category, tiers });
   }
   return out;
 }
@@ -279,7 +330,7 @@ export async function guardStoreTiers(tenantId: string, product: any): Promise<{
     const needFeatures = !feats.some((f) => String(f ?? "").trim());
     if (needVideo || needFeatures) {
       const o = await tdb(OWNER_TENANT_ID).from("products_catalog").select("data").eq("product_id", jprimeSourceId).maybeSingle();
-      const od: any = (o.data as any)?.data;
+      const od: any = (o.data as any)?.data ?? (allProducts.find((x) => x.id === jprimeSourceId) as any);
       if (od && typeof od === "object") {
         if (needVideo && typeof od.videoUrl === "string") product.videoUrl = od.videoUrl;
         if (needFeatures && Array.isArray(od.features)) product.features = od.features.filter((f: any) => typeof f === "string");

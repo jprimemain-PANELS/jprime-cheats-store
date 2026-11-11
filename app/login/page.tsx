@@ -16,7 +16,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useBrand } from "@/components/brand-provider";
 import type { LucideIcon } from "lucide-react";
-import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Play, ChevronRight } from "lucide-react";
+import { User, Lock, Phone, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Play, ChevronRight, Eye, EyeOff } from "lucide-react";
 import { LoginBackground, type LoginBgKind } from "@/components/login-backgrounds";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 
@@ -544,21 +544,30 @@ type FieldProps = {
   onChange: (value: string) => void;
 };
 
-const Field = ({ icon: Icon, type, placeholder, value, onChange }: FieldProps) => (
+const Field = ({ icon: Icon, type, placeholder, value, onChange }: FieldProps) => {
+  const [reveal, setReveal] = useState(false);
+  const isPw = type === "password";
+  return (
   <div className="lg-field relative group/input rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] backdrop-blur-md transition-all duration-300 focus-within:border-fuchsia-500/60 focus-within:bg-white/[0.08]">
     <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white/10 group-focus-within/input:bg-gradient-to-b group-focus-within/input:from-violet-500 group-focus-within/input:to-fuchsia-500 transition-colors duration-300" />
     <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-fuchsia-400/70 group-focus-within/input:text-fuchsia-300 transition-colors duration-200">
       <Icon className="h-4 w-4 stroke-[1.8]" />
     </span>
     <input
-      type={type}
+      type={isPw && reveal ? "text" : type}
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-transparent pl-10 pr-3 py-2.5 text-[13px] font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300"
+      className={`w-full bg-transparent pl-10 ${isPw ? "pr-10" : "pr-3"} py-2.5 text-[13px] font-medium tracking-wide text-white placeholder-white/30 outline-none transition-all duration-300`}
     />
+    {isPw && (
+      <button type="button" onClick={() => setReveal((v) => !v)} aria-label={reveal ? "Hide password" : "Show password"} className="absolute inset-y-0 right-0 flex items-center px-3 text-white/50 hover:text-white cursor-pointer">
+        {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    )}
   </div>
-);
+  );
+};
 
 const BrandHeader = ({ isLogin }: { isLogin: boolean }) => {
   const brand = useBrand();
