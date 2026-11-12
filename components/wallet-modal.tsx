@@ -21,9 +21,13 @@ import {
   Check,
   AlertCircle,
   CheckCircle2,
+  ShieldCheck,
+  Lock,
+  Clock,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
 import { useBrand } from "@/components/brand-provider";
 
 interface WalletModalProps {
@@ -50,7 +54,11 @@ interface PaymentData {
   gateway?: string;
   // false => no UTR needed; payment is detected automatically (anuj gateway)
   needs_utr?: boolean;
+  expires_at?: string | null;
 }
+
+/** A wallet QR is valid for 5 minutes (shorter if the gateway says so). After that the screen closes and the customer returns home. */
+const QR_LIFETIME_SECONDS = 300;
 
 const MIN_DEPOSIT_AMOUNT = 1;
 const PRESET_AMOUNTS = [100, 500, 1000, 2000, 5000];
@@ -107,6 +115,11 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
   const [qrLoaded, setQrLoaded] = useState(false);
   const [verified, setVerified] = useState(false);
   const verifyingRef = useRef(false);
+  const router = useRouter();
+  const successRef = useRef(false);
+  const [deadline, setDeadline] = useState<number | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(QR_LIFETIME_SECONDS);
+  const [expired, setExpired] = useState(false);
   const [credited, setCredited] = useState<{ amount: string; from: number; to: number | null } | null>(null);
   const [creditedShown, setCreditedShown] = useState(0);
 
@@ -178,6 +191,8 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
       setShowQR(false);
       setShowHistory(false);
       setPaymentData(null);
+      setDeadline(null);
+      setExpired(false);
       setAmount("");
       setMobileNumber("");
       setUtr("");
@@ -260,6 +275,12 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
       }
 
       setQrLoaded(false);
+      successRef.current = false;
+      setExpired(false);
+      const provider = data.payment?.expires_at ? Date.parse(data.payment.expires_at) : NaN;
+      const own = Date.now() + QR_LIFETIME_SECONDS * 1000;
+      setDeadline(Number.isFinite(provider) && provider > Date.now() ? Math.min(provider, own) : own);
+      setSecondsLeft(QR_LIFETIME_SECONDS);
       setPaymentData(data.payment);
       setShowQR(true);
     } catch (err) {
@@ -310,6 +331,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
           from: Number(balance) || 0,
           to: typeof data.balance !== "undefined" ? Number(data.balance) : null,
         });
+        successRef.current = true;
         setVerified(true);
         setNotice({ type: "success", message: data.message || "Wallet balance credited successfully!" });
 
@@ -393,6 +415,30 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, showQR, verified, paymentData]);
+
+  // 5-minute countdown. At zero: one last payment check (so a payment made in the final second is not lost),
+  // then the QR screen closes by itself and the customer is sent back to the home page.
+  useEffect(() => {
+    if (!open || !showQR || verified || !deadline) return;
+    let closed = false;
+    const id = window.setInterval(async () => {
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setSecondsLeft(left);
+      if (left > 0 || closed) return;
+      closed = true;
+      window.clearInterval(id);
+      await verifyWalletPayment(true);
+      if (successRef.current) return;
+      setExpired(true);
+      window.setTimeout(() => {
+        resetFormAndCloseFields();
+        onOpenChange(false);
+        router.replace("/");
+      }, 2800);
+    }, 1000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, showQR, verified, deadline]);
 
   function handleCopyUpi() {
     if (!paymentData?.upi_id) return;
@@ -771,57 +817,100 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                 </div>
               ) : (
                 <>
-                  <div className="rounded-2xl border border-fuchsia-500/25 bg-[#120c1f] p-4">
-                    <div className="flex justify-center">
-                      <div className="relative rounded-xl bg-white p-2.5">
-                        {!qrLoaded && (
-                          <div className="wallet-skeleton absolute inset-2.5 rounded-lg" />
-                        )}
-                        {paymentData?.qr_url && (
-                          <img
-                            src={paymentData.qr_url}
-                            alt="QR Code"
-                            onLoad={() => setQrLoaded(true)}
-                            className={`h-48 w-48 object-contain transition-opacity duration-300 ${
-                              qrLoaded ? "opacity-100" : "opacity-0"
-                            }`}
-                          />
+                  {(() => {
+                    const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+                    const ss = String(secondsLeft % 60).padStart(2, "0");
+                    const urgent = secondsLeft <= 60;
+                    const frac = Math.max(0, Math.min(1, secondsLeft / QR_LIFETIME_SECONDS));
+                    const R = 21, C = 2 * Math.PI * R;
+                    return (
+                      <div className="relative overflow-hidden rounded-2xl border border-fuchsia-500/25 bg-[#120c1f]">
+                        {/* secure header */}
+                        <div className="flex items-center justify-between gap-2 border-b border-white/5 bg-black/20 px-4 py-2.5">
+                          <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+                            <ShieldCheck className="h-3.5 w-3.5" /> Secure payment
+                          </span>
+                          <span className="flex items-center gap-1.5 text-[10px] text-neutral-400">
+                            <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" /></span>
+                            Live check
+                          </span>
+                        </div>
+
+                        <div className="p-4">
+                          {/* amount + countdown ring */}
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[10px] uppercase tracking-[0.18em] text-neutral-400">Pay exactly</p>
+                              <p className="font-mono text-3xl font-bold leading-tight text-white">₹{paymentData?.amount}</p>
+                            </div>
+                            <div className="relative h-14 w-14 shrink-0" role="timer" aria-label={`Time left ${mm}:${ss}`}>
+                              <svg viewBox="0 0 48 48" className="h-14 w-14 -rotate-90">
+                                <circle cx="24" cy="24" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+                                <circle cx="24" cy="24" r={R} fill="none" stroke={urgent ? "#f87171" : "#d946ef"} strokeWidth="4" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - frac)} style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }} />
+                              </svg>
+                              <span className={`absolute inset-0 flex items-center justify-center font-mono text-[11px] font-bold tabular-nums ${urgent ? "text-red-300" : "text-white"}`}>{mm}:{ss}</span>
+                            </div>
+                          </div>
+
+                          {/* QR with scan frame */}
+                          <div className="flex justify-center">
+                            <div className="relative rounded-2xl bg-white p-3 shadow-[0_0_40px_-10px_rgba(217,70,239,0.6)]">
+                              {!qrLoaded && <div className="wallet-skeleton absolute inset-3 rounded-lg" />}
+                              {paymentData?.qr_url && (
+                                <img
+                                  src={paymentData.qr_url}
+                                  alt="Payment QR code"
+                                  onLoad={() => setQrLoaded(true)}
+                                  className={`h-48 w-48 object-contain transition-opacity duration-300 ${qrLoaded ? "opacity-100" : "opacity-0"}`}
+                                />
+                              )}
+                              {(["left-1 top-1 border-l-2 border-t-2 rounded-tl-lg", "right-1 top-1 border-r-2 border-t-2 rounded-tr-lg", "left-1 bottom-1 border-l-2 border-b-2 rounded-bl-lg", "right-1 bottom-1 border-r-2 border-b-2 rounded-br-lg"]).map((c) => (
+                                <span key={c} aria-hidden className={`pointer-events-none absolute h-5 w-5 border-fuchsia-600 ${c}`} />
+                              ))}
+                            </div>
+                          </div>
+
+                          <p className="mt-3 text-center text-[11px] text-amber-300/90">
+                            Pay this exact amount (including paise) so the payment is matched automatically.
+                          </p>
+
+                          {/* how to pay */}
+                          <ol className="mt-3 space-y-1.5 text-[11px] text-neutral-300">
+                            <li className="flex gap-2"><span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-fuchsia-500/20 text-[9px] font-bold text-fuchsia-200">1</span>Open any UPI app (PhonePe, Paytm, GPay...)</li>
+                            <li className="flex gap-2"><span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-fuchsia-500/20 text-[9px] font-bold text-fuchsia-200">2</span>Scan this QR and pay ₹{paymentData?.amount}</li>
+                            <li className="flex gap-2"><span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-fuchsia-500/20 text-[9px] font-bold text-fuchsia-200">3</span>Stay on this screen - your wallet is credited automatically</li>
+                          </ol>
+
+                          {/* details */}
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <div className="rounded-lg bg-black/25 p-2.5">
+                              <p className="text-[10px] uppercase tracking-wider text-neutral-500">Order ID</p>
+                              <p className="mt-0.5 truncate font-mono text-[11px] text-white" title={paymentData?.order_id}>{paymentData?.order_id}</p>
+                            </div>
+                            <button onClick={handleCopyUpi} className="rounded-lg bg-black/25 p-2.5 text-left transition-colors hover:bg-black/40 cursor-pointer" aria-label="Copy UPI ID">
+                              <p className="flex items-center justify-between text-[10px] uppercase tracking-wider text-neutral-500">UPI ID {copied ? <Check className="h-3 w-3 text-emerald-300" /> : <Copy className="h-3 w-3" />}</p>
+                              <p className="mt-0.5 truncate text-[11px] text-white">{paymentData?.upi_id}</p>
+                            </button>
+                          </div>
+
+                          {/* security note */}
+                          <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-500/15 bg-emerald-500/[0.05] px-3 py-2 text-[10px] leading-relaxed text-neutral-300">
+                            <Lock className="mt-0.5 h-3 w-3 shrink-0 text-emerald-300" />
+                            <span>Pay only through this QR. We never ask for your UPI PIN or OTP. The payment is checked by the gateway and this order works for one payment only.</span>
+                          </div>
+                        </div>
+
+                        {/* expired overlay */}
+                        {expired && (
+                          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-[#0b0714]/95 px-6 text-center backdrop-blur-sm">
+                            <Clock className="h-10 w-10 text-red-300" />
+                            <p className="text-base font-bold text-white">Payment session expired</p>
+                            <p className="text-xs text-neutral-400">No payment was received in time. Taking you back to the home page...</p>
+                          </div>
                         )}
                       </div>
-                    </div>
-
-                    <div className="mt-4 space-y-2.5">
-                      <div className="flex items-center justify-between rounded-lg bg-black/25 p-2.5">
-                        <span className="text-sm text-neutral-400">Amount</span>
-                        <span className="font-mono font-bold text-white">₹{paymentData?.amount}</span>
-                      </div>
-                      <p className="px-1 text-[11px] text-amber-300/90">
-                        Pay this exact amount (including paise) so the payment can be matched.
-                      </p>
-
-                      <div className="rounded-lg bg-black/25 p-2.5">
-                        <p className="text-xs text-neutral-400">UPI ID</p>
-                        <p className="mt-0.5 break-all text-xs tracking-wide text-white">
-                          {paymentData?.upi_id}
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={handleCopyUpi}
-                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-fuchsia-500/25 bg-fuchsia-500/10 py-2.5 text-sm font-semibold text-fuchsia-300 transition-all duration-200 hover:bg-fuchsia-500/20 active:scale-[0.98]"
-                      >
-                        {copied ? (
-                          <>
-                            <Check className="h-3.5 w-3.5" /> Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-3.5 w-3.5" /> Copy UPI ID
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {paymentData?.needs_utr !== false ? (
                     <div>
