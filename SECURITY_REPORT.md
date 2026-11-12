@@ -26,3 +26,10 @@
 
 ## What you should do (in order)
 1. Rotate Telegram token. 2. Run the git-history commands above. 3. Upgrade Next on a Preview branch. 4. Add Cloudflare rate-limit rules on login/signup. 5. Later: CSP report-only.
+
+## v13 re-audit addendum (checked again, nothing broken)
+- **Re-checked and OK:** no service-role/session secret in any client file; only the two public Supabase variables use `NEXT_PUBLIC_`; no `eval`; `.env*` ignored; every route is either guarded (`requireUser/TenantAdmin/Admin`), a deliberate public read (catalog, stock-count, product-prices, discounts, coupons/public, tenant/brand), an auth endpoint with rate limit, the secret-protected webhook, or a retired route returning 410. No CORS headers are set (same-origin only). Test suite: 206 passing.
+- **New feature audited:** gallery video upload (`/api/admin/video-upload`) is store-admin only, rate-limited (15/min), allows only video types up to 200 MB, signs the file type into a 15-minute link, and keeps files in a per-store folder. R2 secret is server-only env.
+- **Pay-by-UPI direct purchase** stays off (410) unless `ALLOW_DIRECT_UPI=1`; wallet QR now expires in 5 minutes.
+- **Still open (unchanged, owner decision):** upgrade Next.js on a Preview branch (critical advisory), `ignoreBuildErrors`, shared rate limiter, CSP report-only, Telegram token rotation, git-history scan commands above.
+- **Files safe to delete from the repo root** (not used by the app): `DELETE-THESE-FILES.txt`, `README-COPY.txt`, `SECURITY_MIGRATION.sql` (already applied), `SESSION_SECURITY_NOTES.txt`, `jprime-*-source.txt`, `jprime-stock-fix.patch`, `apply-stock-fix.ps1`, `delete-old-files.ps1`, `pnpm-workspace.yaml` only if you use npm.

@@ -1,5 +1,6 @@
 "use client";
 
+import VideoUploader from "@/components/admin/VideoUploader";
 import { categoriesFor, categoryLabel, normalizeCategory } from "@/lib/categories";
 import { changedByCleaning, cleanProductId, cleanProductText } from "@/lib/text-clean";
 import { useEffect, useState } from "react";
@@ -1049,17 +1050,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                   Video
                 </h4>
 
-                <input
-                  value={selected.videoUrl || ""}
-                  onChange={(e) =>
-                    updateSelected(
-                      "videoUrl",
-                      e.target.value
-                    )
-                  }
-                  className="w-full p-3 rounded-xl bg-zinc-900 border border-zinc-800"
-                  placeholder="https://..."
-                />
+                <VideoUploader value={selected.videoUrl || ""} onChange={(url) => updateSelected("videoUrl", url)} />
                 {!isOwner && (
                   <p className="mt-1 text-[11px] text-zinc-500">Leave video and features blank to use the JPRIME video and features.</p>
                 )}
