@@ -31,6 +31,7 @@ const ALLOWED_SERVICE_ROLE = new Set([
   "lib/telegram.ts",        // reads ONLY app_settings (owner telegram destinations); skips non-owner stores
   "lib/store-options.ts",   // reads ONLY app_settings keys prefixed per store (store_options); owner-only writes of resellerLaunch
   "lib/upgrade-reseller.ts", // users role update scoped by id + tenant_id + current role; wallet via tenant RPCs
+  "lib/deposit-recheck.ts", // admin recheck of ONE deposit by order id inside the admin tenant; credit only through the atomic RPC
 ]);
 
 describe("static tenant-isolation guard", () => {

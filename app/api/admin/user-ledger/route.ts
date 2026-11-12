@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
   }
 
   const db = tdb(auth.tenant.id);
-  const [tx, purchases, deposits, orders] = await Promise.all([
+  const [prof, wal, tx, purchases, deposits, orders] = await Promise.all([
+    db.from("users").select("role, created_at").eq("username", username).maybeSingle(),
+    db.from("wallets").select("balance").eq("username", username).maybeSingle(),
     db
       .from("wallet_transactions")
       .select("*")
@@ -61,6 +63,11 @@ export async function GET(request: NextRequest) {
       username,
       entries,
       summary,
+      profile: {
+        role: String((prof.data as any)?.role ?? ""),
+        joinedAt: (prof.data as any)?.created_at ?? null,
+        balance: wal.data ? Number((wal.data as any).balance) : null,
+      },
       truncated: (tx.data || []).length >= LIMIT || (purchases.data || []).length >= LIMIT,
     },
     { headers: NO_STORE }

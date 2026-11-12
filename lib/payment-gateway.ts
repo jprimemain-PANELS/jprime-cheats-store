@@ -639,6 +639,7 @@ export async function inspectGatewayOrder(
   const raw = JSON.stringify(res.json, null, 2).split(cfg.apiKey).join("[api key hidden]").slice(0, 3000);
 
   let interpreted = "";
+  const provider = String(res.json?.data?.gateway ?? "").trim();
   if (usesAutoQr(id)) {
     const parsed = parseAutoVerify(id, res.json, res.httpStatus);
     interpreted =
@@ -649,6 +650,13 @@ export async function inspectGatewayOrder(
         : parsed.state === "expired"
         ? "EXPIRED: the 5-minute window passed without a detected payment"
         : `Not usable: ${parsed.message}`;
+    // The key saved in this slot decides WHICH provider account is used. A mismatch means money goes to a different account.
+    if (provider) {
+      const isPaytm = /paytm/i.test(provider);
+      if (id === "paytm" && !isPaytm) interpreted += ` | WARNING: the key saved in the PAYTM slot belongs to "${provider}", not Paytm. Save the Paytm key here.`;
+      if (id === "anuj" && isPaytm) interpreted += ` | WARNING: the key saved in the ANUJ (FamPay) slot belongs to Paytm. Use the Paytm slot for it.`;
+      interpreted += ` | provider account: ${provider}`;
+    }
   }
 
   return { ok: true, message: "Gateway answered.", httpStatus: res.httpStatus, interpreted, raw };

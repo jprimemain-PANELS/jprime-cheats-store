@@ -764,7 +764,7 @@ async function deliverFromJprime(tenantId: string, price: CatalogPrice, storePro
   const access = await jprimeAccess(tenantId);
   if (!access.allowed || !access.payer) return NOT_CONFIGURED;
 
-  const src = await jprimeSource(price.jprimeProductId, price.jprimeDuration);
+  const src = await jprimeSource(price.jprimeProductId, price.jprimeDuration, access.payer);
   if (!src.ok) return { success: false as const, error: "This product is not available right now." };
 
   const debit = await debitWallet(OWNER_TENANT_ID, access.payer, src.cost);

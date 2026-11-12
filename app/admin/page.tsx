@@ -263,6 +263,18 @@ export default function AdminPage() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  // Welcome steps card (co-admin only): server says whether the first 5 days are still running; X hides it for this login session.
+  const [welcomeOn, setWelcomeOn] = useState(false);
+  const [welcomeClosed, setWelcomeClosed] = useState(false);
+  useEffect(() => {
+    try { if (sessionStorage.getItem("welcome_closed") === "1") setWelcomeClosed(true); } catch {}
+    (async () => {
+      try {
+        const j = await (await fetch("/api/admin/store-options", { cache: "no-store" })).json();
+        if (j?.success && j.isOwner !== true && j.welcome?.show === true) setWelcomeOn(true);
+      } catch {}
+    })();
+  }, []);
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Add-stock state
@@ -723,9 +735,7 @@ export default function AdminPage() {
   ];
   // Co-admins get simple everyday names and an easy-first order; the owner keeps the original tabs.
   const SIMPLE: Partial<Record<Tab, string>> = {
-    overview: "Home", guide: "Start Here", subscription: "My Plan", products: "My Products", pricing: "Prices",
-    status: "Product ON/OFF", api: "Get Products", gateway: "Payment Setup", telegram: "Telegram Alerts", branding: "Look & Brand",
-    domain: "Website Link", purchases: "Orders", users: "Customers", inventory: "Keys Stock", vip: "Reseller Prices",
+    // (names are the original simple ones: nothing renamed for co-admins)
   };
   const COADMIN_ORDER: Tab[] = ["overview", "guide", "subscription", "api", "products", "pricing", "status", "gateway", "branding", "domain", "users", "purchases", "inventory", "vip", "telegram"];
   const TABS = isOwnerAdmin
@@ -826,9 +836,15 @@ export default function AdminPage() {
         {/* OVERVIEW */}
         {activeTab === "overview" && (
           <div className="space-y-6">
-            {!isOwnerAdmin && (
-              <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-600/15 to-fuchsia-600/10 p-4 sm:p-5">
-                <p className="text-base font-bold text-white">Welcome! Do these 5 steps to start selling</p>
+            {!isOwnerAdmin && welcomeOn && !welcomeClosed && (
+              <div className="relative rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-600/15 to-fuchsia-600/10 p-4 sm:p-5">
+                <button
+                  type="button"
+                  aria-label="Close welcome steps"
+                  onClick={() => { setWelcomeClosed(true); try { sessionStorage.setItem("welcome_closed", "1"); } catch {} }}
+                  className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white cursor-pointer"
+                ><X className="h-4 w-4" /></button>
+                <p className="pr-8 text-base font-bold text-white">Welcome! Do these 5 steps to start selling</p>
                 <p className="mt-0.5 text-xs text-slate-400">Tap a step. Take your time - you can come back any time.</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                   {([
@@ -845,7 +861,7 @@ export default function AdminPage() {
                     </button>
                   ))}
                 </div>
-                <button onClick={() => { setActiveTab("guide"); window.scrollTo({ top: 0 }); }} className="mt-3 text-xs font-semibold text-indigo-300 underline cursor-pointer">Need help? Open the Start Here guide</button>
+                <button onClick={() => { setActiveTab("guide"); window.scrollTo({ top: 0 }); }} className="mt-3 text-xs font-semibold text-indigo-300 underline cursor-pointer">Need help? Open the Setup Guide</button>
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

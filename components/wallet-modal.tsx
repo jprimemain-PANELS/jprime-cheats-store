@@ -403,13 +403,23 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-hidden rounded-3xl border border-violet-500/20 bg-[#0b0714] p-0 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_30px_80px_-20px_rgba(0,0,0,0.8)]">
+      <DialogContent showCloseButton={false} className="sm:max-w-md max-h-[90vh] overflow-hidden rounded-3xl border border-violet-500/20 bg-[#0b0714] p-0 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_30px_80px_-20px_rgba(0,0,0,0.8)]">
         {/* Ambient backdrop */}
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="wallet-mesh absolute inset-0" />
           <div className="wallet-glow-a absolute -top-20 -right-14 h-56 w-56 rounded-full bg-fuchsia-500/15 blur-[70px]" />
           <div className="wallet-glow-b absolute -bottom-20 -left-14 h-56 w-56 rounded-full bg-violet-600/15 blur-[70px]" />
         </div>
+
+        {/* One close button on EVERY wallet screen (home, add money, history, QR) - always closes the whole wallet */}
+        <button
+          type="button"
+          onClick={() => onOpenChange(false)}
+          aria-label="Close wallet"
+          className="absolute right-3 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-lg text-neutral-300 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-90 cursor-pointer"
+        >
+          <X className="h-5 w-5" />
+        </button>
 
         <div className="relative z-10 flex max-h-[90vh] flex-col overflow-y-auto custom-scrollbar p-6">
           <DialogHeader className="sr-only">
@@ -438,6 +448,7 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                   <Wallet className="wallet-float h-4 w-4 text-fuchsia-400" />
                 </span>
                 <span className="text-base font-semibold">My Wallet</span>
+
               </div>
 
               {/* Balance */}
@@ -666,9 +677,9 @@ export function WalletModal({ open, onOpenChange, balance, onBalanceUpdate }: Wa
                 <button
                   onClick={resetFormAndCloseFields}
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 transition-all duration-200 hover:bg-white/5 hover:text-white active:scale-90"
-                  aria-label="Cancel order and close screen"
+                  aria-label="Back"
                 >
-                  <X className="h-4 w-4" />
+                  <ChevronLeft className="h-4 w-4" />
                 </button>
                 <h2 className="flex-1 text-center text-[15px] font-semibold text-white pr-8">
                   {verified ? "Payment Verified" : "Scan & Pay"}

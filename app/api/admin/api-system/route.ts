@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true, jprimeAllowed: access.allowed,
       sellers: await approvedSellers(auth.tenant.id),
-      catalog: access.allowed ? await jprimeCatalog() : [],
+      catalog: access.allowed ? await jprimeCatalog(access.payer) : [],
     }, { headers: NO_STORE });
   }
   const [conns, sub] = await Promise.all([listConnections(auth.tenant.id), subscriptionState(auth.tenant.id)]);

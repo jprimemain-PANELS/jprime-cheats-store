@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, requireTenantAdmin } from "@/lib/auth";
-import { getStoreOptions, saveStoreOptions } from "@/lib/store-options";
+import { getStoreOptions, saveStoreOptions, welcomeState } from "@/lib/store-options";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -9,7 +9,7 @@ const NO_STORE = { "Cache-Control": "no-store" };
 export async function GET(request: NextRequest) {
   const auth = await requireTenantAdmin(request);
   if (!auth.ok) return auth.response;
-  return NextResponse.json({ success: true, options: await getStoreOptions(auth.tenant.id), isOwner: auth.tenant.kind === "owner" }, { headers: NO_STORE });
+  return NextResponse.json({ success: true, options: await getStoreOptions(auth.tenant.id), isOwner: auth.tenant.kind === "owner", welcome: await welcomeState(auth.tenant.id) }, { headers: NO_STORE });
 }
 
 export async function POST(request: NextRequest) {

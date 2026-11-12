@@ -66,6 +66,29 @@ export async function saveStoreOptions(tenantId: string, patch: any): Promise<{ 
   return { ok: true, options: next };
 }
 
+const WELCOME_KEY = "welcome_since";
+export const WELCOME_DAYS = 5;
+
+/**
+ * The co-admin "Welcome" steps card: shown during the first 5 days after the store admin first opens it, then never again.
+ * The clock starts at the first call and is kept on the server (not in the browser), so another device cannot restart it.
+ */
+export async function welcomeState(tenantId: string, now = Date.now()): Promise<{ show: boolean }> {
+  if (tenantId === OWNER_TENANT_ID) return { show: false };
+  try {
+    const r = await readSetting(tenantId, WELCOME_KEY);
+    const iso = String((r.data as any)?.value?.since ?? "");
+    let since = Date.parse(iso);
+    if (!Number.isFinite(since)) {
+      since = now;
+      await writeSetting(tenantId, WELCOME_KEY, { since: new Date(now).toISOString() });
+    }
+    return { show: now - since < WELCOME_DAYS * 24 * 3600 * 1000 };
+  } catch {
+    return { show: true };
+  }
+}
+
 /** OWNER ONLY (route enforces): allow or stop a store's resellers from launching their own websites. */
 export async function setResellerLaunch(tenantId: string, allowed: boolean) {
   if (!isUuid(tenantId) || tenantId === OWNER_TENANT_ID) return { ok: false as const, reason: "Invalid store." };

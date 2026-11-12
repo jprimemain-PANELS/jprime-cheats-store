@@ -18,6 +18,7 @@ export type LedgerKind =
   | "wallet_purchase"
   | "upi_purchase"
   | "upi_problem"
+  | "topup_pending"
   | "refund"
   | "other";
 
@@ -41,6 +42,9 @@ export type LedgerEntry = {
   keyStatus?: KeyStatus;
   keyText?: string;
   statusText?: string;
+  /** Gateway order id (top-ups) so an admin can look the payment up. */
+  orderId?: string;
+  gateway?: string;
 };
 
 export type LedgerSummary = {
@@ -51,6 +55,8 @@ export type LedgerSummary = {
   refunds: number;
   purchases: number;
   problems: number;
+  pendingTopups: number;
+  lastPurchaseAt: string | null;
 };
 
 type Row = Record<string, unknown>;
@@ -330,6 +336,29 @@ export function buildUserLedger(
     // pending / expired / success: not a problem (success is shown from purchase_history).
   }
 
+  /* 5) Top-ups that were started but never credited (so an admin can see them and re-check the payment). */
+  let pendingShown = 0;
+  for (const [index, d] of (extra.deposits || []).entries()) {
+    const status = String(d.status ?? "").toLowerCase();
+    if (SUCCESS_WORDS.includes(status) || pendingShown >= 100) continue;
+    const at = rowTime(d);
+    const age = at > 0 ? now - at : 0;
+    pendingShown += 1;
+    entries.push({
+      id: `d${String(d.id ?? d.gateway_order_id ?? index)}`,
+      at: at ? new Date(at).toISOString() : null,
+      kind: "topup_pending",
+      title: "Top-up NOT credited",
+      amount: round2(num(d.amount)),
+      direction: "in",
+      method: "UPI",
+      balanceAfter: null,
+      orderId: String(d.gateway_order_id ?? ""),
+      gateway: String(d.gateway ?? "xyz"),
+      statusText: status === "pending" && age < 15 * 60 * 1000 ? "Waiting for the payment" : "Never credited (payment not confirmed by the gateway)",
+    });
+  }
+
   /* Newest first; entries without a stored time go to the bottom (newest id first). */
   entries.sort((a, b) => {
     const ta = a.at ? Date.parse(a.at) : 0;
@@ -346,8 +375,12 @@ export function buildUserLedger(
     refunds: 0,
     purchases: 0,
     problems: 0,
+    pendingTopups: 0,
+    lastPurchaseAt: null,
   };
   for (const e of entries) {
+    if (e.kind === "topup_pending") { summary.pendingTopups += 1; continue; }
+    if ((e.kind === "wallet_purchase" || e.kind === "upi_purchase") && e.at && (!summary.lastPurchaseAt || e.at > summary.lastPurchaseAt)) summary.lastPurchaseAt = e.at;
     if (e.kind === "deposit") summary.walletTopups += e.amount;
     else if (e.kind === "admin_credit") summary.adminCredits += e.amount;
     else if (e.kind === "wallet_purchase" && e.keyStatus === "released") {
@@ -363,7 +396,7 @@ export function buildUserLedger(
   for (const e of entries) {
     if (e.kind === "wallet_purchase" && e.keyStatus !== "released") summary.spentFromWallet += e.amount;
   }
-  for (const k of Object.keys(summary) as (keyof LedgerSummary)[]) summary[k] = round2(summary[k]);
+  for (const k of ["walletTopups", "adminCredits", "spentFromWallet", "paidByUpi", "refunds"] as const) summary[k] = round2(summary[k]);
 
   return { entries, summary };
 }

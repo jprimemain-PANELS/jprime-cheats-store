@@ -1005,30 +1005,6 @@ export function ProductCard({ product, index }: ProductCardProps) {
                   </span>
                 </button>
 
-                {/* UPI OPTION */}
-                <button
-                  disabled={isProcessing}
-                  onClick={handleUpiPayment}
-                  className="group/opt relative flex items-center justify-between overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left transition-all duration-300 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <span className="relative z-10 flex items-center gap-3.5">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300 transition-all group-hover/opt:bg-violet-500 group-hover/opt:text-white">
-                      <QrCode className="h-5 w-5" />
-                    </span>
-
-                    <span>
-                      <span className="block text-sm font-bold text-white">
-                        Instant UPI Payment
-                      </span>
-
-                      <span className="mt-0.5 block text-xs text-white/50">
-                        Scan QR Code & Enter UTR
-                      </span>
-                    </span>
-                  </span>
-
-                  <ChevronRight className="relative z-10 h-4 w-4 text-white/40 opacity-0 transition-all group-hover/opt:translate-x-1 group-hover/opt:opacity-100" />
-                </button>
               </div>
 
               {isProcessing && (

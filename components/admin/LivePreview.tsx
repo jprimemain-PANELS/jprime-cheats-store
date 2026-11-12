@@ -7,6 +7,7 @@ import { RefreshCw, Smartphone, Monitor } from "lucide-react";
 export default function LivePreview({ version }: { version: number }) {
   const [mode, setMode] = useState<"phone" | "desktop">("phone");
   const [manual, setManual] = useState(0);
+  const [shown, setShown] = useState(false);
   const btn = (on: boolean) => `flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold cursor-pointer ${on ? "border-indigo-500 bg-indigo-500/15 text-white" : "border-slate-700 text-slate-300 hover:bg-slate-800"}`;
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3 space-y-3">
@@ -21,6 +22,9 @@ export default function LivePreview({ version }: { version: number }) {
           <button onClick={() => setManual((n) => n + 1)} className={btn(false)} title="Reload preview"><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
         </div>
       </div>
+      {!shown ? (
+        <button onClick={() => setShown(true)} className="w-full rounded-xl border border-dashed border-slate-700 py-10 text-sm font-semibold text-slate-300 hover:bg-slate-800/50 cursor-pointer">Show live preview</button>
+      ) : (
       <div className="flex justify-center overflow-hidden rounded-xl bg-black/40 p-2">
         <iframe
           key={`${version}-${manual}`}
@@ -30,6 +34,7 @@ export default function LivePreview({ version }: { version: number }) {
           style={mode === "phone" ? { width: 390, maxWidth: "100%", height: 720 } : { width: "100%", height: 720 }}
         />
       </div>
+      )}
     </div>
   );
 }

@@ -112,6 +112,19 @@ export default function GatewayManager() {
     }
   }
 
+  async function recheck(id: GatewayId) {
+    const orderId = (orderIds[id] || "").trim();
+    if (!orderId) { note(id, false, "Paste an order ID first."); return; }
+    if (!window.confirm(`Ask the provider again and credit the customer ONLY if it says PAID for ${orderId}?`)) return;
+    setBusy(`${id}:recheck`);
+    try {
+      const data = await gatewayRequest({ method: "POST", body: JSON.stringify({ gateway: id, action: "recheck", orderId }) });
+      note(id, data.ok === true, String(data.message || "Done."));
+    } catch (e) {
+      note(id, false, e instanceof Error ? e.message : "Something went wrong.");
+    } finally { setBusy(""); }
+  }
+
   async function inspect(id: GatewayId) {
     const orderId = (orderIds[id] || "").trim();
     if (!orderId) {
@@ -364,6 +377,15 @@ export default function GatewayManager() {
                     >
                       {busy === `${id}:inspect` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
                       Check
+                    </button>
+                    <button
+                      onClick={() => recheck(id)}
+                      disabled={!!busy}
+                      title="Credit the customer if the provider says PAID"
+                      className="flex items-center gap-1.5 text-xs font-semibold text-emerald-200 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 disabled:opacity-40 px-3 py-2 rounded-lg transition-colors cursor-pointer shrink-0"
+                    >
+                      {busy === `${id}:recheck` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Credit if paid
                     </button>
                   </div>
                   {inspections[id] && (

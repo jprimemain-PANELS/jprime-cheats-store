@@ -1,3 +1,4 @@
+import { recheckDeposit } from "@/lib/deposit-recheck";
 import { NextRequest, NextResponse } from "next/server";
 import { requireTenantAdmin, rateLimit } from "@/lib/auth";
 import {
@@ -80,6 +81,14 @@ export async function POST(request: NextRequest) {
       if (!/^[A-Za-z0-9_-]{4,64}$/.test(orderId)) return fail("Enter a valid order ID (letters and numbers only).");
       const result = await inspectGatewayOrder(gateway, orderId, auth.tenant.id);
       return NextResponse.json({ success: true, ...result }, { headers: NO_STORE });
+    }
+
+    if (action === "recheck") {
+      const orderId = String(body?.orderId || "").trim();
+      if (!/^[A-Za-z0-9_-]{4,64}$/.test(orderId)) return fail("Enter a valid order ID (letters and numbers only).");
+      const r = await recheckDeposit(auth.tenant.id, orderId);
+      if (r.ok && r.status === "credited") console.warn(`ADMIN ${auth.user.username} credited deposit ${orderId} after provider recheck`);
+      return NextResponse.json({ success: true, ...r }, { headers: NO_STORE });
     }
 
     return fail("Unknown action.");

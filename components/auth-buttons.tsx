@@ -37,6 +37,7 @@ export function AuthButtons({ className = "" }: { className?: string }) {
 
   async function logout() {
     try {
+      try { sessionStorage.removeItem("welcome_closed"); } catch {}
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {
       // continue clearing local state

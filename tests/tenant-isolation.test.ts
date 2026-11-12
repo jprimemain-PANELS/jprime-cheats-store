@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.hoisted(() => { process.env.ALLOW_DIRECT_UPI = "1"; });
 import { ctx, req } from "./helpers/env";
 
 vi.mock("next/headers", async () => (await import("./helpers/env")).nextHeadersMock());

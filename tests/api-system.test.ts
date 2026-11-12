@@ -8,6 +8,7 @@ vi.mock("@/lib/telegram", () => ({ sendTelegramPurchase: async () => {} }));
 import { tables, seed } from "./helpers/fake-supabase";
 import { buildWorld, TENANT_B, TENANT_C } from "./helpers/world";
 import { OWNER_TENANT_ID } from "@/lib/tenant";
+import { jprimeCatalog } from "@/lib/api-system";
 import { releaseProduct, LOW_CREDIT_MESSAGE } from "@/lib/release-product";
 
 const S1 = "https://bantibhaiya.to/api/reseller_v1.php";
@@ -43,6 +44,9 @@ beforeEach(() => {
   t.shared_stock_allowed = true; t.payer_username = "rajreseller";
   tables.wallets = [];
   seed("wallets", [{ tenant_id: OWNER_TENANT_ID, username: "rajreseller", balance: 100 }]);
+  tables.users = tables.users.filter((u: any) => u.username !== "rajreseller");
+  seed("users", [{ id: "u-rajreseller", tenant_id: OWNER_TENANT_ID, username: "rajreseller", role: "reseller", password: "x" }]);
+  tables.reseller_price_overrides = [];
   tables.tenant_api_connections = [];
 });
 
@@ -152,4 +156,24 @@ describe("co-admin's OWN seller key", () => {
     expect(calls).toHaveLength(0);
   });
 
+
+  it("cost follows the PAYER account: customer = retail, reseller = reseller price, VIP = personal price", async () => {
+    // reseller (default in this setup): 28
+    expect((await release()) as any).toMatchObject({ success: true });
+    expect(wallet("rajreseller")).toBe(72);
+    // VIP: the owner set a personal price of 23 for this product/duration
+    seed("reseller_price_overrides", [{ tenant_id: OWNER_TENANT_ID, username: "rajreseller", product_name: "PUBG X", duration: "1 day", reseller_price: 23 }]);
+    expect((await release()) as any).toMatchObject({ success: true });
+    expect(wallet("rajreseller")).toBe(49); // 72 - 23
+    // The panel shows the same number the sale will charge
+    const cat = await jprimeCatalog("rajreseller");
+    expect(cat[0].tiers.find((t: any) => t.duration === "1 day").cost).toBe(23);
+    // a plain customer account as payer pays the retail price (40)
+    (tables.users.find((u: any) => u.username === "rajreseller") as any).role = "user";
+    tables.reseller_price_overrides = [];
+    expect((await jprimeCatalog("rajreseller"))[0].tiers.find((t: any) => t.duration === "1 day").cost).toBe(40);
+    // another VIP's personal price never leaks to this payer
+    seed("reseller_price_overrides", [{ tenant_id: OWNER_TENANT_ID, username: "someone-else", product_name: "PUBG X", duration: "1 day", reseller_price: 5 }]);
+    expect((await jprimeCatalog("rajreseller"))[0].tiers.find((t: any) => t.duration === "1 day").cost).toBe(40);
+  });
 });

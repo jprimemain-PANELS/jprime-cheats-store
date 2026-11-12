@@ -251,17 +251,46 @@ async function ownerProducts(): Promise<OwnerProduct[]> {
   });
 }
 
-function tiersOf(p: OwnerProduct) {
+/**
+ * What the PAYER account would pay for this product on the main website - the same rule the main site uses
+ * (customer = retail price; reseller = reseller price; VIP reseller = their personal price, if the owner set one).
+ */
+export type PayerPricing = { reseller: boolean; overrides: Map<string, number> };
+const DEFAULT_PRICING: PayerPricing = { reseller: true, overrides: new Map() };
+
+export async function payerPricing(payer: string | null | undefined): Promise<PayerPricing> {
+  const u = String(payer ?? "").trim();
+  if (!u) return DEFAULT_PRICING;
+  const [usr, ov] = await Promise.all([
+    tdb(OWNER_TENANT_ID).from("users").select("role").eq("username", u).maybeSingle(),
+    tdb(OWNER_TENANT_ID).from("reseller_price_overrides").select("product_name, duration, reseller_price").eq("username", u),
+  ]);
+  const role = String((usr.data as any)?.role ?? "user").trim().toLowerCase();
+  const overrides = new Map<string, number>();
+  for (const r of (ov.data || []) as any[]) {
+    const n = Number(r.reseller_price);
+    if (Number.isFinite(n) && n > 0) overrides.set(`${String(r.product_name ?? "").trim()}|${String(r.duration ?? "").trim()}`, n);
+  }
+  return { reseller: role.includes("reseller") || role === "vip", overrides };
+}
+
+function costFor(productName: string, t: any, pr: PayerPricing): number {
+  const own = pr.overrides.get(`${productName}|${String(t?.duration ?? "").trim()}`);
+  if (own) return own;
+  return pr.reseller ? num(t?.resellerPrice) || num(t?.priceINR) : num(t?.priceINR);
+}
+
+function tiersOf(p: OwnerProduct, pr: PayerPricing = DEFAULT_PRICING) {
   const tiers: { duration: string; cost: number; price: number }[] = [];
   for (const t of Array.isArray(p.data.prices) ? p.data.prices : []) {
     const s = sourceOf(t, p.data);
-    const cost = num(t?.resellerPrice) || num(t?.priceINR);
+    const cost = costFor(p.name, t, pr);
     if (s && cost > 0 && String(t?.duration ?? "").trim()) tiers.push({ duration: String(t.duration).trim(), cost, price: num(t?.priceINR) || cost });
   }
   return tiers;
 }
 
-export async function jprimeSource(productId: unknown, duration: unknown) {
+export async function jprimeSource(productId: unknown, duration: unknown, payer?: string | null) {
   const pid = String(productId ?? "").trim(); const dur = String(duration ?? "").trim();
   if (!pid || !dur) return { ok: false as const };
   const row = (await ownerProducts()).find((p) => p.productId === pid);
@@ -271,7 +300,7 @@ export async function jprimeSource(productId: unknown, duration: unknown) {
   if (!tier) return { ok: false as const };
   const sup = sourceOf(tier, row.data);
   if (!sup) return { ok: false as const };
-  const cost = num(tier.resellerPrice) || num(tier.priceINR);
+  const cost = costFor(row.name, tier, await payerPricing(payer));
   if (!(cost > 0)) return { ok: false as const };
   return { ok: true as const, cost, supplier: sup, tier: { ...tier, supplier: sup }, productName: row.name, productId: pid, duration: dur };
 }
@@ -301,10 +330,11 @@ export async function jprimeHidden() {
 }
 
 /** What a co-admin may pick: names, durations and THEIR cost. Never supplier ids. */
-export async function jprimeCatalog() {
+export async function jprimeCatalog(payer?: string | null) {
   const out: any[] = [];
+  const pr = await payerPricing(payer);
   for (const p of await ownerProducts()) {
-    const tiers = tiersOf(p);
+    const tiers = tiersOf(p, pr);
     if (tiers.length) out.push({ productId: p.productId, name: p.name, category: p.category, tiers });
   }
   return out;

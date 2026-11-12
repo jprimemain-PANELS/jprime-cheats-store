@@ -44,6 +44,7 @@ export function SessionTimeout() {
       localStorage.removeItem(LAST_ACTIVITY_KEY);
       // Clear the server-issued HttpOnly cookie too. The server also rejects
       // it after 15 minutes without a successful activity heartbeat.
+      try { sessionStorage.removeItem("welcome_closed"); } catch {}
       void fetch("/api/auth/logout", {
         method: "POST",
         cache: "no-store",

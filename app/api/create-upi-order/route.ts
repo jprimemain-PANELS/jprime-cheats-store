@@ -30,7 +30,13 @@ function isMissingColumn(error: { code?: string; message?: string } | null) {
  * - Buyer = authenticated session user (username in the body is ignored).
  * - Amount = trusted server-side price (amount in the body is ignored).
  */
+// Direct product payment by UPI is TURNED OFF: a failed delivery after payment could not be refunded to a wallet.
+// Customers add money to their wallet (wallet top-up still uses the UPI gateway) and buy from the wallet, where failures auto-refund.
+// Set ALLOW_DIRECT_UPI=1 to switch it back on (not recommended).
+const DIRECT_UPI_ON = process.env.ALLOW_DIRECT_UPI === "1";
+
 export async function POST(request: NextRequest) {
+  if (!DIRECT_UPI_ON) return fail("Direct UPI payment is turned off. Add money to your wallet, then buy from your wallet.", 410);
   try {
     const auth = await requireUser(request);
     if (!auth.ok) return auth.response;
