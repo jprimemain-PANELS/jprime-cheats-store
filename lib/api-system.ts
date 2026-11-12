@@ -265,7 +265,8 @@ export async function jprimeSource(productId: unknown, duration: unknown) {
   const pid = String(productId ?? "").trim(); const dur = String(duration ?? "").trim();
   if (!pid || !dur) return { ok: false as const };
   const row = (await ownerProducts()).find((p) => p.productId === pid);
-  if (!row || row.data.status === "MAINTENANCE") return { ok: false as const };
+  // Owner maintenance does NOT stop a co-admin's JPRIME delivery: the co-admin controls their own product status.
+  if (!row) return { ok: false as const };
   const tier = (Array.isArray(row.data.prices) ? row.data.prices : []).find((t: any) => String(t?.duration ?? "").trim() === dur);
   if (!tier) return { ok: false as const };
   const sup = sourceOf(tier, row.data);
@@ -275,11 +276,19 @@ export async function jprimeSource(productId: unknown, duration: unknown) {
   return { ok: true as const, cost, supplier: sup, tier: { ...tier, supplier: sup }, productName: row.name, productId: pid, duration: dur };
 }
 
+/** "productId|duration" pairs the owner still sells through JPRIME (used to hide co-admin copies of deleted owner products). */
+export async function jprimeLiveSources(): Promise<Set<string>> {
+  const live = new Set<string>();
+  for (const p of await ownerProducts()) {
+    for (const t of tiersOf(p)) live.add(`${p.productId}|${t.duration}`);
+  }
+  return live;
+}
+
 /** Owner only: products co-admins cannot pick, and exactly why (so nothing is a mystery). */
 export async function jprimeHidden() {
   const out: { name: string; reason: string }[] = [];
   for (const p of await ownerProducts()) {
-    if (p.data.status === "MAINTENANCE") { out.push({ name: p.name, reason: "Product is in Maintenance (Status tab). Set it ONLINE." }); continue; }
     if (tiersOf(p).length) continue;
     const prices: any[] = Array.isArray(p.data.prices) ? p.data.prices : [];
     if (!prices.length) { out.push({ name: p.name, reason: "No durations/prices saved." }); continue; }
@@ -295,7 +304,6 @@ export async function jprimeHidden() {
 export async function jprimeCatalog() {
   const out: any[] = [];
   for (const p of await ownerProducts()) {
-    if (p.data.status === "MAINTENANCE") continue;
     const tiers = tiersOf(p);
     if (tiers.length) out.push({ productId: p.productId, name: p.name, category: p.category, tiers });
   }

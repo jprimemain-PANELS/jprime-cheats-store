@@ -1,4 +1,5 @@
 "use client";
+import { categoryLabel } from "@/lib/categories";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -769,7 +770,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
               variant="secondary"
               className="mt-2.5 border border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-300 text-[10px] uppercase font-bold tracking-widest px-2.5 py-0.5 rounded-full"
             >
-              {product.category.toUpperCase()}
+              {categoryLabel(product.category).toUpperCase()}
             </Badge>
           </div>
 

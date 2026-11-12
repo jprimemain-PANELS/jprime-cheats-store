@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import StoreOptionsCard from "@/components/admin/StoreOptionsCard";
+import LivePreview from "@/components/admin/LivePreview";
 
 type Theme = {
   preset?: string; primary: string; accent: string; background: string; surface: string; foreground: string;
@@ -32,6 +33,7 @@ export default function BrandingManager() {
   const [telegram, setTelegram] = useState("");
   const [kind, setKind] = useState("coadmin");
   const [saving, setSaving] = useState(false);
+  const [previewVersion, setPreviewVersion] = useState(0);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
@@ -52,7 +54,8 @@ export default function BrandingManager() {
       if (kind === "coadmin") { body.brandName = brandName; body.telegram = telegram; }
       const res = await fetch("/api/admin/branding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await res.json();
-      setMsg(j.success ? { ok: true, text: "Saved. Reload the store to see it." } : { ok: false, text: j.error || "Could not save." });
+      if (j.success) setPreviewVersion((n) => n + 1);
+      setMsg(j.success ? { ok: true, text: "Saved. Preview updated below." } : { ok: false, text: j.error || "Could not save." });
     } catch { setMsg({ ok: false, text: "Network error." }); }
     setSaving(false);
   }
@@ -163,6 +166,8 @@ export default function BrandingManager() {
       <button onClick={save} disabled={saving} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-50 cursor-pointer">
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save branding
       </button>
+
+      <LivePreview version={previewVersion} />
     </div>
   );
 }

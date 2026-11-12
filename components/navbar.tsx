@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Menu, Smartphone, Monitor, Apple, Wallet } from "lucide-react";
+import { Menu, Smartphone, Monitor, Apple, Wallet, Package } from "lucide-react";
+import { categoryLabel } from "@/lib/categories";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { AuthButtons, LaunchMenuButton } from "./auth-buttons";
@@ -10,17 +11,19 @@ import { StoreLogo } from "./store-brand-mark";
 import { useBrand } from "./brand-provider";
 
 interface NavbarProps {
+  categoryIds?: string[];
   activeCategory: string;
   onCategoryChange: (category: string) => void;
 }
 
-const categories = [
-  { id: "mobile", label: "MOBILE PANEL", icon: Smartphone },
-  { id: "pc", label: "PC PANEL", icon: Monitor },
-  { id: "ios", label: "iOS PANEL", icon: Apple },
-];
+const BUILTIN_TABS: Record<string, { label: string; icon: any }> = {
+  mobile: { label: "MOBILE PANEL", icon: Smartphone },
+  pc: { label: "PC PANEL", icon: Monitor },
+  ios: { label: "iOS PANEL", icon: Apple },
+};
 
-export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
+export function Navbar({ activeCategory, onCategoryChange, categoryIds = ["mobile", "pc", "ios"] }: NavbarProps) {
+  const categories = categoryIds.map((id) => BUILTIN_TABS[id] ? { id, ...BUILTIN_TABS[id] } : { id, label: categoryLabel(id).toUpperCase(), icon: Package });
   const brand = useBrand();
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -86,7 +89,7 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [activeCategory]);
+  }, [activeCategory, categoryIds.join(",")]);
 
   return (
     <>

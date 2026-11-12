@@ -87,9 +87,16 @@ describe("JPRIME API stock (co-admin sells the owner's API product)", () => {
     t.payer_username = null; expect(await release()).toMatchObject({ success: false });
     t.payer_username = "rajreseller";
     expect(await release("Raj PUBG", "Gone")).toMatchObject({ success: false, error: "This product is not available right now." });
+    // Owner maintenance must NOT stop the co-admin's own JPRIME delivery
     (tables.products_catalog[0] as any).data.status = "MAINTENANCE";
-    expect(await release()).toMatchObject({ success: false, error: "This product is not available right now." });
+    expect(await release()).toMatchObject({ success: true });
+    tables.wallets = []; seed("wallets", [{ tenant_id: OWNER_TENANT_ID, username: "rajreseller", balance: 100 }]); calls = [];
     (tables.products_catalog[0] as any).data.status = "ONLINE";
+    // Owner DELETES the product -> the co-admin copy stops delivering (and nothing is charged)
+    const kept = tables.products_catalog[0]; tables.products_catalog.splice(0, 1);
+    expect(await release()).toMatchObject({ success: false, error: "This product is not available right now." });
+    expect(calls).toHaveLength(0); expect(wallet("rajreseller")).toBe(100);
+    tables.products_catalog.unshift(kept);
     (tables.products_catalog[1] as any).data.prices[0].jprimeDuration = "30 days"; // owner LOCAL tier is not API stock
     expect(await release()).toMatchObject({ success: false });
     expect(calls).toHaveLength(0); expect(wallet("rajreseller")).toBe(100);

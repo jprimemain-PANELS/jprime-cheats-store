@@ -1,9 +1,11 @@
+import { normalizeCategory } from "@/lib/categories";
 import { NextResponse } from "next/server";
 import { tdb } from "@/lib/tenant-db";
 import { currentTenant, OWNER_TENANT_ID } from "@/lib/tenant";
 import { allProducts } from "@/lib/products";
 import type { Product, PriceTier } from "@/lib/products";
 import { deliveryModeForTier, summarizeFulfillment } from "@/lib/delivery";
+import { jprimeLiveSources } from "@/lib/api-system";
 
 export const dynamic = "force-dynamic";
 
@@ -71,12 +73,7 @@ function toPublicProduct(
     return null;
   }
 
-  const category: Product["category"] =
-    d.category === "pc" ||
-    d.category === "ios" ||
-    d.category === "mobile"
-      ? d.category
-      : "mobile";
+  const category: Product["category"] = normalizeCategory(d.category) ?? "mobile";
 
   const product: Product = {
     id: String(
@@ -200,7 +197,19 @@ export async function GET() {
       );
     }
 
-    const products = ((data || []) as any[])
+    let rows = (data || []) as any[];
+    if (!isOwner) {
+      // Owner deleted a product (or its delivery)? The co-admin's copy stops selling: hide it, history stays.
+      const live = await jprimeLiveSources();
+      rows = rows.flatMap((row: any) => {
+        const prices: any[] = Array.isArray(row?.data?.prices) ? row.data.prices : [];
+        const isJ = (t: any) => String(t?.supplier ?? "").toUpperCase() === "JPRIME";
+        if (!prices.some(isJ)) return [row];
+        const kept = prices.filter((t) => !isJ(t) || live.has(`${String(t.jprimeProductId ?? "")}|${String(t.jprimeDuration ?? "").trim()}`));
+        return kept.length ? [{ ...row, data: { ...row.data, prices: kept } }] : [];
+      });
+    }
+    const products = rows
       .map((row: any) =>
         toPublicProduct(row)
       )

@@ -1,5 +1,6 @@
 "use client";
 
+import { categoriesFor, categoryLabel, normalizeCategory } from "@/lib/categories";
 import { changedByCleaning, cleanProductId, cleanProductText } from "@/lib/text-clean";
 import { useEffect, useState } from "react";
 import {
@@ -725,7 +726,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
 
                       <div className="text-xs text-zinc-500 mt-1">
                         {product.id} •{" "}
-                        {product.category} •{" "}
+                        {categoryLabel(product.category)} •{" "}
                         {product.prices.length} duration
                         {product.prices.length !== 1
                           ? "s"
@@ -916,26 +917,24 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
 
                     <select
                       value={selected.category}
-                      onChange={(e) =>
-                        updateSelected(
-                          "category",
-                          e.target.value
-                        )
-                      }
+                      onChange={(e) => {
+                        if (e.target.value === "__new__") {
+                          const name = window.prompt("New category name (example: Gaming Tools)");
+                          const slug = normalizeCategory(name);
+                          if (!slug) return;
+                          updateSelected("category", slug);
+                          return;
+                        }
+                        updateSelected("category", e.target.value);
+                      }}
                       className="w-full mt-1 p-3 rounded-xl bg-zinc-900 border border-zinc-800"
                     >
-                      <option value="mobile">
-                        Mobile
-                      </option>
-
-                      <option value="pc">
-                        PC
-                      </option>
-
-                      <option value="ios">
-                        iOS
-                      </option>
+                      {categoriesFor([...products.map((p) => p.category), selected.category]).map((c) => (
+                        <option key={c} value={c}>{categoryLabel(c)}</option>
+                      ))}
+                      <option value="__new__">+ New category...</option>
                     </select>
+                    <p className="mt-1 text-[11px] text-zinc-500">A new category shows as its own tab on your website once it has a product.</p>
                   </div>
 
                   {isOwner ? (

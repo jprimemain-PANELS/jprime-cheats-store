@@ -1,3 +1,4 @@
+import { normalizeCategory } from "@/lib/categories";
 import {
   deliveryModeForTier,
   hasSeller1Config,
@@ -38,7 +39,7 @@ export interface CatalogTier {
 export interface CatalogProduct {
   id: string;
   name: string;
-  category: "mobile" | "pc" | "ios";
+  category: string;
   fulfillmentType?: "API" | "LOCAL";
   updateChannel: string;
   features: string[];
@@ -67,7 +68,7 @@ export function normalizeProduct(product: any): CatalogProduct {
     ...product,
     id: String(product.id || ""),
     name: String(product.name || ""),
-    category: product.category || "mobile",
+    category: normalizeCategory(product.category) ?? "mobile",
     fulfillmentType,
     updateChannel: String(product.updateChannel || ""),
     features:

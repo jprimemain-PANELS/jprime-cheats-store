@@ -17,7 +17,7 @@ export interface PriceTier {
 export interface Product {
   id: string;
   name: string;
-  category: "mobile" | "pc" | "ios";
+  category: string; // "mobile" | "pc" | "ios" or a custom slug (see lib/categories.ts)
   fulfillmentType?: "API" | "LOCAL"; // Added fulfillment type
   sellerPid?: string | number;       // Updated type to support string or number PIDs
   prices: PriceTier[];

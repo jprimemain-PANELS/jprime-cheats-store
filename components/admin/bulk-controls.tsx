@@ -45,8 +45,8 @@ export function Segmented<T extends string>({
   );
 }
 
-const CATEGORY_LABEL: Record<string, string> = { mobile: "Mobile", pc: "PC", ios: "iOS" };
-export const categoryLabel = (c: string) => CATEGORY_LABEL[c] || c.toUpperCase();
+import { categoryLabel } from "@/lib/categories";
+export { categoryLabel };
 
 /** "Which products?"  All  |  one category  |  tick products. */
 export function ScopePicker({

@@ -6,12 +6,14 @@ import {
   Smartphone,
   Monitor,
   Apple,
+  Package,
   User,
   ShoppingBag,
   ClipboardCheck,
   X,
 } from "lucide-react";
 
+import { categoriesFor, categoryLabel, categoryBlurb } from "@/lib/categories";
 import { Navbar } from "@/components/navbar";
 import { RecentActivity } from "@/components/recent-activity";
 import { Hero } from "@/components/hero";
@@ -45,17 +47,9 @@ export default function Home() {
     loading: catalogLoading,
   } = useCatalogProducts();
 
-  const mobileProducts = catalogProducts.filter(
-    (product) => product.category === "mobile"
-  );
-
-  const pcProducts = catalogProducts.filter(
-    (product) => product.category === "pc"
-  );
-
-  const iosProducts = catalogProducts.filter(
-    (product) => product.category === "ios"
-  );
+  const categoryIds = categoriesFor(catalogProducts.map((p) => p.category));
+  const productsIn = (id: string) => catalogProducts.filter((product) => product.category === id);
+  const activeProducts = productsIn(activeCategory);
 
   const productsRef = useRef<HTMLDivElement>(null);
 
@@ -206,6 +200,7 @@ export default function Home() {
         <div>
           {/* Header Navigation */}
           <Navbar
+            categoryIds={categoryIds}
             activeCategory={activeCategory}
             onCategoryChange={handleCategoryChange}
           />
@@ -224,23 +219,11 @@ export default function Home() {
             <div className="mx-auto max-w-7xl">
               {/* Category switcher */}
               <div className="flex flex-wrap justify-center gap-2.5 sm:gap-3 mb-12 sm:mb-14">
-                {[
-                  {
-                    id: "mobile",
-                    label: "Mobile",
-                    icon: Smartphone,
-                  },
-                  {
-                    id: "pc",
-                    label: "PC",
-                    icon: Monitor,
-                  },
-                  {
-                    id: "ios",
-                    label: "iOS",
-                    icon: Apple,
-                  },
-                ].map((cat) => {
+                {categoryIds.map((id) => ({
+                  id,
+                  label: categoryLabel(id),
+                  icon: id === "mobile" ? Smartphone : id === "pc" ? Monitor : id === "ios" ? Apple : Package,
+                })).map((cat) => {
                   const IconComponent = cat.icon;
                   const isSelected = activeCategory === cat.id;
 
@@ -271,18 +254,11 @@ export default function Home() {
                 className="text-center mb-10 sm:mb-12 jprime-fade-up"
               >
                 <h2 className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-300 bg-clip-text text-transparent">
-                  {activeCategory === "mobile" && "Mobile"}
-                  {activeCategory === "pc" && "PC"}
-                  {activeCategory === "ios" && "iOS"}
+                  {categoryLabel(activeCategory)}
                 </h2>
 
                 <p className="text-zinc-400 text-sm mt-3 max-w-2xl mx-auto">
-                  {activeCategory === "mobile" &&
-                    "Premium rooted and non-rooted mobile panels"}
-                  {activeCategory === "pc" &&
-                    "High-performance, safe desktop PC panels"}
-                  {activeCategory === "ios" &&
-                    "A dedicated iOS panel, built for safety"}
+                  {categoryBlurb(activeCategory)}
                 </p>
               </div>
 
@@ -296,51 +272,15 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Mobile products */}
-              {!catalogLoading && activeCategory === "mobile" && (
-                <div className={`grid ${GRID_COLS[brand.layout.columns] ?? GRID_COLS[3]} gap-6 sm:gap-8`}>
-                  {mobileProducts.map((product, index) => (
-                    <div
-                      key={product.id}
-                      className="jprime-fade-up"
-                      style={{
-                        animationDelay: `${Math.min(index, 8) * 0.06}s`,
-                      }}
-                    >
-                      <ProductCard product={product} index={index} />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* PC products */}
-              {!catalogLoading && activeCategory === "pc" && (
-                <div className={`grid ${GRID_COLS[brand.layout.columns] ?? GRID_COLS[3]} gap-6 sm:gap-8`}>
-                  {pcProducts.map((product, index) => (
-                    <div
-                      key={product.id}
-                      className="jprime-fade-up"
-                      style={{
-                        animationDelay: `${Math.min(index, 8) * 0.06}s`,
-                      }}
-                    >
-                      <ProductCard product={product} index={index} />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* iOS products */}
-              {!catalogLoading && activeCategory === "ios" && (
-                iosProducts.length > 0 ? (
+              {/* Products of the chosen category */}
+              {!catalogLoading && (
+                activeProducts.length > 0 ? (
                   <div className={`grid ${GRID_COLS[brand.layout.columns] ?? GRID_COLS[3]} gap-6 sm:gap-8`}>
-                    {iosProducts.map((product, index) => (
+                    {activeProducts.map((product, index) => (
                       <div
                         key={product.id}
                         className="jprime-fade-up"
-                        style={{
-                          animationDelay: `${Math.min(index, 8) * 0.06}s`,
-                        }}
+                        style={{ animationDelay: `${Math.min(index, 8) * 0.06}s` }}
                       >
                         <ProductCard product={product} index={index} />
                       </div>
@@ -348,9 +288,8 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="mx-auto max-w-xl rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 text-center">
-                    <Apple className="mx-auto mb-3 h-8 w-8 text-fuchsia-400" />
-                    <h3 className="text-lg font-semibold text-white">No iOS products available yet</h3>
-                    <p className="mt-2 text-sm text-zinc-400">Add a product with category iOS in the admin Product Manager, then refresh this page.</p>
+                    <Package className="mx-auto mb-3 h-8 w-8 text-fuchsia-400" />
+                    <h3 className="text-lg font-semibold text-white">No {categoryLabel(activeCategory)} products available yet</h3>
                   </div>
                 )
               )}
@@ -366,27 +305,7 @@ export default function Home() {
 
       {/* Profile trigger */}
       <button
-        onClick={async () => {
-          setShowProfile(true);
-          setLoadingHistory(true);
-
-          try {
-            const res = await fetch("/api/get-purchases", { cache: "no-store" });
-            const json = await res.json();
-            if (res.status === 401) {
-              localStorage.removeItem("user");
-              router.replace("/login");
-              return;
-            }
-            if (json?.success && Array.isArray(json.purchases)) {
-              setPurchaseHistory(json.purchases);
-            }
-          } catch (error) {
-            console.error("Failed to load purchase history:", error);
-          } finally {
-            setLoadingHistory(false);
-          }
-        }}
+        onClick={() => router.push("/profile")}
         className="fixed top-20 right-4 sm:top-24 sm:right-6 z-[40] p-3.5 sm:p-4 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 hover:brightness-110 text-white transition-transform hover:scale-105 active:scale-95 shadow-[0_0_25px_rgba(192,38,211,0.45)] flex items-center justify-center"
         title="View Profile"
       >

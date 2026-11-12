@@ -1,5 +1,6 @@
 "use client";
 
+import { categoryLabel } from "@/lib/categories";
 import { ChangePasswordButton } from "@/components/change-password";
 import { useEffect, useState, useMemo } from "react";
 import type { ReactNode } from "react";
@@ -1246,7 +1247,7 @@ export default function AdminPage() {
                   >
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-white truncate">{product.name}</p>
-                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">{product.category}</p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">{categoryLabel(product.category)}</p>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">

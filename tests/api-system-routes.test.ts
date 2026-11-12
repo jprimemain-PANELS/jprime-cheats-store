@@ -86,8 +86,8 @@ describe("API SYSTEM routes", () => {
       { tenant_id: OWNER_TENANT_ID, product_id: "m", name: "In Maint", data: { status: "MAINTENANCE", prices: [{ duration: "1 day", priceINR: "40", supplier: "LOCAL" }] } },
       { tenant_id: OWNER_TENANT_ID, product_id: "z", name: "Zero Price", data: { prices: [{ duration: "1 day", priceINR: "0", supplier: "LOCAL" }] } },
     ]);
-    expect((await jprimeCatalog()).map((p: any) => p.productId)).toEqual(["pubg-x"]);
-    expect((await jprimeHidden()).map((h) => h.name).sort()).toEqual(["In Maint", "Zero Price"]);
+    expect((await jprimeCatalog()).map((p: any) => p.productId)).toEqual(["pubg-x", "m"]);
+    expect((await jprimeHidden()).map((h) => h.name).sort()).toEqual(["Zero Price"]);
     tables.products_catalog = [];
     expect((await jprimeCatalog()).some((p: any) => p.productId === allProducts[0].id)).toBe(true);
   });
