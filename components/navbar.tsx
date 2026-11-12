@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Menu, Smartphone, Monitor, Apple, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { AuthButtons } from "./auth-buttons";
+import { AuthButtons, LaunchMenuButton } from "./auth-buttons";
 import { WalletModal } from "./wallet-modal";
 import { StoreLogo } from "./store-brand-mark";
 import { useBrand } from "./brand-provider";
@@ -109,12 +109,12 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
             {/* Logo */}
             <div className="flex min-w-0 items-center gap-2 sm:gap-4 animate-in fade-in slide-in-from-left-2 duration-500">
               {/* account buttons live in the menu on phones so they never cover the wallet */}
-              <div className="hidden md:block shrink-0"><AuthButtons /></div>
+              <div className="shrink-0"><AuthButtons /></div>
               <StoreLogo
                 size={50}
                 className="shrink-0 rounded-xl transition-transform duration-300 hover:scale-105 hover:rotate-2 w-9 h-9 sm:w-12 sm:h-12"
               />
-              <div className="min-w-0">
+              <div className="hidden sm:block min-w-0">
                 <h1 className="truncate max-w-[34vw] sm:max-w-[260px] text-sm sm:text-lg font-semibold tracking-tight text-white" title={brand.name}>
                   {brand.name}
                 </h1>
@@ -211,7 +211,7 @@ export function Navbar({ activeCategory, onCategoryChange }: NavbarProps) {
                       </div>
                     </div>
 
-                    <AuthButtons className="flex-wrap px-2" />
+                    <LaunchMenuButton onGo={() => setIsOpen(false)} />
 
                     <div className="flex flex-col gap-2">
                       {/* Wallet Option Inside Sheet Drawer */}

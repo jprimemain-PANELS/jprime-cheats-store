@@ -263,7 +263,7 @@ export function buildThemeCss(theme: Theme): string {
   return [
     ":root{",
     `--store-primary:${t.primary};--store-accent:${accentColor};--store-bg:${t.background};--store-surface:${t.surface};--store-fg:${t.foreground};`,
-    `--font-sans:${FONTS[t.font].stack};`,
+    t.font === "default" ? "" : `--font-sans:${FONTS[t.font].stack};`,
     scale("violet", t.primary) + ";",
     scale("fuchsia", accentColor) + ";",
     RADIUS_VARS[t.radius],
@@ -271,7 +271,7 @@ export function buildThemeCss(theme: Theme): string {
     `--popover:${t.surface};--popover-foreground:${t.foreground};--primary:${t.primary};--accent:${accentColor};--ring:${t.primary};`,
     `color-scheme:${dark ? "dark" : "light"};`,
     "}",
-    `body{background:${t.background};color:${t.foreground};font-family:${FONTS[t.font].stack}}`,
+    `body{background:${t.background};color:${t.foreground};${t.font === "default" ? "" : `font-family:${FONTS[t.font].stack}`}}`,
     SCALE[t.fontScale] ? `html{font-size:${SCALE[t.fontScale]}}` : "",
     `.bg-\\[\\#07040f\\]{background-color:var(--store-bg)!important;${BACKDROP_CSS[t.backdrop] ?? ""}}`,
     CARD_CSS[t.cardStyle] ?? "",

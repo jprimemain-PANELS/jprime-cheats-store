@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-const Geist = (_: any) => ({}); const Geist_Mono = Geist;
+import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { SessionTimeout } from '@/components/session-timeout'

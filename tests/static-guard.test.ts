@@ -59,3 +59,10 @@ describe("static tenant-isolation guard", () => {
     }
   });
 });
+
+describe("layout keeps the real site fonts", () => {
+  it("imports Geist from next/font/google (not a stub)", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/layout.tsx"), "utf8");
+    expect(src).toContain("import { Geist, Geist_Mono } from 'next/font/google'");
+  });
+});

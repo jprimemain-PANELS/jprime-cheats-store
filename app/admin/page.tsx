@@ -262,6 +262,7 @@ export default function AdminPage() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Add-stock state
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -699,7 +700,7 @@ export default function AdminPage() {
     );
   }
 
-  const TABS: { id: Tab; label: string; icon: any; count?: number }[] = [
+  const ALL_TABS: { id: Tab; label: string; icon: any; count?: number }[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "inventory", label: "Inventory", icon: Boxes, count: keys.length },
     { id: "pricing", label: "Pricing", icon: Tag },
@@ -719,41 +720,77 @@ export default function AdminPage() {
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
+  // Co-admins get simple everyday names and an easy-first order; the owner keeps the original tabs.
+  const SIMPLE: Partial<Record<Tab, string>> = {
+    overview: "Home", guide: "Start Here", subscription: "My Plan", products: "My Products", pricing: "Prices",
+    status: "Product ON/OFF", api: "Get Products", gateway: "Payment Setup", telegram: "Telegram Alerts", branding: "Look & Brand",
+    domain: "Website Link", purchases: "Orders", users: "Customers", inventory: "Keys Stock", vip: "Reseller Prices",
+  };
+  const COADMIN_ORDER: Tab[] = ["overview", "guide", "subscription", "api", "products", "pricing", "status", "gateway", "branding", "domain", "users", "purchases", "inventory", "vip", "telegram"];
+  const TABS = isOwnerAdmin
+    ? ALL_TABS
+    : COADMIN_ORDER.map((id) => ALL_TABS.find((t) => t.id === id)).filter(Boolean).map((t) => ({ ...t!, label: SIMPLE[t!.id] ?? t!.label }));
+  const activeLabel = TABS.find((t) => t.id === activeTab)?.label ?? "Menu";
 
   return (
     <div className="min-h-screen bg-[#0A0E14] text-slate-100 font-sans antialiased selection:bg-indigo-500 selection:text-white">
       {/* HEADER + TABS (sticky together) */}
       <div className="sticky top-0 z-50">
         <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md">
-          <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/20">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-8 py-3 sm:py-4 flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <div className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/20">
                 <Shield className="h-5 w-5 text-white" />
               </div>
-              <div>
-                <h1 className="text-base font-bold text-white tracking-tight">{brand.isOwner ? "JPrimeCheats" : brand.name}</h1>
-                <p className="text-xs text-slate-400 font-medium">Admin Control Panel</p>
+              <div className="min-w-0">
+                <h1 className="truncate max-w-[40vw] sm:max-w-none text-sm sm:text-base font-bold text-white tracking-tight">{brand.isOwner ? "JPrimeCheats" : brand.name}</h1>
+                <p className="hidden sm:block text-xs text-slate-400 font-medium">Admin Control Panel</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <div className="hidden sm:flex items-center gap-2 text-xs text-emerald-400 border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 rounded-full">
                 <Activity className="h-3.5 w-3.5" />
                 <span className="font-medium">System Live</span>
               </div>
-              <ChangePasswordButton label className="flex items-center gap-2 bg-slate-800 hover:bg-indigo-600/20 border border-slate-700 text-slate-300 text-xs font-semibold px-3.5 py-2 rounded-xl transition-all cursor-pointer [&_svg]:h-3.5 [&_svg]:w-3.5 [&_span]:text-xs" />
+              <ChangePasswordButton label className="flex items-center gap-2 bg-slate-800 hover:bg-indigo-600/20 border border-slate-700 text-slate-300 text-xs font-semibold px-2.5 sm:px-3.5 py-2 rounded-xl transition-all cursor-pointer [&_svg]:h-3.5 [&_svg]:w-3.5 [&_span]:text-xs [&_span]:hidden sm:[&_span]:inline" />
               <button
                 onClick={handleExitAdminConsole}
-                className="flex items-center gap-2 bg-slate-800 hover:bg-rose-600/20 hover:text-rose-400 border border-slate-700 hover:border-rose-500/30 text-slate-300 text-xs font-semibold px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                aria-label="Exit console"
+                className="flex items-center gap-2 bg-slate-800 hover:bg-rose-600/20 hover:text-rose-400 border border-slate-700 hover:border-rose-500/30 text-slate-300 text-xs font-semibold px-2.5 sm:px-3.5 py-2 rounded-xl transition-all cursor-pointer"
               >
                 <LogOut className="h-3.5 w-3.5" />
-                <span>Exit Console</span>
+                <span className="hidden sm:inline">Exit Console</span>
               </button>
             </div>
           </div>
         </header>
 
-        <nav className="border-b border-slate-800 bg-[#0A0E14]/95 backdrop-blur-md">
+        {/* PHONE: one big button opens a grid of large, easy-to-tap pages */}
+        <nav className="md:hidden border-b border-slate-800 bg-[#0A0E14]/95 backdrop-blur-md">
+          <button onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen}
+            className="flex w-full items-center justify-between px-4 py-3 text-sm font-bold text-white cursor-pointer">
+            <span className="flex items-center gap-2">{menuOpen ? <X className="h-4 w-4" /> : <LayoutDashboard className="h-4 w-4 text-indigo-400" />}{menuOpen ? "Close menu" : activeLabel}</span>
+            <span className="flex items-center gap-1 text-xs font-semibold text-slate-400">{menuOpen ? "" : "All pages"}<ChevronDown className={`h-4 w-4 transition-transform ${menuOpen ? "rotate-180" : ""}`} /></span>
+          </button>
+          {menuOpen && (
+            <div className="grid max-h-[70vh] grid-cols-3 gap-2 overflow-y-auto px-3 pb-3">
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const active = activeTab === tab.id;
+                return (
+                  <button key={tab.id} onClick={() => { setActiveTab(tab.id); setMenuOpen(false); window.scrollTo({ top: 0 }); }}
+                    className={`flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-xl border px-1.5 py-2 text-center text-[11px] font-semibold leading-tight cursor-pointer ${active ? "border-indigo-500 bg-indigo-500/15 text-white" : "border-slate-800 bg-slate-900/60 text-slate-300"}`}>
+                    <Icon className="h-5 w-5" />
+                    <span className="break-words">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </nav>
+
+        <nav className="hidden md:block border-b border-slate-800 bg-[#0A0E14]/95 backdrop-blur-md">
           <div className="max-w-7xl mx-auto px-4 md:px-8 flex gap-1 overflow-x-auto">
             {TABS.map((tab) => {
               const Icon = tab.icon;
@@ -788,6 +825,28 @@ export default function AdminPage() {
         {/* OVERVIEW */}
         {activeTab === "overview" && (
           <div className="space-y-6">
+            {!isOwnerAdmin && (
+              <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-600/15 to-fuchsia-600/10 p-4 sm:p-5">
+                <p className="text-base font-bold text-white">Welcome! Do these 5 steps to start selling</p>
+                <p className="mt-0.5 text-xs text-slate-400">Tap a step. Take your time - you can come back any time.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                  {([
+                    ["1", "Connect your wallet", "Link your main account and pick a plan.", "subscription"],
+                    ["2", "Get products", "Pick products from the JPRIME list. No typing needed.", "api"],
+                    ["3", "Set your prices", "Choose how much you sell for.", "pricing"],
+                    ["4", "Add payment", "So customers can add money.", "gateway"],
+                    ["5", "Make it yours", "Name, colors and logo.", "branding"],
+                  ] as [string, string, string, Tab][]).map(([n, t, d, tab]) => (
+                    <button key={n} onClick={() => { setActiveTab(tab); window.scrollTo({ top: 0 }); }}
+                      className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-left hover:border-indigo-500/60 active:scale-[0.99] cursor-pointer">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">{n}</span>
+                      <span className="min-w-0"><span className="block text-sm font-semibold text-white">{t}</span><span className="block text-[11px] leading-snug text-slate-400">{d}</span></span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => { setActiveTab("guide"); window.scrollTo({ top: 0 }); }} className="mt-3 text-xs font-semibold text-indigo-300 underline cursor-pointer">Need help? Open the Start Here guide</button>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard icon={Package} label="Available Stock" value={keys.length} accent="bg-blue-500/10 text-blue-400" sub="Unused keys across all products" />
               <StatCard icon={Users} label="Registered Users" value={users.length} accent="bg-violet-500/10 text-violet-400" sub="Managed active accounts" />
