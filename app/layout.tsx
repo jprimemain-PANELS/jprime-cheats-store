@@ -48,7 +48,7 @@ async function loadBrand() {
 export async function generateMetadata(): Promise<Metadata> {
   const loaded = await loadBrand();
   if (loaded && !loaded.brand.isOwner) {
-    return { title: loaded.brand.name, description: loaded.brand.tagline || `${loaded.brand.name} - digital store` };
+    return { title: loaded.brand.name, description: loaded.brand.tagline || `${loaded.brand.name} - digital store`, icons: { icon: "/api/tenant/icon", shortcut: "/api/tenant/icon", apple: "/api/tenant/icon" } };
   }
   return {
     title: 'JPRIME CHEATS STORE | Premium FF Panel Purchase',

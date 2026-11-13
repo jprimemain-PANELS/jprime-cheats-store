@@ -1405,7 +1405,44 @@ export default function AdminPage() {
               Showing {filteredUsers.length} of {users.length} registered accounts
             </p>
 
-            <div className="overflow-x-auto custom-scrollbar">
+            {/* PHONE: one easy card per customer (the wide table below is for bigger screens) */}
+            <div className="space-y-3 md:hidden">
+              {filteredUsers.length === 0 ? (
+                <p className="py-8 text-center text-xs text-slate-500">No matching users found</p>
+              ) : filteredUsers.map((u, index) => (
+                <div key={u.id ? `m-${u.id}-${index}` : `m-${u.username}-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-white">@{u.username}</p>
+                      <p className="text-[11px] text-slate-500">
+                        <span className="font-bold text-indigo-300">#{u.join_no ?? "-"}</span>
+                        {u.created_at ? ` · joined ${new Date(u.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-base font-bold tabular-nums text-emerald-400">₹{(u.wallet_balance || 0).toFixed(2)}</p>
+                      <span className={`mt-1 inline-block rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${u.role === "admin" ? "bg-rose-500/10 text-rose-400 border-rose-500/30" : u.role === "reseller" ? "bg-purple-500/10 text-purple-400 border-purple-500/30" : "bg-blue-500/10 text-blue-400 border-blue-500/30"}`}>{u.role || "user"}</span>
+                    </div>
+                  </div>
+                  {(u.mobile_number || u.phone || u.email) && (
+                    <p className="mt-2 break-all text-[11px] text-slate-400">{[u.mobile_number || u.phone, u.email].filter(Boolean).join(" · ")}</p>
+                  )}
+                  {resetAsked.includes(u.username) && <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">This user asked for a password reset</p>}
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button onClick={() => setLedgerUser({ username: u.username, balance: u.wallet_balance || 0 })} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-200 active:bg-emerald-600"><History className="h-3.5 w-3.5" />Ledger</button>
+                    <button onClick={() => handleOpenManageModal(u)} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-200 active:bg-indigo-600"><Settings className="h-3.5 w-3.5" />Manage</button>
+                    {u.role !== "admin" && u.role !== "coadmin" && (
+                      <button onClick={() => handleResetPassword(u)} className="flex min-h-10 items-center justify-center rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-200 active:bg-amber-600">Reset password</button>
+                    )}
+                    {u.role !== "admin" && u.role !== "coadmin" && (
+                      <button onClick={() => handleDeleteUser(u)} aria-label={`Delete ${u.username}`} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-rose-300 active:bg-rose-600"><Trash2 className="h-3.5 w-3.5" />Delete</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto custom-scrollbar md:block">
               <table className="w-full text-left text-xs text-slate-200">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[10px]">

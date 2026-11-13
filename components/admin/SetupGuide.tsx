@@ -10,21 +10,18 @@ type Guide = {
 
 const GUIDES: Guide[] = [
   {
-    id: "video", icon: Film, title: "1. Video link (for your product video)",
-    intro: "Upload your video to Cloudinary (free). Then copy the video link and paste it in your product.",
-    link: "https://console.cloudinary.com/", linkLabel: "Open Cloudinary",
+    id: "video", icon: Film, title: "1. Product video (upload from your gallery)",
+    intro: "Add a demo video to your product straight from your phone gallery. No link or other website needed.",
+    link: "", linkLabel: "",
     steps: [
-      "Click the button above to open Cloudinary. Sign up (free) with your Google account, or log in if you have one.",
-      "Cloudinary asks a few questions when you sign up. Choose anything (for example 'Developer' or 'Other'), then continue.",
-      "On the left menu click Assets (also called Media Library).",
-      "Click the Upload button (top right). Choose your video file from your phone or computer. Wait until it shows 100%.",
-      "Click on your uploaded video to open it.",
-      "Find the link (URL) on the right side. It starts with https://res.cloudinary.com/ . Click the copy button next to it.",
-      "Come back here, and go to the Products tab. Open your product with Edit.",
-      "Paste the link in the Video box. Press Save Product. Done.",
+      "Open the Products tab and tap Add Product (or Edit on an existing product).",
+      "Scroll to the Video box and tap 'Tap to upload video from gallery'.",
+      "Choose your video. Keep this page open until it shows 100%.",
+      "When it finishes you will see 'Uploaded video attached'. Press Save Product. Done.",
+      "If you do not see the upload box, paste a YouTube or direct video link in the box instead.",
     ],
-    paste: ["Products tab → Edit product → Video box"],
-    tip: "Use a video under 100 MB so it opens fast for your customers. The link must start with https://",
+    paste: ["Products tab → Add / Edit product → Video box"],
+    tip: "MP4 works best. Keep the video under 200 MB, and about 30 to 60 seconds so it opens fast for customers.",
   },
   {
     id: "image", icon: ImageIcon, title: "2. Image link (logo, banner, login picture)",
@@ -83,9 +80,11 @@ export default function SetupGuide() {
             {isOpen && (
               <div className="px-4 pb-5 space-y-4">
                 <p className="text-sm text-slate-300">{g.intro}</p>
+                {g.link && (
                 <a href={g.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 text-sm font-bold text-white">
                   {g.linkLabel}<ExternalLink className="h-4 w-4" />
                 </a>
+                )}
                 <ol className="space-y-2.5">
                   {g.steps.map((s, i) => (
                     <li key={i} className="flex gap-3 text-sm text-slate-200">

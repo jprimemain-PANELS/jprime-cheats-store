@@ -16,7 +16,7 @@ export default function LivePreview({ version }: { version: number }) {
           <h3 className="text-sm font-bold text-white">Live preview of your website</h3>
           <p className="text-[11px] text-slate-400">Press Save above and the preview updates by itself.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => setMode("phone")} className={btn(mode === "phone")}><Smartphone className="h-3.5 w-3.5" />Phone</button>
           <button onClick={() => setMode("desktop")} className={btn(mode === "desktop")}><Monitor className="h-3.5 w-3.5" />Desktop</button>
           <button onClick={() => setManual((n) => n + 1)} className={btn(false)} title="Reload preview"><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
@@ -31,7 +31,7 @@ export default function LivePreview({ version }: { version: number }) {
           src="/"
           title="Website preview"
           className="rounded-lg border border-slate-700 bg-black"
-          style={mode === "phone" ? { width: 390, maxWidth: "100%", height: 720 } : { width: "100%", height: 720 }}
+          style={mode === "phone" ? { width: 390, maxWidth: "100%", height: "min(720px, 75vh)" } : { width: "100%", height: "min(720px, 75vh)" }}
         />
       </div>
       )}
