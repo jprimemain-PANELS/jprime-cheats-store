@@ -23,7 +23,7 @@ export interface ActivityEvent {
 }
 
 export const MAX_ACTIVITY_EVENTS = 10;
-export const ACTIVITY_POLL_MS = 20_000;
+export const ACTIVITY_POLL_MS = 60_000;
 
 /**
  * "Anil" -> "An***", "Raj" -> "R***", "a@b.com" -> "a***".

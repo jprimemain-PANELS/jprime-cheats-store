@@ -39,6 +39,7 @@ import {
   BookOpen,
   Globe,
   Store,
+  UserPlus,
 } from "lucide-react";
 
 import type { Product, PriceTier } from "@/lib/products";
@@ -643,10 +644,50 @@ export default function AdminPage() {
   };
 
   const [resetAsked, setResetAsked] = useState<string[]>([]);
+  const [resetVerified, setResetVerified] = useState<string[]>([]);
   useEffect(() => {
     if (activeTab !== "users") return;
-    adminPost({ action: "password_requests" }).then((j: any) => setResetAsked(Array.isArray(j?.users) ? j.users : [])).catch(() => {});
+    adminPost({ action: "password_requests" }).then((j: any) => { setResetAsked(Array.isArray(j?.users) ? j.users : []); setResetVerified(Array.isArray(j?.verified) ? j.verified : []); }).catch(() => {});
   }, [activeTab]);
+
+  /* ---- create account (owner store + every co-admin store; the server picks the store from the session) ---- */
+  const emptyCreate = { username: "", password: "", role: "user", balance: "", email: "", mobile: "" };
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState(emptyCreate);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createdInfo, setCreatedInfo] = useState<{ username: string; password: string; balance: number } | null>(null);
+
+  const handleCreateAccount = async () => {
+    setCreateError("");
+    const f = createForm;
+    if (!/^[A-Za-z0-9_.-]{3,32}$/.test(f.username.trim())) { setCreateError("Username: 3-32 letters, numbers, . _ -"); return; }
+    if (f.password.length < 6) { setCreateError("Password must be at least 6 characters."); return; }
+    setCreateBusy(true);
+    try {
+      const j: any = await adminPost({ action: "create_user", username: f.username.trim(), password: f.password, role: f.role, balance: f.balance === "" ? 0 : Number(f.balance), email: f.email.trim(), mobile: f.mobile.trim() });
+      setCreatedInfo({ username: j.username, password: f.password, balance: Number(j.balance || 0) });
+      if (j.warning) alert(j.warning);
+      setCreateForm(emptyCreate);
+      loadDashboard();
+    } catch (err: any) {
+      setCreateError(err?.message || "Could not create the account.");
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
+  const handleResetCode = async (u: ManagedUser) => {
+    if (u.id == null) { alert("This user record has no ID. Refresh the admin page and try again."); return; }
+    if (!window.confirm(`Make a one-time reset CODE for @${u.username}?\n\nThe customer keeps their old password until they use the code on the login page (Forgot password > I have a code). The code works for 24 hours.`)) return;
+    try {
+      const j: any = await adminPost({ action: "reset_code", userId: String(u.id) });
+      window.prompt(`Reset code for @${u.username} (valid ${j.hours} hours, shown only once). Send it to the customer:`, j.code);
+      setResetAsked((a) => a.filter((x) => x !== u.username));
+    } catch (err: any) {
+      alert(err?.message || "Could not create the code.");
+    }
+  };
 
   const handleResetPassword = async (u: ManagedUser) => {
     if (u.id == null) { alert("This user record has no ID. Refresh the admin page and try again."); return; }
@@ -1001,7 +1042,7 @@ export default function AdminPage() {
                     ))}
                   </div>
                   <p className="mt-3 text-[11px] text-slate-500">
-                    API = delivered by bb team admin / whitex seller hub, no local keys needed.
+                    API = delivered by bb team admin / whitex seller hub / tahir seller, no local keys needed.
                   </p>
                   {unmatchedStock.length > 0 && (
                     <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-1.5">
@@ -1381,6 +1422,13 @@ export default function AdminPage() {
             icon={Users}
             title="User Management"
             action={
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <button
+                onClick={() => { setCreatedInfo(null); setCreateError(""); setCreateOpen(true); }}
+                className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 text-xs font-bold text-white hover:opacity-90 cursor-pointer"
+              >
+                <UserPlus className="h-4 w-4" /> Create account
+              </button>
               <div className="relative w-full sm:w-64">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                 <input
@@ -1398,6 +1446,7 @@ export default function AdminPage() {
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
+              </div>
               </div>
             }
           >
@@ -1427,12 +1476,15 @@ export default function AdminPage() {
                   {(u.mobile_number || u.phone || u.email) && (
                     <p className="mt-2 break-all text-[11px] text-slate-400">{[u.mobile_number || u.phone, u.email].filter(Boolean).join(" · ")}</p>
                   )}
-                  {resetAsked.includes(u.username) && <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">This user asked for a password reset</p>}
+                  {resetAsked.includes(u.username) && <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">This user asked for a password reset{resetVerified.includes(u.username) ? " (mobile number matched \u2713)" : ""}. Tap Reset code and send it to them.</p>}
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <button onClick={() => setLedgerUser({ username: u.username, balance: u.wallet_balance || 0 })} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-200 active:bg-emerald-600"><History className="h-3.5 w-3.5" />Ledger</button>
                     <button onClick={() => handleOpenManageModal(u)} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-200 active:bg-indigo-600"><Settings className="h-3.5 w-3.5" />Manage</button>
                     {u.role !== "admin" && u.role !== "coadmin" && (
                       <button onClick={() => handleResetPassword(u)} className="flex min-h-10 items-center justify-center rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-200 active:bg-amber-600">Reset password</button>
+                    )}
+                    {u.role !== "admin" && u.role !== "coadmin" && (
+                      <button onClick={() => handleResetCode(u)} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-amber-300 active:bg-amber-600"><KeyRound className="h-3.5 w-3.5" />Reset code</button>
                     )}
                     {u.role !== "admin" && u.role !== "coadmin" && (
                       <button onClick={() => handleDeleteUser(u)} aria-label={`Delete ${u.username}`} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-rose-300 active:bg-rose-600"><Trash2 className="h-3.5 w-3.5" />Delete</button>
@@ -1467,7 +1519,7 @@ export default function AdminPage() {
                           <span className="font-bold tabular-nums text-indigo-300">#{u.join_no ?? "—"}</span>
                           {u.created_at && <span className="block text-[10px] text-slate-500">{new Date(u.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>}
                         </td>
-                        <td className="py-3.5 px-4 font-semibold text-white">@{u.username}{resetAsked.includes(u.username) && <span className="ml-2 rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">forgot password</span>}</td>
+                        <td className="py-3.5 px-4 font-semibold text-white">@{u.username}{resetAsked.includes(u.username) && <span className="ml-2 rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">forgot password{resetVerified.includes(u.username) ? " \u2713 mobile" : ""}</span>}</td>
                         <td className="py-3.5 px-4 text-slate-400">{u.mobile_number || u.phone || "—"}</td>
                         <td className="py-3.5 px-4 text-slate-400">{u.email}</td>
                         <td className="py-3.5 px-4">
@@ -1512,6 +1564,15 @@ export default function AdminPage() {
                             )}
                             {u.role !== "admin" && u.role !== "coadmin" && (
                               <button
+                                onClick={() => handleResetCode(u)}
+                                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-amber-600 text-amber-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                              >
+                                <KeyRound className="h-3.5 w-3.5" />
+                                Reset code
+                              </button>
+                            )}
+                            {u.role !== "admin" && u.role !== "coadmin" && (
+                              <button
                                 onClick={() => handleDeleteUser(u)}
                                 className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-rose-600 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
                                 aria-label={`Delete ${u.username}`}
@@ -1542,6 +1603,69 @@ export default function AdminPage() {
       )}
 
       {/* MANAGE USER MODAL */}
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md p-3 sm:p-4" onClick={() => setCreateOpen(false)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <h3 className="text-sm font-bold text-white">Create account</h3>
+                <p className="text-xs text-slate-400 mt-0.5">New login for this store with an optional starting balance.</p>
+              </div>
+              <button onClick={() => setCreateOpen(false)} aria-label="Close" className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 cursor-pointer"><X className="h-4 w-4" /></button>
+            </div>
+
+            {createdInfo ? (
+              <div className="space-y-3">
+                <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">Account created{createdInfo.balance > 0 ? ` with ₹${createdInfo.balance.toFixed(2)} balance` : ""}. Send these login details to the customer:</p>
+                <div className="rounded-xl bg-slate-950 border border-slate-800 p-3 text-xs text-slate-200 space-y-1 select-all">
+                  <p>Username: <b>{createdInfo.username}</b></p>
+                  <p>Password: <b>{createdInfo.password}</b></p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => { try { navigator.clipboard.writeText(`Username: ${createdInfo.username}\nPassword: ${createdInfo.password}`); } catch {} }} className="min-h-10 rounded-lg bg-slate-800 text-xs font-semibold text-slate-200 cursor-pointer">Copy details</button>
+                  <button onClick={() => { setCreatedInfo(null); }} className="min-h-10 rounded-lg bg-violet-600 text-xs font-bold text-white cursor-pointer">Create another</button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {([
+                  ["username", "Username", "text", "e.g. rahul_01"],
+                  ["password", "Password (6+ characters)", "text", "Choose a password"],
+                  ["balance", "Starting balance ₹ (optional)", "number", "0"],
+                  ["email", "Email (optional)", "email", ""],
+                  ["mobile", "Mobile number (optional)", "tel", ""],
+                ] as const).map(([key, label, type, ph]) => (
+                  <div key={key} className="space-y-1">
+                    <label className="text-xs font-medium text-slate-400 block">{label}</label>
+                    <input
+                      type={type}
+                      inputMode={type === "number" ? "decimal" : undefined}
+                      min={type === "number" ? 0 : undefined}
+                      autoCapitalize="none"
+                      autoComplete="off"
+                      placeholder={ph}
+                      value={(createForm as any)[key]}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, [key]: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-violet-500"
+                    />
+                  </div>
+                ))}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-400 block">Role</label>
+                  <select value={createForm.role} onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value }))} className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-slate-100 outline-none focus:border-violet-500 cursor-pointer">
+                    <option value="user">User</option>
+                    <option value="reseller">Reseller</option>
+                    {isOwnerAdmin && <option value="admin">Admin</option>}
+                  </select>
+                </div>
+                {createError && <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{createError}</p>}
+                <button onClick={handleCreateAccount} disabled={createBusy} className="w-full min-h-11 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-xs font-bold text-white disabled:opacity-60 cursor-pointer">{createBusy ? "Creating..." : "Create account"}</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {isManageModalOpen && selectedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5">
@@ -1565,7 +1689,7 @@ export default function AdminPage() {
                 >
                   <option value="user">User</option>
                   <option value="reseller">Reseller</option>
-                  <option value="admin">Admin</option>
+                  {isOwnerAdmin && <option value="admin">Admin</option>}
                 </select>
               </div>
 

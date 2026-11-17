@@ -44,7 +44,7 @@ describe("API SYSTEM routes", () => {
     expect((tables.tenant_api_connections[0] as any).status).toBe("pending");
     asOwner();
     const o = await (await get(HOST_A)).json();
-    expect(o.owner).toBe(true); expect(o.requests).toHaveLength(1); expect(o.sellers.map((s: any) => s.name)).toEqual(["bb team admin", "whitex seller hub"]);
+    expect(o.owner).toBe(true); expect(o.requests).toHaveLength(1); expect(o.sellers.map((s: any) => s.name)).toEqual(["bb team admin", "whitex seller hub", "tahir seller"]);
   });
   it("owner approves with a seller -> the store can then sell with its own key; 2nd approval of same seller is refused", async () => {
     asStore(); await post(HOST_B, NEW); await post(HOST_B, { ...NEW, sellerName: "Other One" });

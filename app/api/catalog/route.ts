@@ -139,7 +139,7 @@ function legacyFallbackProducts(): Product[] {
           duration: t.duration,
           priceINR: t.priceINR,
           deliveryMode: deliveryModeForTier(
-            { seller1Pid: p.sellerPid, sellerDuration: t.sellerDuration, seller2VariantId: t.seller2VariantId },
+            { seller1Pid: p.sellerPid, sellerDuration: t.sellerDuration, seller2VariantId: t.seller2VariantId, seller3ProductId: t.seller3ProductId },
             p.fulfillmentType
           ),
         };

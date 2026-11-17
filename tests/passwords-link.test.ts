@@ -11,6 +11,7 @@ import { OWNER_TENANT_ID } from "@/lib/tenant";
 import { verifyPassword } from "@/lib/auth";
 import { POST as changePw } from "@/app/api/auth/change-password/route";
 import { POST as forgot } from "@/app/api/auth/forgot/route";
+import { POST as resetRoute } from "@/app/api/auth/reset/route";
 import { POST as dataPost } from "@/app/api/admin/data/route";
 import { POST as tenantsPost } from "@/app/api/admin/tenants/route";
 import { POST as subPost, GET as subGet } from "@/app/api/admin/subscription/route";
@@ -81,5 +82,49 @@ describe("store links its own main-site wallet account", () => {
     expect(await jprimeAccess(TENANT_B)).toEqual({ allowed: true, payer: "raj" });
     const j = await (await subGet(req("/api/admin/subscription", { host: HOST_B }))).json();
     expect(j.payer).toBe("raj"); expect(j.walletBalance).toBe(1000);
+  });
+});
+
+describe("forgot password with a code, and admin create account", () => {
+  it("code flow: admin issues once, wrong code fails, right code sets the password, code cannot be reused", async () => {
+    loginAs("coadminB", TENANT_B, "andrew", HOST_B);
+    const j = await (await post(dataPost, "/api/admin/data", HOST_B, { action: "reset_code", userId: "user-rajB" })).json();
+    expect(j.code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect((await post(dataPost, "/api/admin/data", HOST_B, { action: "reset_code", userId: "user-rajA" })).status).toBe(404);
+    expect((await post(dataPost, "/api/admin/data", HOST_B, { action: "reset_code", userId: "user-fakeAdminB" })).status).toBe(403);
+    ctx.cookie = "";
+    expect((await post(resetRoute, "/api/auth/reset", HOST_B, { username: "raj", code: "AAAA-BBBB", password: "brandnew-123" })).status).toBe(400);
+    expect((await post(resetRoute, "/api/auth/reset", HOST_B, { username: "raj", code: j.code, password: "short" })).status).toBe(400);
+    expect((await post(resetRoute, "/api/auth/reset", HOST_B, { username: "raj", code: j.code, password: "brandnew-123" })).status).toBe(200);
+    expect(verifyPassword("brandnew-123", user("user-rajB").password)).toBe(true);
+    expect(verifyPassword("pass-A", user("user-rajA").password)).toBe(true);
+    expect((await post(resetRoute, "/api/auth/reset", HOST_B, { username: "raj", code: j.code, password: "another-pass-9" })).status).toBe(400);
+  });
+  it("a code from one store never works in another store", async () => {
+    loginAs("coadminB", TENANT_B, "andrew", HOST_B);
+    const j = await (await post(dataPost, "/api/admin/data", HOST_B, { action: "reset_code", userId: "user-rajB" })).json();
+    ctx.cookie = "";
+    expect((await post(resetRoute, "/api/auth/reset", HOST_A, { username: "raj", code: j.code, password: "brandnew-123" })).status).toBe(400);
+    expect(verifyPassword("pass-A", user("user-rajA").password)).toBe(true);
+  });
+  it("mobile match marks the request verified", async () => {
+    user("user-rajB").mobile_number = "98765 43210";
+    ctx.cookie = "";
+    await post(forgot, "/api/auth/forgot", HOST_B, { username: "raj", mobile: "+91 9876543210" });
+    loginAs("coadminB", TENANT_B, "andrew", HOST_B);
+    const j = await (await post(dataPost, "/api/admin/data", HOST_B, { action: "password_requests" })).json();
+    expect(j.users).toEqual(["raj"]); expect(j.verified).toEqual(["raj"]);
+  });
+  it("create account: hashed password, role limits, duplicate refused, starting balance credited", async () => {
+    loginAs("coadminB", TENANT_B, "andrew", HOST_B);
+    const ok = await post(dataPost, "/api/admin/data", HOST_B, { action: "create_user", username: "newbie", password: "secret1", role: "reseller", balance: 150 });
+    expect(ok.status).toBe(200);
+    const row = tables.users.find((u: any) => u.username === "newbie" && u.tenant_id === TENANT_B) as any;
+    expect(row.role).toBe("reseller"); expect(row.password).not.toBe("secret1"); expect(verifyPassword("secret1", row.password)).toBe(true);
+    expect((await post(dataPost, "/api/admin/data", HOST_B, { action: "create_user", username: "newbie", password: "secret1", role: "user" })).status).toBe(409);
+    expect((await post(dataPost, "/api/admin/data", HOST_B, { action: "create_user", username: "boss2", password: "secret1", role: "admin" })).status).toBe(400);
+    expect((await post(dataPost, "/api/admin/data", HOST_B, { action: "create_user", username: "bad name", password: "secret1", role: "user" })).status).toBe(400);
+    expect((await post(dataPost, "/api/admin/data", HOST_B, { action: "create_user", username: "okname", password: "123", role: "user" })).status).toBe(400);
+    expect(tables.users.find((u: any) => u.username === "newbie" && u.tenant_id !== TENANT_B)).toBeUndefined();
   });
 });

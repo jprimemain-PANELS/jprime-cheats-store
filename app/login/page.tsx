@@ -604,17 +604,71 @@ const SubmitButton = ({ isLogin, onClick }: { isLogin: boolean; onClick: () => v
 
 /* Account switch: ONE slim horizontal row (icon + short text + button) */
 const ForgotPassword = ({ username }: { username: string }) => {
-  const [state, setState] = useState<"idle" | "busy" | "sent">("idle");
-  async function ask() {
-    if (!username.trim()) { alert("Type your username in the box above first."); return; }
-    setState("busy");
-    try { await fetch("/api/auth/forgot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username }) }); } catch {}
-    setState("sent");
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"ask" | "code">("ask");
+  const [user, setUser] = useState(username);
+  const [mobile, setMobile] = useState("");
+  const [code, setCode] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const inp = "w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-[13px] text-white placeholder-white/30 outline-none focus:border-fuchsia-500/60";
+
+  async function post(url: string, body: object) {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return { res, j: await res.json().catch(() => ({})) };
   }
-  return state === "sent" ? (
-    <p className="mt-3 text-center text-[11px] text-emerald-300/90">Request sent to the store admin. They will give you a new password.</p>
-  ) : (
-    <button type="button" disabled={state === "busy"} onClick={ask} className="mt-3 block w-full text-center text-[11px] text-white/60 hover:text-white underline cursor-pointer">Forgot password?</button>
+  async function ask() {
+    if (!user.trim()) { setMsg({ ok: false, text: "Type your username first." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const { res, j } = await post("/api/auth/forgot", { username: user.trim(), mobile });
+      if (res.status === 429) setMsg({ ok: false, text: j?.error || "Too many tries. Try again later." });
+      else { setMsg({ ok: true, text: "Request sent to your store admin. Message them (WhatsApp / Telegram) and ask for your reset code, then tap \"I have a code\"." }); }
+    } catch { setMsg({ ok: false, text: "Network problem. Try again." }); }
+    setBusy(false);
+  }
+  async function redeem() {
+    if (!user.trim() || !code.trim() || pw.length < 8) { setMsg({ ok: false, text: "Fill username, code and a new password (8+ characters)." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const { res, j } = await post("/api/auth/reset", { username: user.trim(), code: code.trim(), password: pw });
+      if (res.ok && j?.success) { setMsg({ ok: true, text: "Password changed. Now log in with your new password." }); setCode(""); setPw(""); }
+      else setMsg({ ok: false, text: j?.error || "Could not reset. Try again." });
+    } catch { setMsg({ ok: false, text: "Network problem. Try again." }); }
+    setBusy(false);
+  }
+
+  if (!open) {
+    return <button type="button" onClick={() => { setUser(username); setOpen(true); }} className="mt-3 block w-full text-center text-[11px] text-white/60 hover:text-white underline cursor-pointer">Forgot password?</button>;
+  }
+  return (
+    <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[12px] font-bold text-white">Reset your password</p>
+        <button type="button" onClick={() => { setOpen(false); setMsg(null); }} className="text-[11px] text-white/50 hover:text-white">Close</button>
+      </div>
+      <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-white/[0.05] p-1 text-[11px] font-semibold">
+        <button type="button" onClick={() => { setTab("ask"); setMsg(null); }} className={`rounded-md py-1.5 ${tab === "ask" ? "bg-fuchsia-500/30 text-white" : "text-white/60"}`}>1. Ask admin</button>
+        <button type="button" onClick={() => { setTab("code"); setMsg(null); }} className={`rounded-md py-1.5 ${tab === "code" ? "bg-fuchsia-500/30 text-white" : "text-white/60"}`}>2. I have a code</button>
+      </div>
+      <div className="space-y-2">
+        <input className={inp} placeholder="Username" value={user} onChange={(e) => setUser(e.target.value)} autoCapitalize="none" autoComplete="username" />
+        {tab === "ask" ? (
+          <>
+            <input className={inp} placeholder="Mobile number you signed up with (optional, proves it is you)" inputMode="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+            <button type="button" disabled={busy} onClick={ask} className="w-full rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 py-2.5 text-[12px] font-bold text-white disabled:opacity-60">{busy ? "Sending..." : "Send request to admin"}</button>
+          </>
+        ) : (
+          <>
+            <input className={inp} placeholder="Reset code from admin (ABCD-EFGH)" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} autoCapitalize="characters" autoComplete="one-time-code" />
+            <input className={inp} type="password" placeholder="New password (8+ characters)" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
+            <button type="button" disabled={busy} onClick={redeem} className="w-full rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 py-2.5 text-[12px] font-bold text-white disabled:opacity-60">{busy ? "Saving..." : "Set new password"}</button>
+          </>
+        )}
+      </div>
+      {msg && <p className={`mt-2 text-[11px] leading-snug ${msg.ok ? "text-emerald-300/90" : "text-rose-300"}`}>{msg.text}</p>}
+    </div>
   );
 };
 

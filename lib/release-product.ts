@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { tdb, OWNER_TENANT_ID } from "@/lib/tenant-db";
 import {
   allProducts,
@@ -32,6 +33,9 @@ interface CatalogPrice {
   seller1Duration?: unknown;
 
   seller2VariantId?: unknown;
+
+  // tahir seller (Admin Shops): numeric product_id
+  seller3ProductId?: unknown;
 
   // JPRIME API stock (co-admin stores): which OWNER product + duration this tier sells
   jprimeProductId?: unknown;
@@ -691,6 +695,7 @@ export async function releaseProduct({
     seller1Pid: oldProduct.sellerPid,
     seller1Duration: oldPrice.sellerDuration,
     seller2VariantId: (oldPrice as any).seller2VariantId,
+    seller3ProductId: (oldPrice as any).seller3ProductId,
   };
 
   const legacySupplier = inferSupplier(legacyPrice, {
@@ -714,6 +719,83 @@ export async function releaseProduct({
   );
 }
 
+
+/* =========================================================
+   SELLER 3  (tahir seller, Admin Shops API v1)
+   POST /generate  {product_id, quantity, idempotency_key}  Bearer token
+   ========================================================= */
+
+const SELLER3_API_URL = "https://adminshops.com/api/v1/generate";
+
+async function purchaseFromSeller3(
+  price: CatalogPrice,
+  productName: string,
+  duration: string,
+  creds?: SellerCreds
+) {
+  const apiToken = creds ? creds.apiKey : process.env.SELLER3_API_TOKEN;
+  if (!apiToken) {
+    console.error("SELLER3_API_TOKEN is missing.");
+    return { success: false, error: "tahir seller is not configured." };
+  }
+
+  const pidText = String(price.seller3ProductId ?? "").trim();
+  const productId = Number(pidText);
+  if (!pidText || !Number.isInteger(productId) || productId <= 0) {
+    return { success: false, error: `tahir seller product ID is not configured for "${productName}" - "${duration}".` };
+  }
+
+  try {
+    const response = await fetch(SELLER3_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        product_id: productId,
+        quantity: 1,
+        // one fresh key per purchase attempt: a retry of the SAME order never double-buys, a new order always buys
+        idempotency_key: `jp-${Date.now().toString(36)}-${randomBytes(8).toString("hex")}`,
+      }),
+      cache: "no-store",
+    });
+
+    if (response.status === 401) {
+      console.error("SELLER 3: token rejected (401).");
+      return { success: false, error: "tahir seller token is invalid or revoked." };
+    }
+    if (response.status === 429) {
+      return { success: false, error: "tahir seller is busy. Try again in a minute." };
+    }
+
+    const text = (await response.text()).replace(/^\uFEFF/, "").trim();
+    let result: any;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      console.error("SELLER 3 NON-JSON RESPONSE:", { httpStatus: response.status, bodyLength: text.length });
+      return { success: false, error: "tahir seller returned invalid data." };
+    }
+
+    if (result?.ok !== true) {
+      return { success: false, error: String(result?.error?.message || result?.error || "tahir seller rejected the purchase.") };
+    }
+
+    const keys: unknown[] = Array.isArray(result?.data?.keys) ? result.data.keys : [];
+    const key = keys.find((k) => typeof k === "string" && k.trim().length > 0);
+    if (!key) {
+      console.error("SELLER 3 SUCCESS BUT NO KEY:", { httpStatus: response.status });
+      return { success: false, error: "tahir seller completed the purchase but returned no key." };
+    }
+    return { success: true, key: String(key) };
+  } catch (error) {
+    console.error("SELLER 3 REQUEST ERROR:", error);
+    return { success: false, error: error instanceof Error ? error.message : "tahir seller request failed." };
+  }
+}
+
 /**
  * One switch for all deliveries. LOCAL is only reached when the supplier really is LOCAL.
  */
@@ -732,12 +814,12 @@ async function deliverBySupplier(
 
   if (supplier !== "LOCAL" && tenantId !== OWNER_TENANT_ID) {
     // A co-admin store may only use a seller it was APPROVED for, with ITS OWN key. Never the owner's key.
-    if (supplier !== "SELLER1" && supplier !== "SELLER2") return NOT_CONFIGURED;
+    if (supplier !== "SELLER1" && supplier !== "SELLER2" && supplier !== "SELLER3") return NOT_CONFIGURED;
     const creds = await sellerCredsForTenant(tenantId, supplier);
     if (!creds) return NOT_CONFIGURED;
-    return supplier === "SELLER1"
-      ? purchaseFromSeller1(price, productName, duration, creds)
-      : purchaseFromSeller2(price, productName, duration, creds);
+    if (supplier === "SELLER1") return purchaseFromSeller1(price, productName, duration, creds);
+    if (supplier === "SELLER3") return purchaseFromSeller3(price, productName, duration, creds);
+    return purchaseFromSeller2(price, productName, duration, creds);
   }
 
   if (supplier === "SELLER1") {
@@ -746,6 +828,10 @@ async function deliverBySupplier(
 
   if (supplier === "SELLER2") {
     return purchaseFromSeller2(price, productName, duration);
+  }
+
+  if (supplier === "SELLER3") {
+    return purchaseFromSeller3(price, productName, duration);
   }
 
   return deliverFromLocalStock(tenantId, productName, duration);
@@ -786,7 +872,9 @@ async function deliverFromJprime(tenantId: string, price: CatalogPrice, storePro
     } else {
       delivered = src.supplier === "SELLER1"
         ? await purchaseFromSeller1(src.tier as CatalogPrice, src.productName, src.duration)
-        : await purchaseFromSeller2(src.tier as CatalogPrice, src.productName, src.duration);
+        : src.supplier === "SELLER3"
+          ? await purchaseFromSeller3(src.tier as CatalogPrice, src.productName, src.duration)
+          : await purchaseFromSeller2(src.tier as CatalogPrice, src.productName, src.duration);
     }
   } catch {
     delivered = { success: false };

@@ -6,7 +6,7 @@
  * customer stock counter and the real key reservation all agree with each other.
  */
 
-export type Supplier = "LOCAL" | "SELLER1" | "SELLER2" | "JPRIME";
+export type Supplier = "LOCAL" | "SELLER1" | "SELLER2" | "SELLER3" | "JPRIME";
 export type DeliveryMode = "API" | "LOCAL";
 
 type TierLike = {
@@ -15,6 +15,7 @@ type TierLike = {
   seller1Duration?: unknown;
   sellerDuration?: unknown;
   seller2VariantId?: unknown;
+  seller3ProductId?: unknown;
 };
 
 type ProductLike = {
@@ -35,6 +36,7 @@ export function normalizeSupplier(value: unknown): Supplier | null {
     .replace(/[\s_-]+/g, "");
   if (s === "SELLER1") return "SELLER1";
   if (s === "SELLER2") return "SELLER2";
+  if (s === "SELLER3") return "SELLER3";
   if (s === "JPRIME" || s === "JPRIMEAPI" || s === "JPRIMESTOCK") return "JPRIME";
   if (s === "LOCAL" || s === "LOCALSTOCK") return "LOCAL";
   return null;
@@ -51,6 +53,10 @@ export function hasSeller2Config(tier: TierLike): boolean {
   return filled(tier.seller2VariantId);
 }
 
+export function hasSeller3Config(tier: TierLike): boolean {
+  return filled(tier.seller3ProductId);
+}
+
 /**
  * Best-effort supplier for OLD data that has no explicit `supplier` field
  * (lib/products.ts entries and very old catalogue rows). Used by "Import Existing" and by the
@@ -65,6 +71,7 @@ export function inferSupplier(tier: TierLike, product?: ProductLike): Supplier |
   const s2 = hasSeller2Config(tier);
   if (s1) return "SELLER1";
   if (s2) return "SELLER2";
+  if (hasSeller3Config(tier)) return "SELLER3";
   if (String(product?.fulfillmentType ?? "").toUpperCase() === "LOCAL") return "LOCAL";
   return null;
 }
@@ -94,12 +101,12 @@ export function resolveCatalogSupplier(tier: TierLike): SupplierResolution {
  */
 export function deliveryModeForTier(tier: TierLike, productFulfillmentType?: unknown): DeliveryMode {
   const supplier = normalizeSupplier(tier.supplier);
-  if (supplier === "SELLER1" || supplier === "SELLER2" || supplier === "JPRIME") return "API";
+  if (supplier === "SELLER1" || supplier === "SELLER2" || supplier === "SELLER3" || supplier === "JPRIME") return "API";
   if (supplier === "LOCAL") return "LOCAL";
 
   // No explicit supplier (old data): read what the configuration says.
   const inferred = inferSupplier(tier, { fulfillmentType: productFulfillmentType });
-  if (inferred === "SELLER1" || inferred === "SELLER2") return "API";
+  if (inferred === "SELLER1" || inferred === "SELLER2" || inferred === "SELLER3") return "API";
   if (inferred === "LOCAL") return "LOCAL";
 
   // Nothing configured: trust the product-level flag, defaulting to local stock.

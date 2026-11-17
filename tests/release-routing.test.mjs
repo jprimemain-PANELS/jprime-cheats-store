@@ -9,14 +9,21 @@ import { state } from "./stubs/supabase-admin.mjs";
 process.env.RESELLER_API_KEY = "test-reseller-key";
 process.env.RESELLER_MASTER_KEY = "test-master-key";
 process.env.SELLER2_API_TOKEN = "test-seller2-token";
+process.env.SELLER3_API_TOKEN = "test-seller3-token";
 
 const SELLER1_URL = "https://bantibhaiya.to/api/reseller_v1.php";
+const SELLER3_URL = "https://adminshops.com/api/v1/generate";
+let seller3Reply = null;
 const SELLER2_URL = "https://whitexmodz.store/api/v1/generate_key.php";
 
 const OWNER = "00000000-0000-0000-0000-000000000001";
 let fetchCalls = [];
 globalThis.fetch = async (url, init) => {
-  fetchCalls.push({ url: String(url), body: String(init?.body ?? "") });
+  fetchCalls.push({ url: String(url), body: String(init?.body ?? ""), headers: init?.headers });
+  if (String(url).includes("adminshops")) {
+    const r = seller3Reply ?? { status: 200, json: { ok: true, data: { keys: ["S3-KEY-789"] } } };
+    return new Response(JSON.stringify(r.json), { status: r.status, headers: { "content-type": "application/json" } });
+  }
   const body = String(url).includes("bantibhaiya")
     ? { status: "success", data: { key: "S1-KEY-123" } }
     : { success: true, keys: ["S2-KEY-456"] };
@@ -39,6 +46,7 @@ const stockUpdates = () => state.ops.filter((o) => o.table === "stock_keys" && o
 
 beforeEach(() => {
   fetchCalls = [];
+  seller3Reply = null;
   state.ops = [];
   catalogExact = [];
   catalogAll = [];
@@ -270,4 +278,41 @@ test("customer/admin count reads every page (more than 1000 keys) with the same 
   const result = await countLocalStock(OWNER, "𝗗𝗨𝗖𝗞 𝗠𝗢𝗗- 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", "7 day", { fresh: true });
   assert.deepEqual(result, { ok: true, data: 2300 });
   assert.deepEqual(await countLocalStock(OWNER, "𝗗𝗨𝗖𝗞 𝗠𝗢𝗗- 𝗡𝗢𝗡 𝗥𝗢𝗢𝗧", "30 day", { fresh: true }), { ok: true, data: 0 });
+});
+
+test("SELLER3 (tahir seller) posts JSON with Bearer token + numeric product_id and returns the key", async () => {
+  catalogExact = [catalogRow("Tahir", [{ duration: "1 day", supplier: "SELLER3", seller3ProductId: "62", seller2VariantId: "1", seller1Pid: "9", seller1Duration: "1day" }])];
+  stockRows = [{ id: 1, product_name: "Tahir", duration: "1 day", key_code: "LOCAL-KEY", is_used: false }];
+  const result = await releaseProduct({ tenantId: OWNER, username: "u", product_name: "Tahir", duration: "1 day" });
+  assert.deepEqual(result, { success: true, key: "S3-KEY-789" });
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].url, SELLER3_URL);
+  assert.equal(fetchCalls[0].headers.Authorization, "Bearer test-seller3-token");
+  const body = JSON.parse(fetchCalls[0].body);
+  assert.equal(body.product_id, 62);
+  assert.equal(body.quantity, 1);
+  assert.match(body.idempotency_key, /^jp-/);
+  assert.equal(stockRows[0].is_used, false);
+});
+
+test("SELLER3 failures (ok:false, 401, 429, bad product id) never return a key and never touch local stock", async () => {
+  catalogExact = [catalogRow("Tahir", [{ duration: "1 day", supplier: "SELLER3", seller3ProductId: "62" }])];
+  stockRows = [{ id: 1, product_name: "Tahir", duration: "1 day", key_code: "LOCAL-KEY", is_used: false }];
+  for (const reply of [
+    { status: 200, json: { ok: false, error: { message: "Out of stock" } } },
+    { status: 401, json: { ok: false, error: { message: "bad token" } } },
+    { status: 429, json: { ok: false } },
+    { status: 200, json: { ok: true, data: { keys: [] } } },
+  ]) {
+    seller3Reply = reply;
+    const r = await releaseProduct({ tenantId: OWNER, username: "u", product_name: "Tahir", duration: "1 day" });
+    assert.equal(r.success, false);
+    assert.equal(r.key, undefined);
+  }
+  assert.equal(stockRows[0].is_used, false);
+  catalogExact = [catalogRow("Tahir", [{ duration: "1 day", supplier: "SELLER3", seller3ProductId: "abc" }])];
+  fetchCalls = [];
+  const bad = await releaseProduct({ tenantId: OWNER, username: "u", product_name: "Tahir", duration: "1 day" });
+  assert.equal(bad.success, false);
+  assert.equal(fetchCalls.length, 0);
 });

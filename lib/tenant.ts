@@ -66,7 +66,7 @@ function allowOwnerFallbackForUnknownHosts(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
-const TTL_MS = 10_000;
+const TTL_MS = 60_000; // short-lived memory cache: saves a database call on every page view (edits call clearTenantCache)
 const cache = new Map<string, { at: number; tenant: Tenant | null }>();
 
 export function clearTenantCache() {

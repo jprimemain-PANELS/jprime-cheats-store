@@ -25,11 +25,13 @@ export async function GET(request: NextRequest) {
     const o = await ownerListConnections();
     const env1 = !!(process.env.RESELLER_API_KEY && process.env.RESELLER_MASTER_KEY);
     const env2 = !!process.env.SELLER2_API_TOKEN;
+    const env3 = !!process.env.SELLER3_API_TOKEN;
     return NextResponse.json({
       success: true, owner: true, available: o.available, requests: o.items, hidden: await jprimeHidden(),
       sellers: [
         { id: "SELLER1", name: SELLERS.SELLER1.name, connected: env1, stores: o.items.filter((x) => x.status === "approved" && x.assignedSeller === "SELLER1").length },
         { id: "SELLER2", name: SELLERS.SELLER2.name, connected: env2, stores: o.items.filter((x) => x.status === "approved" && x.assignedSeller === "SELLER2").length },
+        { id: "SELLER3", name: SELLERS.SELLER3.name, connected: env3, stores: o.items.filter((x) => x.status === "approved" && x.assignedSeller === "SELLER3").length },
       ],
     }, { headers: NO_STORE });
   }

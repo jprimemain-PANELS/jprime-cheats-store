@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { OWNER_TENANT_ID, tdb } from "@/lib/tenant-db";
+import { OWNER_TENANT_ID, tdb, readSetting, writeSetting } from "@/lib/tenant-db";
 
 /**
  * Delete a customer/reseller account of ONE store. Server only.
@@ -119,21 +119,150 @@ export async function ownerResetStoreAdmin(tenantId: string, actor: Actor2) {
   return { ok: true as const, username: String(t.username), password: pw };
 }
 
-/** "Forgot password": the request is only a note for the store admin (nothing is changed, no account is revealed). */
-export async function recordForgot(tenantId: string, username: string) {
+/**
+ * "Forgot password" step 1: the request is a note for the store admin (nothing is changed, no account is revealed).
+ * If the customer also typed the mobile number they signed up with and it matches, the note is marked
+ * "mobile verified" so the admin knows the request is genuine.
+ */
+export async function recordForgot(tenantId: string, username: string, mobile = "") {
   const u = String(username ?? "").trim().slice(0, 64);
   if (!u) return;
-  const r = await tdb(tenantId).from("users").select("id").eq("username", u).maybeSingle();
-  if (!r.data) return;
-  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: "", actor_username: u, action: "password.requested", target: u });
+  const r = await tdb(tenantId).from("users").select("id, role, mobile_number").eq("username", u).maybeSingle();
+  const row: any = r.data;
+  if (!row || !DELETABLE.has(String(row.role ?? "user").toLowerCase())) return;
+  const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
+  const verified = digits(mobile).length === 10 && digits(mobile) === digits(row.mobile_number);
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: verified ? "mobile-verified" : "", actor_username: u, action: "password.requested", target: u });
 }
 
-/** Users who asked for a reset in the last 7 days and were not reset since. */
-export async function resetRequests(tenantId: string): Promise<string[]> {
+/** Users who asked for a reset in the last 7 days and were not reset since (+ which of them matched their mobile). */
+export async function resetRequestInfo(tenantId: string): Promise<{ users: string[]; verified: string[] }> {
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const r = await supabaseAdmin.from("audit_log").select("action, target, created_at").eq("tenant_id", tenantId).in("action", ["password.requested", "password.reset", "password.changed"]).gte("created_at", since).order("created_at", { ascending: true }).limit(500);
-  if (r.error) return [];
+  const r = await supabaseAdmin.from("audit_log").select("action, target, actor_user_id, created_at").eq("tenant_id", tenantId).in("action", ["password.requested", "password.reset", "password.changed", "password.code_issued", "password.reset_by_code"]).gte("created_at", since).order("created_at", { ascending: true });
+  if (r.error) return { users: [], verified: [] };
   const open = new Map<string, boolean>();
-  for (const x of (r.data as any[]) ?? []) open.set(String(x.target), x.action === "password.requested");
-  return [...open].filter(([, v]) => v).map(([k]) => k);
+  const ver = new Set<string>();
+  for (const x of (r.data as any[]) ?? []) {
+    const t = String(x.target);
+    open.set(t, x.action === "password.requested");
+    if (x.action === "password.requested" && x.actor_user_id === "mobile-verified") ver.add(t); else if (x.action !== "password.requested") ver.delete(t);
+  }
+  const users = [...open].filter(([, v]) => v).map(([k]) => k);
+  return { users, verified: users.filter((x) => ver.has(x)) };
+}
+
+export async function resetRequests(tenantId: string): Promise<string[]> {
+  return (await resetRequestInfo(tenantId)).users;
+}
+
+/* ---------------------- one-time reset codes (free, no email needed) ---------------------- */
+
+const CODE_KEY = (username: string) => `pwreset:${String(username).toLowerCase()}`;
+const CODE_TTL_MS = 24 * 3_600_000;
+const CODE_MAX_TRIES = 5;
+const codeHash = (tenantId: string, username: string, code: string) =>
+  crypto.createHash("sha256").update(`${tenantId}|${String(username).toLowerCase()}|${String(code).trim().toUpperCase()}`).digest("hex");
+
+function newResetCode(): string {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (const b of crypto.randomBytes(8)) out += chars[b % chars.length];
+  return `${out.slice(0, 4)}-${out.slice(4)}`;
+}
+
+/** Store admin creates a one-time code for a customer/reseller (valid 24 hours, shown once, only its hash is stored). */
+export async function issueResetCode(tenantId: string, targetId: string, actor: Actor2) {
+  const r = await tdb(tenantId).from("users").select("id, username, role").eq("id", targetId).maybeSingle();
+  const t: any = r.data;
+  if (r.error || !t) return { ok: false as const, status: 404, error: "User not found." };
+  if (String(t.id) === String(actor.id)) return { ok: false as const, status: 400, error: "Use Change password for your own account." };
+  if (!DELETABLE.has(String(t.role ?? "user").toLowerCase())) return { ok: false as const, status: 403, error: "Admin passwords cannot be reset here." };
+  const code = newResetCode();
+  const w = await writeSetting(tenantId, CODE_KEY(t.username), { hash: codeHash(tenantId, t.username, code), exp: Date.now() + CODE_TTL_MS, tries: 0 });
+  if (w.error) return { ok: false as const, status: 500, error: "Could not create the code." };
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: "password.code_issued", target: String(t.username) });
+  return { ok: true as const, username: String(t.username), code, hours: 24 };
+}
+
+/** Customer uses the code to choose a new password. Same generic failure for every problem. */
+export async function redeemResetCode(tenantId: string, username: string, code: string, next: string) {
+  const bad = { ok: false as const, error: "That code is wrong or expired. Ask your store admin for a new one." };
+  const u = String(username ?? "").trim().slice(0, 64);
+  if (!u || !String(code ?? "").trim()) return bad;
+  if (String(next ?? "").length < PASSWORD_MIN || String(next).length > 200) return { ok: false as const, error: `New password must be at least ${PASSWORD_MIN} characters.` };
+  const rec = await readSetting(tenantId, CODE_KEY(u));
+  const v: any = rec.data?.value;
+  if (rec.error || !v || typeof v !== "object" || !v.hash) return bad;
+  if (Number(v.exp) < Date.now() || Number(v.tries) >= CODE_MAX_TRIES) return bad;
+  const given = Buffer.from(codeHash(tenantId, u, code), "hex");
+  const want = Buffer.from(String(v.hash), "hex");
+  if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) {
+    await writeSetting(tenantId, CODE_KEY(u), { ...v, tries: Number(v.tries || 0) + 1 });
+    return bad;
+  }
+  const r = await tdb(tenantId).from("users").select("id, username, role").eq("username", u).maybeSingle();
+  const row: any = r.data;
+  if (r.error || !row || !DELETABLE.has(String(row.role ?? "user").toLowerCase())) return bad;
+  const up = await tdb(tenantId).from("users").update({ password: hashPassword(next) }).eq("id", String(row.id));
+  if (up.error) return { ok: false as const, error: "Could not change the password. Try again." };
+  await writeSetting(tenantId, CODE_KEY(u), null); // one use only
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: String(row.id), actor_username: String(row.username), action: "password.reset_by_code", target: String(row.username) });
+  return { ok: true as const, username: String(row.username) };
+}
+
+/* ------------------------------ create account (admin) ------------------------------ */
+import { creditWallet, logWalletTransaction } from "@/lib/wallet";
+
+const CREATE_OWNER_ROLES = ["user", "reseller", "admin"];
+const CREATE_STORE_ROLES = ["user", "reseller"];
+
+/**
+ * A store admin creates an account INSIDE THEIR OWN STORE (tenant from the verified session, never from the body):
+ * username + password + role + optional starting balance. The password is stored hashed.
+ * A co-admin store can only create customer/reseller accounts; only the owner store may create admins.
+ * The starting balance goes through the same wallet function and ledger as "Manage > Add funds".
+ */
+export async function createAccount(
+  tenantId: string,
+  input: { username?: unknown; password?: unknown; role?: unknown; balance?: unknown; email?: unknown; mobile?: unknown },
+  actor: Actor2,
+) {
+  const username = String(input.username ?? "").trim();
+  const password = String(input.password ?? "");
+  const role = String(input.role ?? "user").trim();
+  const email = String(input.email ?? "").trim();
+  const mobile = String(input.mobile ?? "").trim();
+  const balance = Math.round(Number(input.balance ?? 0) * 100) / 100;
+
+  if (!/^[A-Za-z0-9_.-]{3,32}$/.test(username)) return { ok: false as const, status: 400, error: "Username must be 3-32 letters, numbers, . _ -" };
+  if (password.length < 6 || password.length > 200) return { ok: false as const, status: 400, error: "Password must be at least 6 characters." };
+  const allowed = tenantId === OWNER_TENANT_ID ? CREATE_OWNER_ROLES : CREATE_STORE_ROLES;
+  if (!allowed.includes(role)) return { ok: false as const, status: 400, error: "Invalid role." };
+  if (email && (email.length > 150 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return { ok: false as const, status: 400, error: "Enter a valid email." };
+  if (mobile && (mobile.replace(/\D/g, "").length < 10 || mobile.length > 20)) return { ok: false as const, status: 400, error: "Enter a valid mobile number." };
+  if (input.balance !== undefined && input.balance !== "" && (!Number.isFinite(balance) || balance < 0 || balance > 1_000_000)) {
+    return { ok: false as const, status: 400, error: "Starting balance must be between 0 and 1,000,000." };
+  }
+
+  const db = tdb(tenantId);
+  const ex = await db.from("users").select("id").eq("username", username).limit(1);
+  if (ex.error) return { ok: false as const, status: 500, error: "Could not check the username." };
+  if ((ex.data?.length ?? 0) > 0) return { ok: false as const, status: 409, error: "That username already exists." };
+
+  const ins = await db.from("users").insert([{ username, password: hashPassword(password), email, mobile_number: mobile, role }]);
+  if (ins.error) return { ok: false as const, status: 400, error: "Could not create the account." };
+
+  let funded = 0;
+  let warning = "";
+  if (balance > 0) {
+    const r = await creditWallet(tenantId, username, balance);
+    if (r.ok) {
+      funded = balance;
+      await logWalletTransaction({ tenantId, username, type: "credit", amount: balance, balance_after: r.balance, description: "Admin added starting balance" });
+    } else {
+      warning = "Account created, but the starting balance could not be added. Use Manage > Add funds.";
+    }
+  }
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: "user.create", target: username });
+  return { ok: true as const, username, role, balance: funded, warning };
 }

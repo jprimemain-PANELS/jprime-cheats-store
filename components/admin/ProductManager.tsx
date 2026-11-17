@@ -49,7 +49,7 @@ const emptyProduct: Product = {
       supplier: "",
       seller1Pid: "",
       seller1Duration: "",
-      seller2VariantId: "",
+      seller2VariantId: "", seller3ProductId: "",
     },
   ],
 };
@@ -175,7 +175,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
           supplier: "",
           seller1Pid: "",
           seller1Duration: "",
-          seller2VariantId: "",
+          seller2VariantId: "", seller3ProductId: "",
         },
       ],
     });
@@ -261,6 +261,10 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
 
           seller2VariantId: String(
             x.seller2VariantId || ""
+          ).trim(),
+
+          seller3ProductId: String(
+            x.seller3ProductId || ""
           ).trim(),
         })),
     };
@@ -531,7 +535,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
     setSelected((prev) => {
       if (!prev) return prev;
       const prices = prev.prices.map((t) => ({ ...t, supplier: v as any, ...(v === "JPRIME" ? {} : { jprimeProductId: "", jprimeDuration: "" }) }));
-      return { ...prev, prices: prices.length ? prices : [{ duration: "", priceINR: "", resellerPrice: "", supplier: v as any, seller1Pid: "", seller1Duration: "", seller2VariantId: "" } as any] };
+      return { ...prev, prices: prices.length ? prices : [{ duration: "", priceINR: "", resellerPrice: "", supplier: v as any, seller1Pid: "", seller1Duration: "", seller2VariantId: "", seller3ProductId: "" } as any] };
     });
   }
 
@@ -550,7 +554,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
           priceINR: had?.priceINR || String(t.price || t.cost),
           resellerPrice: had?.resellerPrice || "",
           supplier: "JPRIME", jprimeProductId: c.productId, jprimeDuration: t.duration,
-          seller1Pid: "", seller1Duration: "", seller2VariantId: "",
+          seller1Pid: "", seller1Duration: "", seller2VariantId: "", seller3ProductId: "",
         } as any;
       });
       return { ...prev, id: c.productId, name: keepName ? prev.name : c.name, prices };
@@ -583,7 +587,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
             inheritedSupplier === "SELLER1" ? String(last?.seller1Pid || "") : "",
           seller1Duration: "",
 
-          seller2VariantId: "",
+          seller2VariantId: "", seller3ProductId: "",
         },
       ],
     });
@@ -1278,6 +1282,10 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                                 <option value="SELLER2">
                                   whitex seller hub
                                 </option>
+
+                                <option value="SELLER3">
+                                  tahir seller
+                                </option>
                               </>
                             ) : (
                               <>
@@ -1381,6 +1389,37 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                               }
                               className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
                               placeholder="167"
+                            />
+
+                          </div>
+                        )}
+
+                        {/* SELLER 3 (tahir seller): numeric product_id from its catalog */}
+
+                        {tier.supplier ===
+                          "SELLER3" && (
+
+                          <div className="mt-4">
+
+                            <label className="text-xs text-zinc-400">
+                              tahir seller Product ID (number from its catalog)
+                            </label>
+
+                            <input
+                              inputMode="numeric"
+                              value={
+                                tier.seller3ProductId ||
+                                ""
+                              }
+                              onChange={(e) =>
+                                updateTier(
+                                  index,
+                                  "seller3ProductId",
+                                  e.target.value.replace(/[^0-9]/g, "")
+                                )
+                              }
+                              className="w-full mt-1 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
+                              placeholder="62"
                             />
 
                           </div>

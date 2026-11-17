@@ -195,7 +195,19 @@ export type PublicBrand = {
 };
 
 /** null = the store never customised anything (the owner store keeps its original look untouched). */
+const THEME_TTL_MS = 60_000;
+const themeCache = new Map<string, { at: number; theme: Theme | null }>();
+export function clearThemeCache(tenantId?: string) { if (tenantId) themeCache.delete(tenantId); else themeCache.clear(); }
+
 export async function getTheme(tenantId: string): Promise<Theme | null> {
+  const hit = process.env.VITEST ? undefined : themeCache.get(tenantId);
+  if (hit && Date.now() - hit.at < THEME_TTL_MS) return hit.theme;
+  const theme = await loadTheme(tenantId);
+  if (!process.env.VITEST) themeCache.set(tenantId, { at: Date.now(), theme });
+  return theme;
+}
+
+async function loadTheme(tenantId: string): Promise<Theme | null> {
   const { data } = await supabaseAdmin.from("tenant_settings").select("theme").eq("tenant_id", tenantId).maybeSingle();
   const stored: any = (data as any)?.theme;
   return stored && Object.keys(stored).length ? themeFromStored(stored) : null;
@@ -226,6 +238,7 @@ export async function saveBranding(tenant: Tenant, actor: Actor, input: any):
   }
   const up = await supabaseAdmin.from("tenant_settings").upsert({ tenant_id: tenant.id, theme: r.theme, updated_at: new Date().toISOString() }, { onConflict: "tenant_id" });
   if (up.error) return { ok: false, error: "Could not save." };
+  clearThemeCache(tenant.id);
   if (tenant.kind === "coadmin") {
     const t = await supabaseAdmin.from("tenants").update({ brand_name: brand, telegram_username: tg, updated_at: new Date().toISOString() }).eq("id", tenant.id);
     if (t.error) return { ok: false, error: "Could not save." };

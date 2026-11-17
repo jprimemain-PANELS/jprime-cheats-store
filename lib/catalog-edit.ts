@@ -3,6 +3,7 @@ import {
   deliveryModeForTier,
   hasSeller1Config,
   hasSeller2Config,
+  hasSeller3Config,
   inferSupplier,
   isAmbiguousSupplier,
   normalizeSupplier,
@@ -30,6 +31,9 @@ export interface CatalogTier {
   seller1Duration?: string;
 
   seller2VariantId?: string;
+
+  // tahir seller: numeric product_id from its /catalog
+  seller3ProductId?: string;
 
   // JPRIME API stock (co-admin stores): the OWNER product + duration this tier sells
   jprimeProductId?: string;
@@ -105,6 +109,7 @@ export function normalizeProduct(product: any): CatalogProduct {
               ),
 
               seller2VariantId: String(tier.seller2VariantId || ""),
+              seller3ProductId: String(tier.seller3ProductId || ""),
 
               ...(explicit === "JPRIME"
                 ? { jprimeProductId: String(tier.jprimeProductId || ""), jprimeDuration: String(tier.jprimeDuration || "") }
@@ -131,9 +136,11 @@ export function routingProblems(product: CatalogProduct): string[] {
       if (!String(tier.seller1Duration || "").trim()) problems.push(`${label}: Seller 1 duration is empty.`);
     } else if (supplier === "SELLER2") {
       if (!String(tier.seller2VariantId || "").trim()) problems.push(`${label}: Seller 2 variant ID is empty.`);
+    } else if (supplier === "SELLER3") {
+      if (!String(tier.seller3ProductId || "").trim()) problems.push(`${label}: tahir seller product ID is empty.`);
     } else if (supplier === "JPRIME") {
       if (!String(tier.jprimeProductId || "").trim() || !String(tier.jprimeDuration || "").trim()) problems.push(`${label}: choose the JPRIME product and duration.`);
-    } else if (supplier === "LOCAL" && (hasSeller1Config(tier) || hasSeller2Config(tier))) {
+    } else if (supplier === "LOCAL" && (hasSeller1Config(tier) || hasSeller2Config(tier) || hasSeller3Config(tier))) {
       problems.push(`${label}: set to LOCAL but has Seller IDs saved. Check this is intended.`);
     }
   }
@@ -160,6 +167,7 @@ export function legacyToCatalogProduct(product: any, notes: string[]): CatalogPr
       seller1Pid: product.sellerPid,
       sellerDuration: source.sellerDuration,
       seller2VariantId: source.seller2VariantId,
+      seller3ProductId: source.seller3ProductId,
     };
     const context = { fulfillmentType: product.fulfillmentType, sellerPid: product.sellerPid };
     const supplier = inferSupplier(config, context);
@@ -178,6 +186,7 @@ export function legacyToCatalogProduct(product: any, notes: string[]): CatalogPr
       seller1Duration: source.sellerDuration ? String(source.sellerDuration) : "",
       seller2VariantId:
         source.seller2VariantId != null ? String(source.seller2VariantId) : "",
+      seller3ProductId: source.seller3ProductId != null ? String(source.seller3ProductId) : "",
     };
   });
 

@@ -4,20 +4,20 @@ import { allProducts } from "@/lib/products";
 import { resolveCatalogSupplier, inferSupplier, deliveryModeForTier } from "@/lib/delivery";
 
 /** Where an OWNER tier gets its keys: one of the two sellers, or the owner's local key stock. */
-function sourceOf(tier: any, data: any): "SELLER1" | "SELLER2" | "LOCAL" | null {
+function sourceOf(tier: any, data: any): "SELLER1" | "SELLER2" | "SELLER3" | "LOCAL" | null {
   if (deliveryModeForTier(tier, data?.fulfillmentType) === "LOCAL") {
     const r = resolveCatalogSupplier(tier);
-    if (r.ok && r.supplier !== "LOCAL") return r.supplier === "SELLER1" || r.supplier === "SELLER2" ? r.supplier : null;
+    if (r.ok && r.supplier !== "LOCAL") return r.supplier === "SELLER1" || r.supplier === "SELLER2" || r.supplier === "SELLER3" ? r.supplier : null;
     return "LOCAL";
   }
   return apiSupplierOf(tier);
 }
 
 /** Explicit supplier, or (old data) the one the configuration implies. Only API suppliers count. */
-function apiSupplierOf(tier: any): "SELLER1" | "SELLER2" | null {
+function apiSupplierOf(tier: any): "SELLER1" | "SELLER2" | "SELLER3" | null {
   const r = resolveCatalogSupplier(tier);
   const s = r.ok ? r.supplier : inferSupplier(tier);
-  return s === "SELLER1" || s === "SELLER2" ? s : null;
+  return s === "SELLER1" || s === "SELLER2" || s === "SELLER3" ? s : null;
 }
 import { cleanProductText } from "@/lib/text-clean";
 import type { Tenant } from "@/lib/tenant";
@@ -35,9 +35,10 @@ import type { Tenant } from "@/lib/tenant";
 export const SELLERS = {
   SELLER1: { name: "bb team admin" },
   SELLER2: { name: "whitex seller hub" },
+  SELLER3: { name: "tahir seller" },
 } as const;
 export type SellerId = keyof typeof SELLERS;
-export const isSellerId = (v: unknown): v is SellerId => v === "SELLER1" || v === "SELLER2";
+export const isSellerId = (v: unknown): v is SellerId => v === "SELLER1" || v === "SELLER2" || v === "SELLER3";
 
 export const sellerName = (v: unknown): string | null => (isSellerId(v) ? SELLERS[v].name : null);
 const MAX_CONNECTIONS = 8;
@@ -153,7 +154,7 @@ export async function ownerDecide(id: string, decision: unknown, assignedSeller:
   if (!["approve", "in_development", "reject"].includes(d)) return { ok: false as const, error: "Unknown decision." };
   const patch: Record<string, unknown> = { decided_at: new Date().toISOString(), updated_at: new Date().toISOString(), owner_note: String(note ?? "").slice(0, 500) || null };
   if (d === "approve") {
-    if (!isSellerId(assignedSeller)) return { ok: false as const, error: "Pick which seller this store will use (bb team admin or whitex seller hub)." };
+    if (!isSellerId(assignedSeller)) return { ok: false as const, error: "Pick which seller this store will use (bb team admin, whitex seller hub or tahir seller)." };
     const cur = await supabaseAdmin.from("tenant_api_connections").select("tenant_id").eq("id", id).maybeSingle();
     if (!cur.data) return { ok: false as const, error: "Not found." };
     const dup = await supabaseAdmin.from("tenant_api_connections").select("id").eq("tenant_id", (cur.data as any).tenant_id).eq("status", "approved").eq("assigned_seller", assignedSeller);
@@ -238,6 +239,7 @@ async function ownerProducts(): Promise<OwnerProduct[]> {
           duration: t.duration, priceINR: t.priceINR, resellerPrice: t.resellerPrice,
           seller1Pid: p.sellerPid !== undefined ? String(p.sellerPid) : "", seller1Duration: t.sellerDuration ?? "",
           seller2VariantId: t.seller2VariantId !== undefined ? String(t.seller2VariantId) : "",
+          seller3ProductId: t.seller3ProductId !== undefined ? String(t.seller3ProductId) : "",
         })),
       },
     });
@@ -355,7 +357,7 @@ export async function guardStoreTiers(tenantId: string, product: any): Promise<{
     const sup = String(t.supplier ?? "").trim() ? normalizeSupplierLoose(t.supplier) : "";
     if (sup === null) return { ok: false, error: "Unknown supplier." };
     if (sup === "" || sup === "LOCAL") {
-      for (const k of ["seller1Pid", "seller1Duration", "seller2VariantId", "jprimeProductId", "jprimeDuration"]) delete t[k];
+      for (const k of ["seller1Pid", "seller1Duration", "seller2VariantId", "seller3ProductId", "jprimeProductId", "jprimeDuration"]) delete t[k];
       continue;
     }
     if (sup === "JPRIME") {
@@ -366,12 +368,12 @@ export async function guardStoreTiers(tenantId: string, product: any): Promise<{
       if (jprimeSourceId && jprimeSourceId !== src.productId) return { ok: false, error: "One product can use only one JPRIME product. Create another product for a different one." };
       jprimeSourceId = src.productId;
       t.supplier = "JPRIME"; t.jprimeProductId = src.productId; t.jprimeDuration = src.duration;
-      for (const k of ["seller1Pid", "seller1Duration", "seller2VariantId", "sellerDuration"]) delete t[k];
+      for (const k of ["seller1Pid", "seller1Duration", "seller2VariantId", "seller3ProductId", "sellerDuration"]) delete t[k];
       continue;
     }
     // SELLER1 / SELLER2 with the store's own key: only a seller it was approved for
     sellers ??= await approvedSellers(tenantId);
-    if (!sellers.some((x) => x.seller === sup)) return { ok: false, error: `You are not approved for ${sup === "SELLER1" ? SELLERS.SELLER1.name : SELLERS.SELLER2.name}. Request it on the API SYSTEM page.` };
+    if (!sellers.some((x) => x.seller === sup)) return { ok: false, error: `You are not approved for ${SELLERS[sup as SellerId].name}. Request it on the API SYSTEM page.` };
     delete t.jprimeProductId; delete t.jprimeDuration;
   }
   if (jprimeSourceId) {
@@ -393,9 +395,9 @@ export async function guardStoreTiers(tenantId: string, product: any): Promise<{
   }
   return { ok: true };
 }
-function normalizeSupplierLoose(v: unknown): "LOCAL" | "SELLER1" | "SELLER2" | "JPRIME" | null {
+function normalizeSupplierLoose(v: unknown): "LOCAL" | "SELLER1" | "SELLER2" | "SELLER3" | "JPRIME" | null {
   const s = String(v ?? "").toUpperCase().replace(/[\s_-]+/g, "");
   if (s === "LOCAL" || s === "LOCALSTOCK") return "LOCAL";
-  if (s === "SELLER1" || s === "SELLER2" || s === "JPRIME") return s as any;
+  if (s === "SELLER1" || s === "SELLER2" || s === "SELLER3" || s === "JPRIME") return s as any;
   return null;
 }

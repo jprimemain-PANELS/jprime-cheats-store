@@ -6,7 +6,7 @@ import { allProducts } from "@/lib/products";
 import { countLocalStock, fetchAllUnusedStock } from "@/lib/stock";
 import { stockCountKey } from "@/lib/delivery";
 import { cleanProductText } from "@/lib/text-clean";
-import { adminResetPassword, deleteUser, resetRequests } from "@/lib/user-admin";
+import { adminResetPassword, createAccount, deleteUser, issueResetCode, resetRequestInfo } from "@/lib/user-admin";
 import { creditWallet, debitWallet, getBalance, logWalletTransaction } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
@@ -233,8 +233,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, username: r.username, password: r.password }, { headers: NO_STORE });
     }
 
+    if (action === "create_user") {
+      const r = await createAccount(tenantId, { username: body.username, password: body.password, role: body.role, balance: body.balance, email: body.email, mobile: body.mobile }, { id: auth.user.id, username: auth.user.username });
+      if (!r.ok) return fail(r.error, r.status);
+      return NextResponse.json({ success: true, username: r.username, role: r.role, balance: r.balance, warning: r.warning || undefined }, { headers: NO_STORE });
+    }
+
+    if (action === "reset_code") {
+      const userId = String(body.userId ?? "").trim();
+      if (!userId) return fail("Missing user ID. Refresh the admin page and try again.");
+      const r = await issueResetCode(tenantId, userId, { id: auth.user.id, username: auth.user.username });
+      if (!r.ok) return fail(r.error, r.status);
+      return NextResponse.json({ success: true, username: r.username, code: r.code, hours: r.hours }, { headers: NO_STORE });
+    }
+
     if (action === "password_requests") {
-      return NextResponse.json({ success: true, users: await resetRequests(tenantId) }, { headers: NO_STORE });
+      const info = await resetRequestInfo(tenantId);
+      return NextResponse.json({ success: true, users: info.users, verified: info.verified }, { headers: NO_STORE });
     }
 
     if (action === "update_user") {

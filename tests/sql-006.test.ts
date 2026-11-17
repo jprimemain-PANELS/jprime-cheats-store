@@ -29,7 +29,7 @@ describe("006 API system (real Postgres)", () => {
     await expect(ins({ seller_name: "x" })).rejects.toThrow();
     await expect(ins({ kind: "bogus" })).rejects.toThrow();
     await expect(ins({ status: "bogus" })).rejects.toThrow();
-    await expect(ins({ assigned_seller: "SELLER3" })).rejects.toThrow();
+    await expect(ins({ assigned_seller: "SELLER9" })).rejects.toThrow();
     await expect(ins({ api_key: "k".repeat(501) })).rejects.toThrow();
     await expect(ins({ notes: "n".repeat(8001) })).rejects.toThrow();
     await ins({ notes: "n".repeat(8000), api_key: "k".repeat(500) });
@@ -39,6 +39,17 @@ describe("006 API system (real Postgres)", () => {
     await expect(ins({ status: "approved", assigned_seller: "SELLER1" })).rejects.toThrow();
     await ins({ status: "approved", assigned_seller: "SELLER2" });
     await ins({ status: "pending" }); await ins({ status: "rejected", assigned_seller: "SELLER1" });
+  });
+  it("008 allows SELLER3, is re-runnable, and its rollback restores the old rule", async () => {
+    await expect(ins({ status: "approved", assigned_seller: "SELLER3" })).rejects.toThrow(); // before 008
+    await db.exec(readSql("008_SELLER3.sql"));
+    await db.exec(readSql("008_SELLER3.sql"));
+    await ins({ status: "approved", assigned_seller: "SELLER3" });
+    await expect(ins({ status: "approved", assigned_seller: "SELLER3" })).rejects.toThrow(); // still one per store
+    await expect(ins({ assigned_seller: "SELLER4" })).rejects.toThrow();
+    await db.exec(`DELETE FROM public.tenant_api_connections WHERE assigned_seller='SELLER3'`);
+    await db.exec(readSql("008_SELLER3_ROLLBACK.sql"));
+    await expect(ins({ assigned_seller: "SELLER3" })).rejects.toThrow();
   });
   it("is private to the service role and removed with its store", async () => {
     const g = await q(`SELECT grantee FROM information_schema.role_table_grants WHERE table_name='tenant_api_connections'`);

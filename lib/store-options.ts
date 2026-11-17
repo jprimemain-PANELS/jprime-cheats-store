@@ -35,10 +35,18 @@ function clean(raw: any, tenantId: string): StoreOptions {
   };
 }
 
+const OPTIONS_TTL_MS = 60_000;
+const optionsCache = new Map<string, { at: number; value: StoreOptions }>();
+export function clearOptionsCache(tenantId?: string) { if (tenantId) optionsCache.delete(tenantId); else optionsCache.clear(); }
+
 export async function getStoreOptions(tenantId: string): Promise<StoreOptions> {
+  const hit = process.env.VITEST ? undefined : optionsCache.get(tenantId);
+  if (hit && Date.now() - hit.at < OPTIONS_TTL_MS) return hit.value;
   try {
     const r = await readSetting(tenantId, OPTIONS_KEY);
-    return clean((r.data as any)?.value, tenantId);
+    const value = clean((r.data as any)?.value, tenantId);
+    if (!process.env.VITEST) optionsCache.set(tenantId, { at: Date.now(), value });
+    return value;
   } catch {
     return defaultOptions(tenantId);
   }
@@ -62,6 +70,7 @@ export async function saveStoreOptions(tenantId: string, patch: any): Promise<{ 
   }
   if (next.tutorialOn && tenantId !== OWNER_TENANT_ID && !next.tutorialUrl) return { ok: false, error: "Add your YouTube link first, or switch the box off." };
   const w = await writeSetting(tenantId, OPTIONS_KEY, next);
+  clearOptionsCache(tenantId);
   if (w.error) return { ok: false, error: "Could not save. Make sure the app_settings table exists." };
   return { ok: true, options: next };
 }
@@ -94,6 +103,7 @@ export async function setResellerLaunch(tenantId: string, allowed: boolean) {
   if (!isUuid(tenantId) || tenantId === OWNER_TENANT_ID) return { ok: false as const, reason: "Invalid store." };
   const cur = await getStoreOptions(tenantId);
   const w = await writeSetting(tenantId, OPTIONS_KEY, { ...cur, resellerLaunch: allowed === true });
+  clearOptionsCache(tenantId);
   return w.error ? { ok: false as const, reason: "Could not save." } : { ok: true as const };
 }
 
