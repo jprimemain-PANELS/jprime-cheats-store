@@ -18,6 +18,10 @@ import { buildThemeCss } from '@/lib/theme'
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
+function socialOf(t: any) {
+  return { whatsapp: String(t?.whatsapp ?? ""), instagram: String(t?.instagram ?? ""), youtube: String(t?.youtube ?? ""), floatingChat: t?.floatingChat === true };
+}
+
 async function loadBrand() {
   const tenant = await currentTenant();
   if (!tenant) return null;
@@ -25,8 +29,9 @@ async function loadBrand() {
     const pb = await publicBrand(tenant);
     const opt = publicOptions(await getStoreOptions(tenant.id));
     const brand: Brand = tenant.kind === "owner"
-      ? { ...OWNER_BRAND, options: { ...opt, tutorialUrl: opt.tutorialUrl || OWNER_TUTORIAL_URL }, announcement: pb.theme?.announcement ?? "", tagline: pb.theme?.tagline ?? "", footerText: pb.theme?.footerText ?? "" }
+      ? { ...OWNER_BRAND, options: { ...opt, tutorialUrl: opt.tutorialUrl || OWNER_TUTORIAL_URL }, announcement: pb.theme?.announcement ?? "", tagline: pb.theme?.tagline ?? "", footerText: pb.theme?.footerText ?? "", social: socialOf(pb.theme) }
       : {
+          social: socialOf(pb.theme),
           options: opt, name: pb.name, isOwner: false, telegram: pb.telegram, logoUrl: pb.theme?.logoUrl ?? "",
           tagline: pb.theme?.tagline ?? "", announcement: pb.theme?.announcement ?? "", footerText: pb.theme?.footerText ?? "",
           layout: pb.theme ? {

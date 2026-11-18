@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, requireTenantAdmin } from "@/lib/auth";
-import { PLANS, TRIAL_DAYS, linkWalletAccount, subscribe, subscriptionState } from "@/lib/subscription";
+import { linkWalletAccount, parentOf, plansFor, sellerOf, subscribe, subscriptionState } from "@/lib/subscription";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
   if (auth.tenant.kind !== "coadmin") return NextResponse.json({ success: true, owner: true }, { headers: NO_STORE });
   const state = await subscriptionState(auth.tenant.id);
-  return NextResponse.json({ success: true, owner: false, ...state, plans: PLANS, trialDays: TRIAL_DAYS }, { headers: NO_STORE });
+  const { plans, trialDays } = await plansFor(await sellerOf(auth.tenant.id));
+  return NextResponse.json({ success: true, owner: false, ...state, plans, trialDays }, { headers: NO_STORE });
 }
 
 export async function POST(request: NextRequest) {

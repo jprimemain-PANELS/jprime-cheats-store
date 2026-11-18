@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import StoreOptionsCard from "@/components/admin/StoreOptionsCard";
 import LivePreview from "@/components/admin/LivePreview";
+import ImageUploader from "@/components/admin/ImageUploader";
 
 type Theme = {
   preset?: string; primary: string; accent: string; background: string; surface: string; foreground: string;
@@ -11,6 +12,7 @@ type Theme = {
   radius: string; cardStyle: string; backdrop: string; backdropImageUrl: string; heroLayout: string; heroTitle: string;
   heroSubtitle: string; heroImageUrl: string; loginCharacterUrl: string; loginPetUrl: string; loginCard: string; loginBg: string; ctaText: string; columns: number; fontScale: string; buttonStyle: string;
   showStats: boolean; motion: boolean;
+  cardHover: string; whatsapp: string; instagram: string; youtube: string; floatingChat: boolean;
 };
 const CHOICES: { key: keyof Theme; label: string; options: [string | number, string][] }[] = [
   { key: "heroLayout", label: "Top banner layout", options: [["centered", "Centered"], ["left", "Left aligned"], ["split", "Text + picture"]] },
@@ -20,6 +22,7 @@ const CHOICES: { key: keyof Theme; label: string; options: [string | number, str
   { key: "backdrop", label: "Page background", options: [["solid", "Plain"], ["gradient", "Gradient"], ["aurora", "Glow"], ["grid", "Grid lines"], ["image", "Picture"]] },
   { key: "loginCard", label: "Login page card design", options: [["original", "Original"], ["glass", "Glass Glow"], ["frost", "Frost Light"], ["neon", "Neon Outline"], ["minimal", "Clean Minimal"], ["aurora", "Aurora Border"]] },
   { key: "loginBg", label: "Login page background animation", options: [["original", "Original"], ["aurora", "Aurora Glow"], ["particles", "Particle Network"], ["beams", "Grid Beams"], ["waves", "Silk Waves"], ["stars", "Star Warp"]] },
+  { key: "cardHover", label: "When a visitor touches a product card", options: [["none", "Nothing"], ["lift", "Lifts up"], ["glow", "Glows"]] },
   { key: "buttonStyle", label: "Buttons", options: [["gradient", "Two-color gradient"], ["solid", "Single color"]] },
   { key: "fontScale", label: "Text size", options: [["small", "Small"], ["normal", "Normal"], ["large", "Large"]] },
 ];
@@ -51,12 +54,13 @@ export default function BrandingManager() {
   const [saving, setSaving] = useState(false);
   const [previewVersion, setPreviewVersion] = useState(0);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [snap, setSnap] = useState("");
 
   useEffect(() => {
     (async () => {
       const res = await fetch("/api/admin/branding", { cache: "no-store" });
       const j = await res.json();
-      if (j.success) { setTheme(j.theme); setPresets(j.presets); setFonts(j.fonts); setBrandName(j.brandName); setTelegram(j.telegram || ""); setKind(j.kind); }
+      if (j.success) { setTheme(j.theme); setPresets(j.presets); setFonts(j.fonts); setBrandName(j.brandName); setTelegram(j.telegram || ""); setKind(j.kind); setSnap(JSON.stringify([j.theme, j.brandName, j.telegram || ""])); }
     })();
   }, []);
 
@@ -70,12 +74,25 @@ export default function BrandingManager() {
       if (kind === "coadmin") { body.brandName = brandName; body.telegram = telegram; }
       const res = await fetch("/api/admin/branding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await res.json();
-      if (j.success) setPreviewVersion((n) => n + 1);
+      if (j.success) { setPreviewVersion((n) => n + 1); setSnap(JSON.stringify([theme, brandName, telegram])); }
       setMsg(j.success ? { ok: true, text: "Saved. Preview updated below." } : { ok: false, text: j.error || "Could not save." });
     } catch { setMsg({ ok: false, text: "Network error." }); }
     setSaving(false);
   }
 
+  const dirty = snap !== "" && snap !== JSON.stringify([theme, brandName, telegram]);
+  const undo = () => { try { const [t, b, g] = JSON.parse(snap); setTheme(t); setBrandName(b); setTelegram(g); setMsg(null); } catch {} };
+  const swatch = (name: string, p: Partial<Theme>) => (
+    <button key={name} onClick={() => setTheme({ ...theme, ...(p as Theme), preset: name })}
+      className={`rounded-xl border p-2 text-left cursor-pointer ${theme.preset === name ? "border-indigo-400 ring-2 ring-indigo-500/40" : "border-slate-700 hover:border-slate-500"}`}>
+      <span className="block h-12 rounded-lg p-1.5" style={{ background: p.background, border: `1px solid ${p.primary}55` }}>
+        <span className="block h-2 w-8 rounded-full" style={{ background: p.primary }} />
+        <span className="mt-1 block h-2 w-5 rounded-full" style={{ background: p.accent }} />
+        <span className="mt-1 block h-1.5 w-10 rounded-full opacity-60" style={{ background: p.foreground }} />
+      </span>
+      <span className="mt-1 block text-center text-[11px] capitalize text-slate-300">{name}</span>
+    </button>
+  );
   const color = (k: keyof Theme, label: string) => (
     <label className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2.5 text-xs text-slate-300">
       <span className="min-w-0">{label}</span>
@@ -96,14 +113,45 @@ export default function BrandingManager() {
 
       <StoreOptionsCard />
 
-      {kind === "coadmin" && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="text-xs text-slate-400">Brand name<input className={field} value={brandName} maxLength={40} onChange={(e) => setBrandName(e.target.value)} /></label>
-          <label className="text-xs text-slate-400">Telegram username<input className={field} value={telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="yourname" /></label>
-        </div>
-      )}
 
-      <Section title="1. Quick themes and colors" hint="Pick a ready theme, then change colors if you want" open>
+      <div className="rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-4 space-y-5">
+        <div>
+          <h3 className="text-base font-bold text-white">Quick start: 3 easy steps</h3>
+          <p className="text-[11px] text-slate-400">Do these three, press Save, and your website looks new. Everything else is optional (see "More options" below).</p>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-white"><span className="mr-2 rounded-full bg-indigo-600 px-2 py-0.5 text-[11px]">1</span>Pick a look</p>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">{Object.entries(presets).map(([name, p]) => swatch(name, p))}</div>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-white"><span className="mr-2 rounded-full bg-indigo-600 px-2 py-0.5 text-[11px]">2</span>Your brand</p>
+          {kind === "coadmin" && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs text-slate-400">Brand name<input className={field} value={brandName} maxLength={40} onChange={(e) => setBrandName(e.target.value)} /></label>
+              <label className="text-xs text-slate-400">Telegram username<input className={field} value={telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="yourname" /></label>
+            </div>
+          )}
+          <ImageUploader label="Logo" hint="Square picture, shows in the top bar and the browser tab." value={theme.logoUrl} onChange={(u) => set("logoUrl", u)} />
+          <label className="text-xs text-slate-400 block">Tagline (one short line under your name)<input className={field} value={theme.tagline} maxLength={120} onChange={(e) => set("tagline", e.target.value)} placeholder="Fast delivery. Trusted by gamers." /></label>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-white"><span className="mr-2 rounded-full bg-indigo-600 px-2 py-0.5 text-[11px]">3</span>Top banner words</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-slate-400">Big title<input className={field} value={theme.heroTitle} maxLength={60} onChange={(e) => set("heroTitle", e.target.value)} placeholder={brandName || "Your store"} /></label>
+            <label className="text-xs text-slate-400">Button text<input className={field} value={theme.ctaText} maxLength={24} onChange={(e) => set("ctaText", e.target.value)} placeholder="Browse products" /></label>
+          </div>
+          <label className="text-xs text-slate-400 block">Small text under the title<input className={field} value={theme.heroSubtitle} maxLength={200} onChange={(e) => set("heroSubtitle", e.target.value)} placeholder="Best prices on every product" /></label>
+        </div>
+      </div>
+
+      
+
+      <p className="pt-1 text-sm font-bold text-white">More options <span className="text-[11px] font-normal text-slate-400">(optional, open any one)</span></p>
+
+      <Section title="1. Colors and font" hint="Fine-tune any color or the font">
       <div>
         <p className="text-xs text-slate-400 mb-2">Quick themes</p>
         <div className="flex flex-wrap gap-2">
@@ -139,7 +187,7 @@ export default function BrandingManager() {
             </div>
           </div>
         ))}
-        {theme.backdrop === "image" && <label className="text-xs text-slate-400 block">Background picture link (https)<input className={field} value={theme.backdropImageUrl} onChange={(e) => set("backdropImageUrl", e.target.value)} placeholder="https://..." /></label>}
+        {theme.backdrop === "image" && <ImageUploader label="Background picture" value={theme.backdropImageUrl} onChange={(u) => set("backdropImageUrl", u)} hint="A dark or blurred picture works best so text stays easy to read." />}
         <div className="flex flex-col gap-3 text-xs text-slate-300">
           <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="h-5 w-5 shrink-0" checked={theme.showStats} onChange={(e) => set("showStats", e.target.checked)} />Show the small info tiles under the banner</label>
           <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="h-5 w-5 shrink-0" checked={theme.motion} onChange={(e) => set("motion", e.target.checked)} />Animations</label>
@@ -147,24 +195,29 @@ export default function BrandingManager() {
       </div>
       </Section>
 
-      <Section title="3. Banner and login page" hint="Big title, button text, pictures">
+      <Section title="3. Banner picture and login page" hint="Pictures and animations">
       <div className="grid gap-3">
-        <label className="text-xs text-slate-400">Big title (leave empty to use your brand name)<input className={field} value={theme.heroTitle} maxLength={60} onChange={(e) => set("heroTitle", e.target.value)} /></label>
-        <label className="text-xs text-slate-400">Sub text<input className={field} value={theme.heroSubtitle} maxLength={200} onChange={(e) => set("heroSubtitle", e.target.value)} /></label>
-        <label className="text-xs text-slate-400">Button text<input className={field} value={theme.ctaText} maxLength={24} onChange={(e) => set("ctaText", e.target.value)} placeholder="Browse products" /></label>
-        <label className="text-xs text-slate-400">Login page character picture link (https, transparent PNG)<input className={field} value={theme.loginCharacterUrl || ""} onChange={(e) => set("loginCharacterUrl", e.target.value)} placeholder="https://... (empty = default)" /></label>
-        <label className="text-xs text-slate-400">Login page pet picture link (https, transparent PNG)<input className={field} value={theme.loginPetUrl || ""} onChange={(e) => set("loginPetUrl", e.target.value)} placeholder="https://... (empty = default)" /></label>
-        {theme.heroLayout === "split" && <label className="text-xs text-slate-400">Banner picture link (https)<input className={field} value={theme.heroImageUrl} onChange={(e) => set("heroImageUrl", e.target.value)} placeholder="https://..." /></label>}
+        <ImageUploader label="Login page character picture" hint="Transparent PNG looks best." value={theme.loginCharacterUrl || ""} onChange={(u) => set("loginCharacterUrl", u)} />
+        <ImageUploader label="Login page pet picture" hint="Small transparent PNG." value={theme.loginPetUrl || ""} onChange={(u) => set("loginPetUrl", u)} />
+        {theme.heroLayout === "split" && <ImageUploader label="Banner picture (shown next to your title)" value={theme.heroImageUrl} onChange={(u) => set("heroImageUrl", u)} />}
       </div>
 
       </Section>
 
-      <Section title="4. Logo and texts" hint="Logo, tagline, announcement, footer">
+      <Section title="4. Announcement and footer" hint="Top notice bar and footer line">
       <div className="grid gap-3">
-        <label className="text-xs text-slate-400">Logo image link (https only)<input className={field} value={theme.logoUrl} onChange={(e) => set("logoUrl", e.target.value)} placeholder="https://..." /></label>
-        <label className="text-xs text-slate-400">Tagline<input className={field} value={theme.tagline} maxLength={120} onChange={(e) => set("tagline", e.target.value)} /></label>
+        <ImageUploader label="Logo" hint="Square picture, shows in the top bar and the browser tab." value={theme.logoUrl} onChange={(u) => set("logoUrl", u)} />
         <label className="text-xs text-slate-400">Announcement<input className={field} value={theme.announcement} maxLength={200} onChange={(e) => set("announcement", e.target.value)} /></label>
         <label className="text-xs text-slate-400">Footer text<input className={field} value={theme.footerText} maxLength={200} onChange={(e) => set("footerText", e.target.value)} /></label>
+      </div>
+      </Section>
+
+      <Section title="5. Contact links and chat button" hint="WhatsApp, Instagram, YouTube in your footer">
+      <div className="grid gap-3">
+        <label className="text-xs text-slate-400">WhatsApp number with country code (no + or spaces)<input className={field} inputMode="numeric" value={theme.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} placeholder="919876543210" /></label>
+        <label className="text-xs text-slate-400">Instagram username<input className={field} value={theme.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="mystore.official" /></label>
+        <label className="text-xs text-slate-400">YouTube link<input className={field} value={theme.youtube} onChange={(e) => set("youtube", e.target.value)} placeholder="https://youtube.com/@mystore" /></label>
+        <label className="flex items-center gap-3 text-xs text-slate-300 cursor-pointer"><input type="checkbox" className="h-5 w-5 shrink-0" checked={theme.floatingChat} onChange={(e) => set("floatingChat", e.target.checked)} />Show a round chat button on every page (opens WhatsApp, or Telegram if no WhatsApp)</label>
       </div>
       </Section>
 
@@ -186,9 +239,13 @@ export default function BrandingManager() {
         </div>
       </div>
 
-      <div className="sticky bottom-3 z-20"><button onClick={save} disabled={saving} className="flex w-full sm:w-auto items-center justify-center gap-2 px-5 py-3 shadow-lg shadow-black/40 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-50 cursor-pointer">
+      <div className="sticky bottom-3 z-20 flex flex-wrap items-center gap-2">
+        <button onClick={save} disabled={saving} className="flex w-full sm:w-auto items-center justify-center gap-2 px-5 py-3 shadow-lg shadow-black/40 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-50 cursor-pointer">
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save branding
-      </button></div>
+        </button>
+        {dirty && <button onClick={undo} className="min-h-11 rounded-xl border border-slate-600 bg-slate-900/90 px-4 text-xs font-semibold text-slate-200 cursor-pointer">Undo changes</button>}
+        {dirty && <span className="rounded-full bg-amber-500/20 px-3 py-1 text-[11px] font-semibold text-amber-300">Not saved yet</span>}
+      </div>
 
       <LivePreview version={previewVersion} />
     </div>

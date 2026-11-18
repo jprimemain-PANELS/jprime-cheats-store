@@ -106,6 +106,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Only the owner store can sell the Guild Glory service (it uses the owner's seller account).
+    if (auth.tenant.kind !== "owner") delete (product as any).kind;
+    else if ((product as any).kind !== "guild") delete (product as any).kind;
+
     if (!productId || !productName) {
       return NextResponse.json(
         {

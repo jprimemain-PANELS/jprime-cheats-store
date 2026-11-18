@@ -18,6 +18,7 @@ import { Navbar } from "@/components/navbar";
 import { RecentActivity } from "@/components/recent-activity";
 import { Hero } from "@/components/hero";
 import { useBrand } from "@/components/brand-provider";
+import { GuildGloryCard } from "@/components/guild-glory-card";
 import { ProductCard } from "@/components/product-card";
 import { FloatingSupport } from "@/components/floating-support";
 import { Footer } from "@/components/footer";
@@ -48,7 +49,11 @@ export default function Home() {
   } = useCatalogProducts();
 
   const categoryIds = categoriesFor(catalogProducts.map((p) => p.category));
-  const productsIn = (id: string) => catalogProducts.filter((product) => product.category === id);
+  // Online products first, maintenance products at the bottom (otherwise the shop order is kept).
+  const productsIn = (id: string) => {
+    const list = catalogProducts.filter((product) => product.category === id);
+    return [...list.filter((p) => p.status !== "MAINTENANCE"), ...list.filter((p) => p.status === "MAINTENANCE")];
+  };
   const activeProducts = productsIn(activeCategory);
 
   const productsRef = useRef<HTMLDivElement>(null);
@@ -282,7 +287,7 @@ export default function Home() {
                         className="jprime-fade-up"
                         style={{ animationDelay: `${Math.min(index, 8) * 0.06}s` }}
                       >
-                        <ProductCard product={product} index={index} />
+                        {product.kind === "guild" ? <GuildGloryCard product={product} /> : <ProductCard product={product} index={index} />}
                       </div>
                     ))}
                   </div>

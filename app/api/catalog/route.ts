@@ -115,6 +115,8 @@ function toPublicProduct(
     prices.map((t) => t.deliveryMode ?? "LOCAL")
   );
 
+  if (d.kind === "guild") product.kind = "guild";
+
   if (
     typeof d.videoUrl === "string" &&
     d.videoUrl.trim() !== ""
@@ -217,6 +219,16 @@ export async function GET() {
         (p: Product | null): p is Product =>
           p !== null
       );
+
+    // Live ONLINE / MAINTENANCE switch (set in Admin > Prices): one small query, so the storefront can list
+    // online products first. Same rule the product card and the purchase check already use.
+    try {
+      const st = await tdb(tenant.id).from("product_prices").select("product_name, price_inr").eq("duration", "__status__");
+      if (!st.error && Array.isArray(st.data)) {
+        const live = new Map<string, "ONLINE" | "MAINTENANCE">((st.data as any[]).map((r) => [String(r.product_name), Number(r.price_inr) === 1 ? "MAINTENANCE" : "ONLINE"]));
+        for (const p of products) { const v = live.get(p.name); if (v) p.status = v; }
+      }
+    } catch { /* keep catalogue status */ }
 
     if (products.length === 0) {
       return NextResponse.json(

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Loader2, Wallet } from "lucide-react";
 
 type Plan = { label: string; price: number; days: number; note: string };
-type S = { owner?: boolean; available: boolean; expiresAt: string | null; expired: boolean; daysLeft: number | null; payer: string | null; walletBalance: number | null; plans: Record<string, Plan>; trialDays: number };
+type S = { owner?: boolean; available: boolean; expiresAt: string | null; expired: boolean; daysLeft: number | null; payer: string | null; walletBalance: number | null; parentName?: string | null; plans: Record<string, Plan>; trialDays: number };
 
 export default function SubscriptionManager() {
   const [s, setS] = useState<S | null>(null);
@@ -60,12 +60,12 @@ export default function SubscriptionManager() {
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <p className="flex items-center gap-1.5 text-xs text-slate-400"><Wallet className="h-3.5 w-3.5" />{s.payer ? <>Your reseller account <b className="text-white">{s.payer}</b> wallet balance</> : "Your wallet balance"}</p>
           <p className="text-2xl font-bold text-white mt-1">{s.walletBalance === null ? "—" : `₹${s.walletBalance.toLocaleString("en-IN")}`}</p>
-          <a href="https://jprimecheats.store" className="text-[11px] text-indigo-300 underline">Add money on the main website</a>
+          {s.parentName ? <p className="text-[11px] text-slate-400">Add money on {s.parentName}'s website (your co-admin).</p> : <a href="https://jprimecheats.store" className="text-[11px] text-indigo-300 underline">Add money on the main website</a>}
         </div>
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-2">
-        <p className="text-sm font-semibold text-white">{s.payer ? "Your main website account (locked)" : "Connect your main website account"}</p>
+        <p className="text-sm font-semibold text-white">{s.payer ? (s.parentName ? "Your account on your co-admin's website (locked)" : "Your main website account (locked)") : "Connect your main website account"}</p>
         {s.payer ? (
           <>
             <p className="text-[11px] text-slate-400">Your plan and JPRIME API stock are paid from this wallet. It is locked so it cannot be switched. If you need a change, contact the platform owner.</p>

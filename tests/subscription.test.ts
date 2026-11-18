@@ -140,3 +140,47 @@ describe("subscription API", () => {
     expect((await subPost(req("/api/admin/subscription", { host: HOST_B, method: "POST", body: { plan: "weekly" } }))).status).toBe(403);
   });
 });
+
+describe("own-web mode: a co-admin's reseller launches a sub-store that pays the co-admin", () => {
+  const setMode = async (mode: "main" | "own") => {
+    const { setResellerLaunch } = await import("@/lib/store-options");
+    await setResellerLaunch(TENANT_B, true, mode);
+    const { savePlanConfig } = await import("@/lib/plan-settings");
+    await savePlanConfig(TENANT_B, { prices: { weekly: 40, monthly: 120, quarterly: 300 }, trialDays: 2 });
+  };
+  const asRajB = () => { ctx.host = HOST_B; ctx.cookie = createSessionToken("raj", tables.users.find((u) => u.id === "user-rajB")!.password, "user-rajB", TENANT_B); };
+  const launchB = (extra: any = {}) => apply(req("/api/tenant/apply", { method: "POST", host: HOST_B, body: { ...FORM, ...extra } }));
+  beforeEach(() => { (tables.users.find((u) => u.id === "user-rajB") as any).role = "reseller"; });
+
+  it("main mode still demands the main-website account; own mode needs none", async () => {
+    await setMode("main"); asRajB();
+    expect((await launchB()).status).toBe(400);
+    await setMode("own"); asRajB();
+    const g = await (await applyGet(req("/api/tenant/apply", { host: HOST_B }))).json();
+    expect(g).toMatchObject({ eligible: true, ownWeb: true, needsMainAccount: false });
+    expect(g.options.trialDays).toBe(2);
+    expect(g.options.plans.monthly.price).toBe(120);
+    const r = await launchB();
+    expect(r.status).toBe(200);
+    const t = tables.tenants.find((x) => x.slug === "rajhub") as any;
+    expect(t).toMatchObject({ parent_tenant_id: TENANT_B, payer_username: "raj", trial_used: true });
+    expect((new Date(t.plan_expires_at).getTime() - Date.now()) / 86400000).toBeGreaterThan(1.99);
+    expect((new Date(t.plan_expires_at).getTime() - Date.now()) / 86400000).toBeLessThan(2.01);
+  });
+  it("the sub-store pays the PARENT's wallet at the parent's price; it shows up in the parent's list only", async () => {
+    await setMode("own"); asRajB(); await launchB();
+    const sub = tables.tenants.find((x) => x.slug === "rajhub") as any;
+    (tables.wallets.find((w: any) => w.tenant_id === TENANT_B && w.username === "raj") as any).balance = 500;
+    const { subscribe, listSubStores } = await import("@/lib/subscription");
+    const { resolveTenantByHost: rt } = await import("@/lib/tenant");
+    clearTenantCache();
+    const tenant = (await rt("rajhub.shopnet.example"))!;
+    const r = await subscribe(tenant, "monthly", { id: "x", username: "raj" });
+    expect(r).toMatchObject({ ok: true, balance: 380 });
+    expect((tables.wallets.find((w: any) => w.tenant_id === OWNER_TENANT_ID && w.username === "raj") as any).balance).toBe(1000);
+    const list = await listSubStores(TENANT_B);
+    expect(list.map((s) => s.slug)).toEqual(["rajhub"]);
+    expect(await listSubStores(OWNER_TENANT_ID)).toEqual([]);
+    expect(sub.parent_tenant_id).toBe(TENANT_B);
+  });
+});

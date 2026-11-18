@@ -14,6 +14,10 @@ export const FONTS = {
   rounded: { label: "Rounded", stack: "ui-rounded,'SF Pro Rounded','Nunito','Trebuchet MS',system-ui,sans-serif" },
   serif: { label: "Serif", stack: "ui-serif,Georgia,'Times New Roman',serif" },
   mono: { label: "Monospace", stack: "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" },
+  elegant: { label: "Elegant (Palatino)", stack: "'Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif" },
+  friendly: { label: "Friendly (Candara)", stack: "Candara,'Trebuchet MS',Optima,'Segoe UI',sans-serif" },
+  bold: { label: "Bold Display", stack: "'Arial Black','Helvetica Neue',Impact,sans-serif" },
+  typewriter: { label: "Typewriter", stack: "'Courier New',Courier,monospace" },
 } as const;
 export type FontKey = keyof typeof FONTS;
 
@@ -26,6 +30,7 @@ export const HERO_LAYOUTS = ["centered", "left", "split"] as const;
 export const FONT_SCALES = ["small", "normal", "large"] as const;
 export const BUTTON_STYLES = ["gradient", "solid"] as const;
 export const COLUMNS = [2, 3, 4] as const;
+export const CARD_HOVERS = ["none", "lift", "glow"] as const;
 export type Radius = keyof typeof RADII;
 
 export type Theme = {
@@ -59,6 +64,12 @@ export type Theme = {
   buttonStyle: (typeof BUTTON_STYLES)[number];
   showStats: boolean;
   motion: boolean;
+  // ---- v3: easier branding ----
+  cardHover: (typeof CARD_HOVERS)[number];
+  whatsapp: string;      // digits with country code, e.g. 919876543210
+  instagram: string;     // handle without @
+  youtube: string;       // https youtube channel / video link
+  floatingChat: boolean; // round chat button on every page (WhatsApp if set, else Telegram)
 };
 
 type Colors = Pick<Theme, "primary" | "accent" | "background" | "surface" | "foreground">;
@@ -73,6 +84,14 @@ export const PRESETS: Record<string, Colors & Partial<Theme>> = {
   arcade: { primary: "#22d3ee", accent: "#a3e635", background: "#05070d", surface: "#0b1220", foreground: "#e6fffb", radius: "sharp", cardStyle: "outline", backdrop: "grid", heroLayout: "left", columns: 4, font: "mono", buttonStyle: "solid", showStats: false },
   boutique: { primary: "#b45309", accent: "#be123c", background: "#fbf7f0", surface: "#ffffff", foreground: "#1c1917", radius: "soft", cardStyle: "elevated", backdrop: "solid", heroLayout: "split", columns: 3, font: "serif", buttonStyle: "solid", fontScale: "large" },
   neon: { primary: "#f43f5e", accent: "#8b5cf6", background: "#0a0510", surface: "#140a1f", foreground: "#fdf4ff", radius: "pill", cardStyle: "glass", backdrop: "aurora", heroLayout: "centered", columns: 3, font: "rounded" },
+  rose: { primary: "#f43f5e", accent: "#fb923c", background: "#14070a", surface: "#210b11", foreground: "#fff1f2" },
+  gold: { primary: "#eab308", accent: "#f59e0b", background: "#0f0c03", surface: "#1a1505", foreground: "#fefce8" },
+  forest: { primary: "#22c55e", accent: "#14b8a6", background: "#04110a", surface: "#0a1d12", foreground: "#f0fdf4" },
+  midnight: { primary: "#6366f1", accent: "#38bdf8", background: "#050816", surface: "#0b1030", foreground: "#eef2ff" },
+  candy: { primary: "#ec4899", accent: "#a78bfa", background: "#fdf2f8", surface: "#ffffff", foreground: "#3b0764" },
+  coffee: { primary: "#a16207", accent: "#d97706", background: "#1c1410", surface: "#2a1f17", foreground: "#fef3c7" },
+  cyber: { primary: "#00ff9c", accent: "#00b8ff", background: "#020a08", surface: "#06150f", foreground: "#d1fae5" },
+  ice: { primary: "#0284c7", accent: "#0891b2", background: "#f0f9ff", surface: "#ffffff", foreground: "#0c4a6e" },
   slate: { primary: "#38bdf8", accent: "#38bdf8", background: "#0f172a", surface: "#1e293b", foreground: "#f1f5f9", radius: "soft", cardStyle: "solid", backdrop: "gradient", heroLayout: "left", columns: 2, font: "system", buttonStyle: "solid", motion: false },
 };
 
@@ -102,12 +121,17 @@ export const DEFAULT_THEME: Theme = {
   buttonStyle: "gradient",
   showStats: true,
   motion: true,
+  cardHover: "none",
+  whatsapp: "",
+  instagram: "",
+  youtube: "",
+  floatingChat: false,
 };
 
 export const STRUCTURE_DEFAULTS: Partial<Theme> = {
   radius: DEFAULT_THEME.radius, cardStyle: DEFAULT_THEME.cardStyle, backdrop: DEFAULT_THEME.backdrop, heroLayout: DEFAULT_THEME.heroLayout,
   columns: DEFAULT_THEME.columns, fontScale: DEFAULT_THEME.fontScale, buttonStyle: DEFAULT_THEME.buttonStyle,
-  showStats: DEFAULT_THEME.showStats, motion: DEFAULT_THEME.motion, font: DEFAULT_THEME.font,
+  showStats: DEFAULT_THEME.showStats, motion: DEFAULT_THEME.motion, font: DEFAULT_THEME.font, cardHover: DEFAULT_THEME.cardHover,
 };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -177,14 +201,14 @@ export function validateTheme(input: unknown, base: Theme = DEFAULT_THEME): Them
   const enums: [keyof Theme, readonly (string | number)[], string][] = [
     ["radius", Object.keys(RADII), "corner style"], ["cardStyle", CARD_STYLES, "card style"], ["backdrop", BACKDROPS, "background style"],
     ["heroLayout", HERO_LAYOUTS, "header layout"], ["columns", COLUMNS, "columns"], ["fontScale", FONT_SCALES, "text size"],
-    ["buttonStyle", BUTTON_STYLES, "button style"], ["loginCard", LOGIN_CARDS, "login card"], ["loginBg", LOGIN_BGS, "login background"],
+    ["buttonStyle", BUTTON_STYLES, "button style"], ["loginCard", LOGIN_CARDS, "login card"], ["loginBg", LOGIN_BGS, "login background"], ["cardHover", CARD_HOVERS, "card hover effect"],
   ];
   for (const [k, list, label] of enums) {
     const v = pick(k as string, list, label);
     if (v === "bad") return { ok: false, error: `Unsupported ${label}.` };
     if (v !== undefined) (t as any)[k] = v;
   }
-  for (const k of ["showStats", "motion"] as const) {
+  for (const k of ["showStats", "motion", "floatingChat"] as const) {
     if (src[k] === undefined) continue;
     if (typeof src[k] !== "boolean") return { ok: false, error: "Invalid switch value." };
     t[k] = src[k] as boolean;
@@ -196,6 +220,21 @@ export function validateTheme(input: unknown, base: Theme = DEFAULT_THEME): Them
     t[k] = u;
   }
   if (t.backdrop === "image" && !t.backdropImageUrl) t.backdrop = "solid";
+  if (src.whatsapp !== undefined) {
+    const d = String(src.whatsapp ?? "").replace(/[\s+\-()]/g, "");
+    if (d && !/^[0-9]{8,15}$/.test(d)) return { ok: false, error: "WhatsApp number: digits with country code, like 919876543210." };
+    t.whatsapp = d;
+  }
+  if (src.instagram !== undefined) {
+    const h = String(src.instagram ?? "").trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/\/+$/, "");
+    if (h && !/^[A-Za-z0-9._]{1,30}$/.test(h)) return { ok: false, error: "Instagram: just your username, like mystore.official" };
+    t.instagram = h;
+  }
+  if (src.youtube !== undefined) {
+    const y = String(src.youtube ?? "").trim();
+    if (y && (y.length > 200 || !/^https:\/\/((www|m)\.)?(youtube\.com|youtu\.be)\/[^\s"'()<>\\]+$/i.test(y))) return { ok: false, error: "YouTube: paste your full https://youtube.com/... link." };
+    t.youtube = y;
+  }
   if (src.heroTitle !== undefined) t.heroTitle = cleanText(src.heroTitle, 60);
   if (src.heroSubtitle !== undefined) t.heroSubtitle = cleanText(src.heroSubtitle, 200);
   if (src.ctaText !== undefined) t.ctaText = cleanText(src.ctaText, 24);
@@ -260,6 +299,11 @@ export function buildThemeCss(theme: Theme): string {
     outline: `[data-store-card]{background:transparent!important;backdrop-filter:none!important;border:2px solid ${mix(t.primary, 60, "transparent")}!important}`,
     elevated: `[data-store-card]{background:var(--store-surface)!important;backdrop-filter:none!important;border-color:transparent!important;box-shadow:0 20px 44px -20px rgba(0,0,0,.55)!important}`,
   };
+  const HOVER_CSS: Record<string, string> = {
+    none: "",
+    lift: "[data-store-card]{transition:transform .22s ease,box-shadow .22s ease}[data-store-card]:hover{transform:translateY(-5px)}",
+    glow: `[data-store-card]{transition:box-shadow .25s ease,border-color .25s ease}[data-store-card]:hover{box-shadow:0 0 0 1px ${mix(t.primary, 70, "transparent")},0 14px 44px -12px ${mix(t.primary, 65, "transparent")}!important;border-color:${mix(t.primary, 70, "transparent")}!important}`,
+  };
   return [
     ":root{",
     `--store-primary:${t.primary};--store-accent:${accentColor};--store-bg:${t.background};--store-surface:${t.surface};--store-fg:${t.foreground};`,
@@ -275,6 +319,7 @@ export function buildThemeCss(theme: Theme): string {
     SCALE[t.fontScale] ? `html{font-size:${SCALE[t.fontScale]}}` : "",
     `.bg-\\[\\#07040f\\]{background-color:var(--store-bg)!important;${BACKDROP_CSS[t.backdrop] ?? ""}}`,
     CARD_CSS[t.cardStyle] ?? "",
+    t.motion ? (HOVER_CSS[t.cardHover] ?? "") : "",
     t.motion ? "" : "*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}",
     `.bg-\\[\\#0b0714\\]{background-color:var(--store-surface)!important}`,
     `.text-white,.text-zinc-100,.text-zinc-200{color:var(--store-fg)!important}`,

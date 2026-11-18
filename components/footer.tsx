@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MessageCircle, Phone } from "lucide-react";
+import { Instagram, MessageCircle, Phone, Youtube } from "lucide-react";
 import { useBrand } from "./brand-provider";
 import { StoreLogo } from "./store-brand-mark";
 
@@ -57,6 +57,19 @@ export function Footer() {
                 <span className="text-sm font-medium">@{brand.telegram}</span>
               </a>)}
 
+              {!brand.isOwner && brand.social?.whatsapp && (<a href={`https://wa.me/${brand.social.whatsapp}`} target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20"><Phone className="h-3.5 w-3.5" /></span>
+                <span className="text-sm font-medium">WhatsApp</span>
+              </a>)}
+              {brand.social?.instagram && (<a href={`https://instagram.com/${brand.social.instagram}`} target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 text-pink-400 hover:text-pink-300 transition-colors">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-pink-500/10 border border-pink-500/20"><Instagram className="h-3.5 w-3.5" /></span>
+                <span className="text-sm font-medium">@{brand.social.instagram}</span>
+              </a>)}
+              {brand.social?.youtube && (<a href={brand.social.youtube} target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 text-red-400 hover:text-red-300 transition-colors">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20"><Youtube className="h-3.5 w-3.5" /></span>
+                <span className="text-sm font-medium">YouTube</span>
+              </a>)}
+
               {brand.isOwner && (<a
                 href="https://wa.me/917200817883"
                 target="_blank"
@@ -96,6 +109,15 @@ export function Footer() {
         </div>
 
       </div>
+      {brand.social?.floatingChat && (brand.social.whatsapp || brand.telegram) && (
+        <a
+          href={brand.social.whatsapp ? `https://wa.me/${brand.social.whatsapp}` : `https://t.me/${brand.telegram}`}
+          target="_blank" rel="noopener noreferrer" aria-label="Chat with us"
+          className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-black/40 transition-transform hover:scale-105"
+        >
+          <MessageCircle className="h-6 w-6" />
+        </a>
+      )}
     </footer>
   );
 }

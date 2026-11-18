@@ -4,6 +4,7 @@ import { checkSlug, platformRootDomain, slugProblem, submitApplication, approveA
 import { verifyPassword } from "@/lib/auth";
 import { parseCustomDomain, requestCustomDomain, domainState } from "@/lib/domains";
 import { getStoreOptions } from "@/lib/store-options";
+import { DEFAULT_PLAN_PRICES, getPlanConfig, planViews, type PlanConfig } from "@/lib/plan-settings";
 
 /**
  * Store subscriptions + self-service launch. Server only.
@@ -18,6 +19,21 @@ export const PLANS = {
 } as const;
 export type PlanKey = keyof typeof PLANS;
 
+/** Which store sells the plan to this store: its parent co-admin (own-web mode) or the owner (main website). */
+export async function parentOf(tenantId: string): Promise<string | null> {
+  try {
+    const r = await supabaseAdmin.from("tenants").select("parent_tenant_id").eq("id", tenantId).maybeSingle();
+    const v = (r.data as any)?.parent_tenant_id;
+    return !r.error && v ? String(v) : null;
+  } catch { return null; }
+}
+export const sellerOf = async (tenantId: string) => (await parentOf(tenantId)) ?? OWNER_TENANT_ID;
+
+export async function plansFor(sellerTenantId: string) {
+  const cfg = await getPlanConfig(sellerTenantId);
+  return { cfg, plans: planViews(cfg), trialDays: cfg.trialDays };
+}
+
 type Actor = { id: string | number | null; username: string };
 
 export type SubState = {
@@ -27,25 +43,32 @@ export type SubState = {
   daysLeft: number | null;
   trialUsed: boolean;
   payer: string | null;
-  walletBalance: number | null; // the reseller's wallet on the main store
+  walletBalance: number | null; // the reseller's wallet on the store that sells the plan
+  parentName: string | null;    // set when this is a sub-store: the co-admin store its plan is paid to
 };
 
 export async function subscriptionState(tenantId: string): Promise<SubState> {
-  const none: SubState = { available: false, expiresAt: null, expired: false, daysLeft: null, trialUsed: false, payer: null, walletBalance: null };
+  const none: SubState = { available: false, expiresAt: null, expired: false, daysLeft: null, trialUsed: false, payer: null, walletBalance: null, parentName: null };
   const r = await supabaseAdmin.from("tenants").select("plan_expires_at, trial_used, payer_username").eq("id", tenantId).maybeSingle();
   if (r.error || !r.data) return none;
   const row: any = r.data;
   const exp = row.plan_expires_at ? new Date(row.plan_expires_at) : null;
   const ms = exp ? exp.getTime() - Date.now() : null;
   let bal: number | null = null;
+  const parent = await parentOf(tenantId);
+  let parentName: string | null = null;
+  if (parent) {
+    const pr = await supabaseAdmin.from("tenants").select("brand_name").eq("id", parent).maybeSingle();
+    parentName = String((pr.data as any)?.brand_name ?? "") || "your co-admin";
+  }
   if (row.payer_username) {
-    const b = await supabaseAdmin.rpc("jprime_t_wallet_get_balance", { p_tenant: OWNER_TENANT_ID, p_username: row.payer_username });
+    const b = await supabaseAdmin.rpc("jprime_t_wallet_get_balance", { p_tenant: parent ?? OWNER_TENANT_ID, p_username: row.payer_username });
     if (!b.error) bal = Number(b.data ?? 0);
   }
   return {
     available: true, expiresAt: exp ? exp.toISOString() : null, expired: ms !== null && ms < 0,
     daysLeft: ms === null ? null : Math.max(0, Math.ceil(ms / 86_400_000)), trialUsed: row.trial_used === true,
-    payer: row.payer_username ?? null, walletBalance: bal,
+    payer: row.payer_username ?? null, walletBalance: bal, parentName,
   };
 }
 
@@ -54,12 +77,12 @@ export async function subscriptionState(tenantId: string): Promise<SubState> {
  * plan and JPRIME API stock are paid from that wallet. Nothing is stored except the username.
  */
 /** Proves a main-website (owner tenant) account by password. Never trusts a bare username. */
-export async function verifyMainAccount(username: string, password: string) {
+export async function verifyMainAccount(username: string, password: string, storeId: string = OWNER_TENANT_ID) {
   const u = String(username ?? "").trim();
   if (!u || !password || u.length > 64 || password.length > 200) return { ok: false as const, error: "Enter your main website username and password." };
-  const r = await supabaseAdmin.from("users").select("id, role, password").eq("tenant_id", OWNER_TENANT_ID).eq("username", u).maybeSingle();
+  const r = await supabaseAdmin.from("users").select("id, role, password").eq("tenant_id", storeId).eq("username", u).maybeSingle();
   const row: any = r.data;
-  if (r.error || !row || !verifyPassword(password, String(row.password ?? ""))) return { ok: false as const, error: "Wrong username or password for the main website (jprimecheats.store)." };
+  if (r.error || !row || !verifyPassword(password, String(row.password ?? ""))) return { ok: false as const, error: storeId === OWNER_TENANT_ID ? "Wrong username or password for the main website (jprimecheats.store)." : "Wrong username or password for your co-admin's website." };
   if (["admin", "coadmin"].includes(String(row.role).toLowerCase())) return { ok: false as const, error: "Use your reseller account from the main website, not an admin account." };
   return { ok: true as const, username: u };
 }
@@ -69,7 +92,7 @@ export async function linkWalletAccount(tenant: Tenant, username: string, passwo
   // Once linked, a store admin cannot switch it (only the platform owner can) - stops moving to a cheaper/other account.
   const cur = await supabaseAdmin.from("tenants").select("payer_username").eq("id", tenant.id).maybeSingle();
   if ((cur.data as any)?.payer_username) return { ok: false as const, error: "Your wallet account is already linked and locked. Contact the platform owner to change it." };
-  const v = await verifyMainAccount(username, password);
+  const v = await verifyMainAccount(username, password, await sellerOf(tenant.id));
   if (!v.ok) return v;
   const u = v.username;
   const up = await supabaseAdmin.from("tenants").update({ payer_username: u, updated_at: new Date().toISOString() }).eq("id", tenant.id).eq("kind", "coadmin");
@@ -82,13 +105,23 @@ export async function linkWalletAccount(tenant: Tenant, username: string, passwo
 export async function subscribe(tenant: Tenant, plan: string, actor: Actor) {
   if (!(plan in PLANS)) return { ok: false as const, error: "Choose a plan." };
   if (tenant.kind !== "coadmin") return { ok: false as const, error: "Only co-admin stores have a plan." };
-  const { data, error } = await supabaseAdmin.rpc("jprime_tenant_subscribe", { p_tenant: tenant.id, p_plan: plan, p_actor: actor.username });
+  const parent = await parentOf(tenant.id);
+  const { cfg, plans } = await plansFor(parent ?? OWNER_TENANT_ID);
+  const view = plans[plan as PlanKey];
+  let res: { data: any; error: any } = await supabaseAdmin.rpc("jprime_tenant_subscribe_v2", { p_tenant: tenant.id, p_plan: plan, p_actor: actor.username, p_price: view.price, p_days: view.days });
+  // SQL 009 not run yet: only the original fixed prices on the main website can still be charged (never a wrong price).
+  if (res.error && /jprime_tenant_subscribe_v2|schema cache|does not exist/i.test(String(res.error.message ?? ""))) {
+    if (parent || cfg.prices[plan as PlanKey] !== DEFAULT_PLAN_PRICES[plan as PlanKey]) {
+      return { ok: false as const, error: "Plan prices need the latest database update (SQL 009). Contact the platform owner." };
+    }
+    res = await supabaseAdmin.rpc("jprime_tenant_subscribe", { p_tenant: tenant.id, p_plan: plan, p_actor: actor.username });
+  }
   clearTenantCache();
-  if (error) return { ok: false as const, error: "Could not take payment right now. Try again." };
-  const d: any = data;
+  if (res.error) return { ok: false as const, error: "Could not take payment right now. Try again." };
+  const d: any = res.data;
   if (!d?.ok) {
     const msg = d?.reason === "insufficient"
-      ? `Not enough wallet balance. You need Rs ${PLANS[plan as PlanKey].price} and have Rs ${Number(d.balance ?? 0)}. Add money to your wallet on the main website and try again.`
+      ? `Not enough wallet balance. You need Rs ${view.price} and have Rs ${Number(d.balance ?? 0)}. Add money to your wallet ${parent ? "on your co-admin's website" : "on the main website"} and try again.`
       : d?.reason === "no_payer" ? "This store has no payment wallet linked. Contact the platform owner."
       : d?.reason === "not_active" ? "This store is not active. Contact the platform owner."
       : "Payment failed.";
@@ -107,11 +140,12 @@ export type LaunchOptions = {
   plans: typeof PLANS;
 };
 
-export async function launchOptions(): Promise<LaunchOptions> {
+export async function launchOptions(sellerTenantId: string = OWNER_TENANT_ID): Promise<LaunchOptions> {
   const root = platformRootDomain();
+  const { plans, trialDays } = await plansFor(sellerTenantId);
   const sub = await supabaseAdmin.from("tenants").select("plan_expires_at").limit(1);
   const dom = await supabaseAdmin.from("tenants").select("custom_domain_allowed").limit(1);
-  return { selfService: !!root && !sub.error, root, customDomain: !dom.error, trialDays: TRIAL_DAYS, plans: PLANS };
+  return { selfService: !!root && !sub.error, root, customDomain: !dom.error, trialDays, plans: plans as unknown as typeof PLANS };
 }
 
 export type LaunchInput = {
@@ -128,16 +162,25 @@ export type LaunchInput = {
 export async function launchStore(
   applicant: { id: string | number | null; tenantId: string; role: string; username: string }, tenant: Tenant, input: LaunchInput,
 ): Promise<{ ok: true; url: string; expiresAt: string; custom: any } | { ok: false; error: string; status: number }> {
-  const opts = await launchOptions();
-  if (!opts.selfService) return { ok: false, error: "Instant launch is not open yet. Please try again later.", status: 503 };
-  // From a co-admin store: only if the owner allowed it, and the payer must be PROVEN main-website account.
+  // From a co-admin store: only if the owner allowed it.
+  //  - mode "main": the payer must be a PROVEN main-website account (username + password checked).
+  //  - mode "own":  the reseller is already logged in on this co-admin store; they pay THIS store's wallet and the new
+  //                 store becomes a sub-store of it (parent_tenant_id), at this co-admin's own prices and trial.
   let payer = applicant.username;
+  let parentId: string | null = null;
   if (tenant.kind === "coadmin") {
-    if (!(await getStoreOptions(tenant.id)).resellerLaunch) return { ok: false, error: "Launching a website is not available here.", status: 403 };
-    const v = await verifyMainAccount(String(input.mainUsername ?? ""), String(input.mainPassword ?? ""));
-    if (!v.ok) return { ok: false, error: v.error, status: 400 };
-    payer = v.username;
+    const so = await getStoreOptions(tenant.id);
+    if (!so.resellerLaunch) return { ok: false, error: "Launching a website is not available here.", status: 403 };
+    if (so.launchMode === "own") {
+      parentId = tenant.id;
+    } else {
+      const v = await verifyMainAccount(String(input.mainUsername ?? ""), String(input.mainPassword ?? ""));
+      if (!v.ok) return { ok: false, error: v.error, status: 400 };
+      payer = v.username;
+    }
   }
+  const opts = await launchOptions(parentId ?? OWNER_TENANT_ID);
+  if (!opts.selfService) return { ok: false, error: "Instant launch is not open yet. Please try again later.", status: 503 };
   const wantCustom = input.domainChoice === "custom";
   let customHost = "";
   if (wantCustom) {
@@ -162,7 +205,14 @@ export async function launchStore(
   const made: any = await approveApplication(appId, actor);
   if (!made?.ok || !made.tenant_id) return { ok: false, error: made?.reason === "slug_taken" ? "That name was just taken. Pick another." : "Could not create your store. Please try again.", status: 409 };
 
-  const trial = await supabaseAdmin.rpc("jprime_tenant_start_trial", { p_tenant: made.tenant_id, p_payer: payer, p_days: TRIAL_DAYS });
+  if (parentId) {
+    const link = await supabaseAdmin.from("tenants").update({ parent_tenant_id: parentId }).eq("id", made.tenant_id).eq("kind", "coadmin");
+    if (link.error) {
+      await setStoreStatus(made.tenant_id, "suspended", "self-service launch: sub-store link failed (run SQL 009)", actor);
+      return { ok: false, error: "Sub-stores are not switched on yet. Contact the platform owner.", status: 503 };
+    }
+  }
+  const trial = await supabaseAdmin.rpc("jprime_tenant_start_trial", { p_tenant: made.tenant_id, p_payer: payer, p_days: opts.trialDays });
   if (trial.error || !(trial.data as any)?.ok) {
     await setStoreStatus(made.tenant_id, "suspended", "self-service launch: trial setup failed", actor);
     return { ok: false, error: "Your store was created but could not be switched on. Contact support.", status: 500 };
@@ -177,4 +227,26 @@ export async function launchStore(
     custom = r.ok ? (await domainState(made.tenant_id)).custom : { error: r.error };
   }
   return { ok: true, url: `https://${made.host}`, expiresAt: String((trial.data as any).expires_at), custom };
+}
+
+/* ------------------------------ sub-stores (own-web co-admins) ------------------------------ */
+
+export type SubStore = { id: string; brandName: string; slug: string; host: string | null; status: string; expiresAt: string | null; expired: boolean; daysLeft: number | null; payer: string | null; createdAt: string | null };
+
+/** Stores launched by resellers of THIS store. Only ever the verified current store's own children. */
+export async function listSubStores(parentId: string): Promise<SubStore[]> {
+  const r = await supabaseAdmin.from("tenants").select("id, brand_name, slug, status, plan_expires_at, payer_username, created_at, banned").eq("parent_tenant_id", parentId).order("created_at", { ascending: false }).limit(200);
+  if (r.error) return [];
+  return ((r.data as any[]) ?? []).map((t) => {
+    const exp = t.plan_expires_at ? new Date(t.plan_expires_at).getTime() : null;
+    const ms = exp === null ? null : exp - Date.now();
+    const root = platformRootDomain();
+    return {
+      id: String(t.id), brandName: String(t.brand_name ?? ""), slug: String(t.slug ?? ""), host: root ? `${t.slug}.${root}` : null,
+      status: t.banned === true ? "banned" : ms !== null && ms < 0 ? "expired" : String(t.status ?? ""),
+      expiresAt: exp === null ? null : new Date(exp).toISOString(), expired: ms !== null && ms < 0,
+      daysLeft: ms === null ? null : Math.max(0, Math.ceil(ms / 86_400_000)), payer: t.payer_username ? String(t.payer_username) : null,
+      createdAt: t.created_at ? String(t.created_at) : null,
+    };
+  });
 }

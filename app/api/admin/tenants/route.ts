@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   try {
     const [ov, domainInfo] = await Promise.all([ownerOverview(), ownerDomainInfo()]);
     const launch = await resellerLaunchMap((ov.stores as any[]).map((s) => String(s.id)));
-    const stores = (ov.stores as any[]).map((s) => ({ ...s, resellerLaunch: launch[String(s.id)] === true }));
+    const stores = (ov.stores as any[]).map((s) => ({ ...s, resellerLaunch: launch[String(s.id)]?.on === true, launchMode: launch[String(s.id)]?.mode === "own" ? "own" : "main" }));
     return NextResponse.json({ success: true, ...ov, stores, domainInfo }, { headers: NO_STORE });
   } catch {
     return fail("Could not load stores.", 500);
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       break;
     case "reseller_launch":
       if (!isUuid(id)) return fail("Invalid id.");
-      result = await setResellerLaunch(id, b?.allowed === true);
+      result = await setResellerLaunch(id, b?.allowed === true, b?.mode === "own" ? "own" : "main");
       break;
     case "delete_store":
       if (!isUuid(id)) return fail("Invalid id.");

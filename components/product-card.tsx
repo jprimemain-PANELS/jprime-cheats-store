@@ -4,6 +4,7 @@ import { categoryLabel } from "@/lib/categories";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
+  ChevronDown,
   Play,
   ShoppingCart,
   Bell,
@@ -58,6 +59,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
   const effectiveStatus: "ONLINE" | "MAINTENANCE" = liveStatus ?? product.status;
 
   const [isHovered, setIsHovered] = useState(false);
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
   const [availableStock, setAvailableStock] = useState<number | null>(null);
   const [userRole, setUserRole] = useState("user");
   // Do not display any tier price until the authenticated role has been resolved.
@@ -776,7 +778,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
           {/* FEATURES LIST */}
           <div className="space-y-2">
-            {product.features.map((feature, i) => (
+            {(showAllFeatures ? product.features : product.features.slice(0, 4)).map((feature, i) => (
               <div
                 key={i}
                 className="flex items-center gap-2.5 text-xs text-white/70"
@@ -790,6 +792,17 @@ export function ProductCard({ product, index }: ProductCardProps) {
                 </span>
               </div>
             ))}
+            {product.features.length > 4 && (
+              <button
+                type="button"
+                onClick={() => setShowAllFeatures((v) => !v)}
+                aria-expanded={showAllFeatures}
+                aria-label={showAllFeatures ? "Show fewer features" : "Show more features"}
+                className="mx-auto flex h-6 w-10 items-center justify-center rounded-full text-fuchsia-300 hover:bg-white/[0.06] cursor-pointer"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${showAllFeatures ? "rotate-180" : ""}`} />
+              </button>
+            )}
           </div>
 
           {/* DURATION SELECTION */}

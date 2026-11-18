@@ -183,6 +183,33 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
     setShowEditor(true);
   }
 
+  /** Guild Glory service: customers give Region + Guild ID instead of getting a key. Owner store only. */
+  function newGuildProduct() {
+    setSelected({
+      ...emptyProduct,
+      id: `guild-glory-${Date.now()}`,
+      name: "Guild Glory Booster",
+      category: "others",
+      kind: "guild",
+      features: ["Bot players join your guild automatically", "Guild glory points keep increasing", "Buy tokens, redeem, then enter your Guild ID"],
+      // Each plan is a TOKEN pack: the plan name must start with the number of tokens (1 Token, 2 Tokens, 5 Tokens...).
+      prices: ["1 Token", "2 Tokens", "5 Tokens", "10 Tokens"].map((duration) => (
+        { duration, priceINR: "", resellerPrice: "", supplier: "LOCAL", seller1Pid: "", seller1Duration: "", seller2VariantId: "", seller3ProductId: "" }
+      )),
+    } as any);
+    setShowEditor(true);
+  }
+
+  /** Copy a product (tiers, suppliers/API ids, video, features) into a NEW unsaved product. Change the name/category, then Save. */
+  function cloneProduct(product: Product) {
+    const copy = JSON.parse(JSON.stringify(product)) as Product;
+    const taken = new Set(products.map((x) => x.name.trim().toLowerCase()));
+    let name = `${product.name} (copy)`;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${product.name} (copy ${n})`;
+    setSelected({ ...copy, id: `${String(product.id).replace(/-\d{10,}$/, "")}-${Date.now()}`, name });
+    setShowEditor(true);
+  }
+
   function editProduct(product: Product) {
     setSelected(
       JSON.parse(JSON.stringify(product))
@@ -652,6 +679,17 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
             Refresh
           </button>
 
+          {isOwner && (
+            <button
+              onClick={newGuildProduct}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-400 text-black font-bold hover:bg-amber-300 transition"
+            >
+              <Plus className="w-4 h-4" />
+
+              Add Guild Glory
+            </button>
+          )}
+
           <button
             onClick={newProduct}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 text-black font-bold hover:bg-cyan-400 transition"
@@ -761,6 +799,14 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
                       className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
                     >
                       Edit
+                    </button>
+
+                    <button
+                      onClick={() => cloneProduct(product)}
+                      title="Clone: copy this product, then change name / category"
+                      className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
+                    >
+                      Clone
                     </button>
 
                     <button

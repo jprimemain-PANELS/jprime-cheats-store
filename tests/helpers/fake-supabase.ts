@@ -154,6 +154,18 @@ export const supabaseAdmin = {
       t.trial_used = true; t.payer_username = args.p_payer; t.plan_expires_at = new Date(Date.now() + args.p_days * 86400000).toISOString();
       return { data: { ok: true, expires_at: t.plan_expires_at }, error: null };
     }
+    if (name === "jprime_tenant_subscribe_v2") {
+      const t = rows("tenants").find((x) => x.id === args.p_tenant);
+      if (!t || t.kind !== "coadmin") return { data: { ok: false, reason: "not_found" }, error: null };
+      if (!t.payer_username) return { data: { ok: false, reason: "no_payer" }, error: null };
+      const w = wallet(t.parent_tenant_id || "00000000-0000-0000-0000-000000000001", t.payer_username, false);
+      const cur = Number(w?.balance ?? 0);
+      if (!w || cur < args.p_price) return { data: { ok: false, reason: "insufficient", balance: cur }, error: null };
+      w.balance = r2(cur - args.p_price);
+      const base = Math.max(t.plan_expires_at ? Date.parse(t.plan_expires_at) : Date.now(), Date.now());
+      t.plan_expires_at = new Date(base + args.p_days * 86400000).toISOString();
+      return { data: { ok: true, expires_at: t.plan_expires_at, price: args.p_price, balance: w.balance }, error: null };
+    }
     if (name.startsWith("jprime_approve_tenant_application") || name === "jprime_reject_tenant_application" || name === "jprime_set_tenant_status" || name === "jprime_create_tenant_direct") {
       return { data: { ok: true }, error: null };
     }

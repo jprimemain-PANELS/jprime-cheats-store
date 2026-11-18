@@ -56,6 +56,7 @@ import BrandingManager from "@/components/admin/BrandingManager";
 import DomainManager from "@/components/admin/DomainManager";
 import SetupGuide from "@/components/admin/SetupGuide";
 import SubscriptionManager from "@/components/admin/SubscriptionManager";
+import SubStoresManager from "@/components/admin/SubStoresManager";
 import ApiSystemManager from "@/components/admin/ApiSystemManager";
 import StoreTelegramManager from "@/components/admin/StoreTelegramManager";
 import { useBrand } from "@/components/brand-provider";
@@ -77,6 +78,7 @@ type ProductStatus = "ONLINE" | "MAINTENANCE";
 type Tab =
   | "api"
   | "subscription"
+  | "substores"
   | "domain"
   | "guide"
   | "overview"
@@ -267,12 +269,14 @@ export default function AdminPage() {
   // Welcome steps card (co-admin only): server says whether the first 5 days are still running; X hides it for this login session.
   const [welcomeOn, setWelcomeOn] = useState(false);
   const [welcomeClosed, setWelcomeClosed] = useState(false);
+  const [ownWeb, setOwnWeb] = useState(false); // owner chose "co-admin's own web": show the Sub-stores page
   useEffect(() => {
     try { if (sessionStorage.getItem("welcome_closed") === "1") setWelcomeClosed(true); } catch {}
     (async () => {
       try {
         const j = await (await fetch("/api/admin/store-options", { cache: "no-store" })).json();
         if (j?.success && j.isOwner !== true && j.welcome?.show === true) setWelcomeOn(true);
+        if (j?.success && j.isOwner !== true && j.options?.resellerLaunch === true && j.options?.launchMode === "own") setOwnWeb(true);
       } catch {}
     })();
   }, []);
@@ -771,6 +775,7 @@ export default function AdminPage() {
     { id: "domain", label: "Domain", icon: Globe },
     { id: "guide", label: "Setup Guide", icon: BookOpen },
     ...(!isOwnerAdmin ? ([{ id: "subscription", label: "Subscription", icon: CreditCard }] as { id: Tab; label: string; icon: any; count?: number }[]) : []),
+    ...(!isOwnerAdmin && ownWeb ? ([{ id: "substores", label: "Sub-stores", icon: Store }] as { id: Tab; label: string; icon: any; count?: number }[]) : []),
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
     { id: "users", label: "Users", icon: Users, count: users.length },
   ];
@@ -778,7 +783,7 @@ export default function AdminPage() {
   const SIMPLE: Partial<Record<Tab, string>> = {
     // (names are the original simple ones: nothing renamed for co-admins)
   };
-  const COADMIN_ORDER: Tab[] = ["overview", "guide", "subscription", "api", "products", "pricing", "status", "gateway", "branding", "domain", "users", "purchases", "inventory", "vip", "telegram"];
+  const COADMIN_ORDER: Tab[] = ["overview", "guide", "subscription", "substores", "api", "products", "pricing", "status", "gateway", "branding", "domain", "users", "purchases", "inventory", "vip", "telegram"];
   const TABS = isOwnerAdmin
     ? ALL_TABS
     : COADMIN_ORDER.map((id) => ALL_TABS.find((t) => t.id === id)).filter(Boolean).map((t) => ({ ...t!, label: SIMPLE[t!.id] ?? t!.label }));
@@ -1363,6 +1368,7 @@ export default function AdminPage() {
         {activeTab === "domain" && <DomainManager />}
         {activeTab === "guide" && <SetupGuide />}
         {activeTab === "subscription" && !isOwnerAdmin && <SubscriptionManager />}
+        {activeTab === "substores" && !isOwnerAdmin && ownWeb && <SubStoresManager />}
         {activeTab === "api" && <ApiSystemManager />}
 
         {/* PURCHASES */}

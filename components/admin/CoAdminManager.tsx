@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import PlanPricing from "@/components/admin/PlanPricing";
 import { AlertTriangle, Check, Loader2, Plus, RefreshCw, X } from "lucide-react";
 
 type Store = {
@@ -8,7 +9,7 @@ type Store = {
   telegram: string | null; createdAt: string; domains: { host: string; verified: boolean }[];
   customers: number; resellers: number; products: number; orders: number; walletTotal: number;
   lastPurchaseAt: string | null; paymentStatus: string; planExpiresAt?: string | null; payer?: string | null;
-  banned?: boolean; resellerLaunch?: boolean;
+  banned?: boolean; resellerLaunch?: boolean; launchMode?: "main" | "own";
 };
 type App = {
   id: string; brandName: string; slug: string; telegram: string | null; inventoryMode: string;
@@ -32,6 +33,7 @@ export default function CoAdminManager() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [launchFor, setLaunchFor] = useState<Store | null>(null);
   const [form, setForm] = useState({ brandName: "", slug: "", telegram: "", inventoryMode: "own_api", username: "", password: "", phone: "", email: "" });
 
   const load = useCallback(async () => {
@@ -82,6 +84,8 @@ export default function CoAdminManager() {
           <button onClick={() => setShowCreate((v) => !v)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"><Plus className="h-3.5 w-3.5" />New store</button>
         </div>
       </div>
+
+      <PlanPricing title="Main website: subscription prices & free trial" help="This is what stores that pay on YOUR main website are charged, and how many days a new store gets free. Co-admins who use their own web set their own prices." />
 
       {!loading && !rootDomain && (
         <div className="flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200">
@@ -177,8 +181,8 @@ export default function CoAdminManager() {
                         if (s.banned) { if (window.confirm(`Unban "${s.brandName}"? Its website works again.`)) act({ action: "unban", id: s.id }, s.id); }
                         else if (window.confirm(`BAN "${s.brandName}"? Visitors will only see "This website is banned by the admin". Data is kept.`)) act({ action: "ban", id: s.id }, s.id);
                       }} className={`px-3 py-1.5 rounded-lg border cursor-pointer disabled:opacity-50 ${s.banned ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10" : "border-rose-500/40 text-rose-300 hover:bg-rose-500/10"}`}>{s.banned ? "Unban" : "Ban"}</button>
-                      <button disabled={!!busy} onClick={() => act({ action: "reseller_launch", id: s.id, allowed: !s.resellerLaunch }, s.id)} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50" title="Let this store's resellers see Launch your website">
-                        Co-admin reseller can launch website: {s.resellerLaunch ? "ON" : "OFF"}
+                      <button disabled={!!busy} onClick={() => setLaunchFor(s)} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50" title="Let this store's resellers see Launch your website">
+                        Co-admin reseller can launch website: {s.resellerLaunch ? (s.launchMode === "own" ? "ON (their own web)" : "ON (main web)") : "OFF"}
                       </button>
                       <button disabled={!!busy} onClick={() => { const u = window.prompt("Reseller username on the MAIN store whose wallet pays for this store:", s.payer || ""); if (u) act({ action: "set_payer", id: s.id, username: u }, s.id); }} className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 cursor-pointer disabled:opacity-50">Set wallet user</button>
                     </div>
@@ -221,6 +225,27 @@ export default function CoAdminManager() {
             )}
           </section>
         </>
+      )}
+
+      {launchFor && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md p-3" onClick={() => setLaunchFor(null)}>
+          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-white">Resellers of "{launchFor.brandName}" can launch their own website</h3>
+            <p className="text-xs text-slate-400">Choose who collects the subscription money from those resellers:</p>
+            <button disabled={!!busy} onClick={async () => { if (await act({ action: "reseller_launch", id: launchFor.id, allowed: true, mode: "main" }, launchFor.id)) setLaunchFor(null); }} className="w-full text-left rounded-xl border border-slate-700 hover:border-indigo-500 hover:bg-slate-800 p-3 cursor-pointer disabled:opacity-50">
+              <p className="text-sm font-semibold text-white">1. Pay in my main website {launchFor.resellerLaunch && launchFor.launchMode !== "own" ? "(current)" : ""}</p>
+              <p className="text-[11px] text-slate-400 mt-1">The reseller pays the subscription from their wallet on your main website, at the prices you set above. Nothing changes for the co-admin.</p>
+            </button>
+            <button disabled={!!busy} onClick={async () => { if (await act({ action: "reseller_launch", id: launchFor.id, allowed: true, mode: "own" }, launchFor.id)) setLaunchFor(null); }} className="w-full text-left rounded-xl border border-slate-700 hover:border-emerald-500 hover:bg-slate-800 p-3 cursor-pointer disabled:opacity-50">
+              <p className="text-sm font-semibold text-white">2. The co-admin's own website {launchFor.resellerLaunch && launchFor.launchMode === "own" ? "(current)" : ""}</p>
+              <p className="text-[11px] text-slate-400 mt-1">The reseller pays the co-admin from their wallet on the co-admin's website. The co-admin's admin page then shows a "Sub-stores" page to set their own prices and free trial and to see every sub-co-admin.</p>
+            </button>
+            {launchFor.resellerLaunch && (
+              <button disabled={!!busy} onClick={async () => { if (await act({ action: "reseller_launch", id: launchFor.id, allowed: false }, launchFor.id)) setLaunchFor(null); }} className="w-full rounded-xl border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 p-2.5 text-xs font-semibold cursor-pointer disabled:opacity-50">Turn OFF (resellers cannot launch)</button>
+            )}
+            <button onClick={() => setLaunchFor(null)} className="w-full text-xs text-slate-400 py-1.5 cursor-pointer">Cancel</button>
+          </div>
+        </div>
       )}
     </div>
   );

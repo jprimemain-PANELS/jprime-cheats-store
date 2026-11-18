@@ -18,6 +18,13 @@ const TYPES: Record<string, string> = {
   "video/x-msvideo": "avi",
 };
 
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
+/** Pictures for logo / banner / background. No SVG on purpose (SVG can carry scripts). */
+export function imageExtFor(contentType: string): string | null {
+  return IMAGE_TYPES[String(contentType || "").toLowerCase()] || null;
+}
+
 export function videoExtFor(contentType: string): string | null {
   return TYPES[String(contentType || "").toLowerCase()] || null;
 }
@@ -37,9 +44,9 @@ const hex = (s: string) => createHash("sha256").update(s).digest("hex");
 const enc = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
 
 /** Builds an object key that cannot collide and cannot escape the tenant folder. */
-export function buildVideoKey(tenantId: string, ext: string): string {
+export function buildVideoKey(tenantId: string, ext: string, folder: "videos" | "images" = "videos"): string {
   const safeTenant = String(tenantId).replace(/[^a-zA-Z0-9-]/g, "").slice(0, 64) || "store";
-  return `videos/${safeTenant}/${Date.now()}-${randomBytes(6).toString("hex")}.${ext}`;
+  return `${folder}/${safeTenant}/${Date.now()}-${randomBytes(6).toString("hex")}.${ext}`;
 }
 
 /** Presigned PUT URL (valid 15 minutes). Content-Type is part of the signature, so only that type can be uploaded. */

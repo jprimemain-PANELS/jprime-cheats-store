@@ -26,6 +26,7 @@ export interface Product {
   features: string[];
   videoPlaceholder?: string;
   videoUrl?: string;
+  kind?: "guild"; // special product type: Guild Glory bot (region + guild ID form instead of a key)
   // Add status property ('ONLINE' | 'MAINTENANCE')
   status: "ONLINE" | "MAINTENANCE";
 }

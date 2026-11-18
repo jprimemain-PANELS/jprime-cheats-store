@@ -22,6 +22,7 @@ export type Tenant = {
   telegramUsername: string | null;
   planExpiresAt: string | null;       // null = never expires
   banned: boolean;                    // owner banned this store: visitors see a "banned" page, nothing can be bought
+  parentTenantId?: string | null;     // set when a reseller of another co-admin store launched this store
   subscriptionExpired: boolean;       // status is shown as "suspended" while true (no new purchases)
 };
 
@@ -90,6 +91,7 @@ function rowToTenant(row: any): Tenant {
     inventoryMode: row.inventory_mode === "shared_stock" ? "shared_stock" : "own_api",
     sharedStockAllowed: row.shared_stock_allowed === true,
     telegramUsername: row.telegram_username ? String(row.telegram_username) : null,
+    parentTenantId: row.parent_tenant_id ? String(row.parent_tenant_id) : null,
   };
 }
 

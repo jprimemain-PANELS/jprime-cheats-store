@@ -9,7 +9,11 @@ export type BrandOptions = { tutorialOn: boolean; tutorialUrl: string; upgradeOn
 export const OWNER_TUTORIAL_URL = "https://youtu.be/F0UKQlnyXE4?si=n6qZtG91u6nddqSa";
 export const NO_OPTIONS: BrandOptions = { tutorialOn: false, tutorialUrl: "", upgradeOn: false, upgradePrice: 99, resellerLaunch: false };
 
+export type BrandSocial = { whatsapp: string; instagram: string; youtube: string; floatingChat: boolean };
+export const NO_SOCIAL: BrandSocial = { whatsapp: "", instagram: "", youtube: "", floatingChat: false };
+
 export type Brand = {
+  social?: BrandSocial;
   options: BrandOptions;
   layout: BrandLayout;
   name: string;

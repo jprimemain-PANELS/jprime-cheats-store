@@ -14,9 +14,11 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
   let eligible = ["reseller", "vip_reseller", "vip reseller", "vip"].includes(auth.user.role);
   const fromCoadmin = auth.tenant.kind === "coadmin";
-  if (fromCoadmin && !(await getStoreOptions(auth.tenant.id)).resellerLaunch) eligible = false;
+  const so = fromCoadmin ? await getStoreOptions(auth.tenant.id) : null;
+  if (so && !so.resellerLaunch) eligible = false;
+  const ownWeb = !!so && so.launchMode === "own";
   return NextResponse.json(
-    { success: true, eligible, needsMainAccount: fromCoadmin, application: await myApplication(auth.user, auth.tenant), options: await launchOptions() },
+    { success: true, eligible, needsMainAccount: fromCoadmin && !ownWeb, ownWeb, application: await myApplication(auth.user, auth.tenant), options: await launchOptions(ownWeb ? auth.tenant.id : undefined) },
     { headers: NO_STORE }
   );
 }
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
   const b = await request.json().catch(() => ({}));
 
   // Instant launch (no approval) when the platform is ready for it; otherwise fall back to the old "apply" flow.
-  if ((await launchOptions()).selfService) {
+  if ((await launchOptions()).selfService) { // availability only (same for every store); prices come from the seller inside launchStore
     const l = await launchStore({ id: auth.user.id, tenantId: auth.user.tenantId, role: auth.user.role, username: auth.user.username }, auth.tenant, {
       brandName: b?.brandName, slug: String(b?.slug ?? "").trim().toLowerCase(), telegramUsername: b?.telegramUsername,
       contactEmail: b?.contactEmail, contactPhone: b?.contactPhone, coadminUsername: b?.coadminUsername, coadminPassword: b?.coadminPassword,

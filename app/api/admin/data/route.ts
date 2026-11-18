@@ -44,6 +44,9 @@ export async function GET(request: NextRequest) {
       db.from("products_catalog").select("product_id, name, data").order("id", { ascending: true }),
     ]);
 
+    // Guild Glory credits/tokens are kept as hidden wallet rows (gg:/ggt:); they are not customer wallets.
+    if (Array.isArray(wallets.data)) wallets.data = wallets.data.filter((w: any) => !/^ggt?:/.test(String(w?.username ?? "")));
+
     const firstError =
       (stock.ok ? null : { message: stock.error }) ||
       users.error ||
