@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readSetting } from "@/lib/tenant-db";
 import { requireUser, rateLimit } from "@/lib/auth";
-import { getGroupInfo, groupAction, listSellerGroups } from "@/lib/guild-glory";
-import { NO_STORE, fail, guildGate } from "../_shared";
+import { deleteGroup, getGroupInfo, getGroupList, groupAction } from "@/lib/guild-glory";
+import { writeSetting } from "@/lib/tenant-db";
+import { logGuildRefundRequest } from "@/lib/user-admin";
+import { NO_STORE, fail, guildGate, loadGroups } from "../_shared";
 
 export const dynamic = "force-dynamic";
 
@@ -14,14 +15,12 @@ async function ownGroup(request: NextRequest, ref: string) {
   const blocked = guildGate(auth.tenant, tenantId);
   if (blocked) return { err: blocked };
   if (!rateLimit(`guild-group:${tenantId}:${auth.user.username}`, 40, 60_000)) return { err: fail("Too many requests. Please wait a moment.", 429) };
-  const cur = await readSetting(tenantId, `guildgroups:${auth.user.username}`);
-  const list: any[] = Array.isArray(cur.data?.value) ? cur.data.value : [];
-  const rec = list.find((g) => g && g.ref === ref);
+  const { recs, save } = await loadGroups(tenantId, auth.user.username, true);
+  const rec = recs.find((g) => g.ref === ref);
   if (!rec) return { err: fail("Group not found.", 404) };
-  const seller = await listSellerGroups();
-  const s = seller.find((x) => x.group_id === rec.ref) ?? seller.find((x) => x.clan_id === rec.clan && x.region === rec.region);
-  if (!s || !s.group_id) return { err: fail("This group is still starting. Try again in a moment.", 409) };
-  return { groupId: s.group_id, rec, admin: String(auth.user.role).toLowerCase() === "admin" };
+  if (!rec.gid) return { err: fail(Date.now() - (Date.parse(rec.at) || 0) > 10 * 60_000 ? "This group is no longer active on the service." : "This group is still starting. Try again in a moment.", 409) };
+  const s = { group_id: rec.gid };
+  return { groupId: s.group_id, rec, recs, tenantId, username: auth.user.username, save, admin: String(auth.user.role).toLowerCase() === "admin" };
 }
 
 export async function GET(request: NextRequest) {
@@ -30,8 +29,14 @@ export async function GET(request: NextRequest) {
     const ref = String(url.searchParams.get("ref") ?? "").slice(0, 100);
     const o = await ownGroup(request, ref);
     if (o.err) return o.err;
+    const view = url.searchParams.get("view");
+    if (view === "history" || view === "players") {
+      const l = await getGroupList(o.groupId, view);
+      return l.ok ? NextResponse.json({ success: true, rows: l.rows }, { headers: NO_STORE }) : fail(l.error, 502);
+    }
     const info = await getGroupInfo(o.groupId, url.searchParams.get("force") === "1");
     if (!info.ok) return fail(info.error, 502);
+    if (info.view.name && info.view.name !== o.rec.name) { o.rec.name = info.view.name; await o.save().catch(() => {}); } // remember the name
     return NextResponse.json({ success: true, group: info.view, ...(o.admin && url.searchParams.get("raw") === "1" ? { raw: info.raw } : {}) }, { headers: NO_STORE });
   } catch { return fail("Could not load the group.", 500); }
 }
@@ -39,11 +44,25 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const b = await request.json().catch(() => ({}));
-    const action = b?.action === "restart" || b?.action === "stop" ? b.action : null;
+    const action = ["restart", "stop", "refresh", "delete", "refund"].includes(b?.action) ? (b.action as string) : null;
     if (!action) return fail("Unknown action.", 400);
     const o = await ownGroup(request, String(b?.ref ?? "").slice(0, 100));
     if (o.err) return o.err;
-    const r = await groupAction(o.groupId, action);
+    if (action === "refund") {
+      // The seller API has no refund call: this records a request for the store admin to review (no money moves automatically).
+      if ((o.rec as any).refundRequested) return NextResponse.json({ success: true, message: "Refund already requested." }, { headers: NO_STORE });
+      (o.rec as any).refundRequested = new Date().toISOString();
+      await o.save();
+      await logGuildRefundRequest(o.tenantId, o.username, o.groupId, `clan ${o.rec.clan} (${o.rec.regionName})`).catch(() => {});
+      return NextResponse.json({ success: true, message: "Refund request sent to the admin." }, { headers: NO_STORE });
+    }
+    if (action === "delete") {
+      const d = await deleteGroup(o.groupId);
+      if (!d.ok) return fail(d.error, 502);
+      await writeSetting(o.tenantId, `guildgroups:${o.username}`, o.recs.filter((g) => g.ref !== o.rec.ref));
+      return NextResponse.json({ success: true, removed: true }, { headers: NO_STORE });
+    }
+    const r = await groupAction(o.groupId, action === "refresh" ? "refresh-all" : (action as "restart" | "stop"));
     if (!r.ok) return fail(r.error, 502);
     return NextResponse.json({ success: true }, { headers: NO_STORE });
   } catch { return fail("The action failed.", 500); }

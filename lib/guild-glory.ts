@@ -40,7 +40,7 @@ export function guildApiConfigured(): boolean {
   return !!guildBase() && !!process.env.GUILD_API_KEY;
 }
 
-async function call(method: "GET" | "POST", path: string, body?: unknown, idem?: string): Promise<{ ok: boolean; status: number; json: any; error?: string }> {
+async function call(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, idem?: string): Promise<{ ok: boolean; status: number; json: any; error?: string }> {
   if (!guildApiConfigured()) return { ok: false, status: 0, json: null, error: "Guild Glory service is not connected yet." };
   try {
     const headers: Record<string, string> = { Authorization: `Bearer ${process.env.GUILD_API_KEY}`, Accept: "application/json" };
@@ -82,11 +82,44 @@ export async function createGuildGroup(input: { region: string; clanId: string; 
   return { success: true, ref: String(id).slice(0, 80) };
 }
 
-/** Seller's group list (all of the owner's groups); we only look up our own by id / clan id. */
-export async function listSellerGroups(): Promise<{ group_id: string; clan_id: string; region: string; status: string }[]> {
+export type SellerGroup = { group_id: string; clan_id: string; region: string; status: string; created: number | null };
+/** Seller's group list (all of the owner's groups); we only look up our own. */
+export async function listSellerGroups(): Promise<SellerGroup[]> {
   const r = await call("GET", "/api/v1/groups");
-  const rows: any[] = r.ok && Array.isArray(r.json?.data) ? r.json.data : [];
-  return rows.map((g) => ({ group_id: String(g.group_id ?? ""), clan_id: String(g.clan_id ?? ""), region: String(g.region ?? ""), status: String(g.status ?? "unknown") }));
+  const rows: any[] = r.ok && Array.isArray(r.json?.data) ? r.json.data : r.ok && Array.isArray(r.json?.data?.groups) ? r.json.data.groups : [];
+  return rows.map((g) => {
+    const t = Date.parse(String(g.created_at ?? g.createdAt ?? g.created ?? ""));
+    return { group_id: String(g.group_id ?? g.id ?? ""), clan_id: String(g.clan_id ?? g.clanId ?? ""), region: String(g.region ?? ""), status: String(g.status ?? "unknown"), created: Number.isFinite(t) ? t : null };
+  });
+}
+
+/** A customer's saved group (what we store per user). `gid` = the seller's real group id once we have matched it; `name` = last known guild name. */
+export type GroupRec = { ref: string; clan: string; region: string; regionName: string; at: string; gid?: string; name?: string; refunded?: boolean };
+const sameRegion = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * Pairs each saved group with the seller's real group, once, and remembers it (rec.gid) so it never flips back to "starting".
+ * Several groups for the same Guild ID are told apart by creation time. Returns true when anything was newly paired.
+ */
+export function bindGroups(recs: GroupRec[], seller: SellerGroup[]): boolean {
+  let changed = false;
+  const used = new Set(recs.map((r) => r.gid).filter(Boolean) as string[]);
+  for (const r of recs) if (!r.gid) {
+    const direct = seller.find((x) => x.group_id && x.group_id === r.ref);
+    if (direct) { r.gid = direct.group_id; used.add(direct.group_id); changed = true; }
+  }
+  const at = (r: GroupRec) => Date.parse(r.at) || 0;
+  for (const sg of seller) {
+    if (!sg.group_id || used.has(sg.group_id)) continue;
+    const cands = recs.filter((r) => !r.gid && r.clan === sg.clan_id && (sameRegion(r.region, sg.region) || !sg.region));
+    const pool = cands.length ? cands : recs.filter((r) => !r.gid && r.clan === sg.clan_id);
+    if (!pool.length) continue;
+    // nearest in time (a seller group is created right after we launched it); without a date, the newest unpaired one
+    const best = sg.created != null ? pool.reduce((a, b) => (Math.abs(at(a) - sg.created!) <= Math.abs(at(b) - sg.created!) ? a : b)) : pool.reduce((a, b) => (at(a) >= at(b) ? a : b));
+    if (sg.created != null && Math.abs(at(best) - sg.created) > 30 * 60_000) continue;
+    best.gid = sg.group_id; used.add(sg.group_id); changed = true;
+  }
+  return changed;
 }
 
 /* ---------- live group panel (details / clan / glory / restart / stop) ---------- */
@@ -107,7 +140,7 @@ const txt = (v: any, max = 60): string | null => (v == null || typeof v === "obj
 export type GroupView = {
   groupId: string; name: string | null; level: number | null; clanId: string | null; region: string | null; status: string | null;
   members: number | null; maxMembers: number | null; captain: string | null; totalGlory: number | null; groupGlory: number | null;
-  bots: number | null; uptime: string | null; goalPercent: number | null;
+  bots: number | null; uptime: string | null; goalPercent: number | null; lastMatch: string | null; weeklyGlory: number | null;
 };
 const fmtUptime = (v: any): string | null => {
   if (v == null || typeof v === "object") return null;
@@ -117,9 +150,15 @@ const fmtUptime = (v: any): string | null => {
   return h ? `${h}h ${m}m` : `${m}m`;
 };
 
+/** Last resort: a plain "name" from the group reply, unless it looks like an internal label / id. */
+function genericName(part: any, groupId: string) {
+  const n = deepPick(part, ["name"]);
+  return typeof n === "string" && n !== groupId && !/^jp-|^[0-9a-f-]{16,}$/i.test(n) ? n : undefined;
+}
 /** Turns the seller's group / clan / glory replies into one small, safe object. Unknown fields stay null (the UI hides them). */
 export function normalizeGroup(groupId: string, parts: any[]): GroupView {
-  const pick = (keys: string[]) => { for (const p of parts) { const r = deepPick(p, keys); if (r !== undefined) return r; } return undefined; };
+  // keys are tried in priority order across all replies (so a generic "name" in the group reply never beats "clan_name" in the clan reply)
+  const pick = (keys: string[]) => { for (const k of keys) for (const p of parts) { const r = deepPick(p, [k]); if (r !== undefined) return r; } return undefined; };
   let members = pick(["members", "member_count", "members_count", "current_members"]);
   let maxMembers = pick(["max_members", "member_limit", "members_max", "capacity", "max_capacity"]);
   if (typeof members === "string" && members.includes("/")) { const [a, b] = members.split("/"); members = a; if (maxMembers == null) maxMembers = b; }
@@ -127,7 +166,7 @@ export function normalizeGroup(groupId: string, parts: any[]): GroupView {
   const goal = num(pick(["goal_percent", "goal_progress", "eight_hour_goal", "goal_8h", "goal"]));
   return {
     groupId,
-    name: txt(pick(["clan_name", "guild_name", "name"])),
+    name: txt(pick(["clan_name", "guild_name", "clanName", "guildName"]) ?? deepPick(parts[1], ["name"]) ?? genericName(parts[0], groupId)),
     level: num(pick(["level", "clan_level", "guild_level"])),
     clanId: txt(pick(["clan_id", "guild_id"]), 24),
     region: txt(pick(["region", "region_code"]), 12),
@@ -139,6 +178,8 @@ export function normalizeGroup(groupId: string, parts: any[]): GroupView {
     bots: num(pick(["bots", "bot_count", "bots_count", "players", "player_count"])),
     uptime: fmtUptime(pick(["uptime", "uptime_seconds", "uptime_text"])),
     goalPercent: goal == null ? null : Math.max(0, Math.min(100, goal)),
+    lastMatch: txt(pick(["last_match", "last_match_at", "lastMatchAt", "last_match_time"]), 40),
+    weeklyGlory: num(pick(["weekly_glory", "week_glory", "glory_weekly"])),
   };
 }
 
@@ -151,16 +192,45 @@ export async function getGroupInfo(groupId: string, force = false): Promise<{ ok
   const id = encodeURIComponent(groupId);
   const [d, c, g] = await Promise.all([call("GET", `/api/v1/groups/${id}`), call("GET", `/api/v1/groups/${id}/clan`), call("GET", `/api/v1/groups/${id}/glory`)]);
   if (!d.ok) return { ok: false, error: d.error || "Could not load the group." };
-  const raw = [d.json, c.ok ? c.json : null, g.ok ? g.json : null].filter(Boolean);
+  const raw = [d.json, c.ok ? c.json : null, g.ok ? g.json : null]; // position matters: [group, clan, glory]
   const view = normalizeGroup(groupId, raw);
   if (detailCache.size > 500) detailCache.clear();
   detailCache.set(groupId, { at: Date.now(), view, raw });
   return { ok: true, view, raw };
 }
 
-export async function groupAction(groupId: string, action: "restart" | "stop"): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function groupAction(groupId: string, action: "restart" | "stop" | "refresh-all"): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!isSafeGroupId(groupId)) return { ok: false, error: "Invalid group." };
   const r = await call("POST", `/api/v1/groups/${encodeURIComponent(groupId)}/actions`, { action });
   detailCache.delete(groupId);
   return r.ok ? { ok: true } : { ok: false, error: r.error || "The action failed." };
+}
+
+/** Confirmed stop, then the seller hides it from the owner's list (their DELETE does not call the supplier). */
+export async function deleteGroup(groupId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSafeGroupId(groupId)) return { ok: false, error: "Invalid group." };
+  const r = await call("DELETE", `/api/v1/groups/${encodeURIComponent(groupId)}`);
+  detailCache.delete(groupId);
+  return r.ok ? { ok: true } : { ok: false, error: r.error || "Could not delete the group." };
+}
+
+export type Row = Record<string, string | number | boolean>;
+const keyOk = (k: string) => /^[A-Za-z0-9_ .-]{1,32}$/.test(k) && !/key|secret|token|password|auth/i.test(k);
+/** Match history / players: whatever the seller sends, reduced to short rows of plain values (max 40 rows x 8 fields). */
+export function flattenRows(json: any): Row[] {
+  const data = json?.data;
+  const arr: any[] = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : Array.isArray(data?.players) ? data.players : Array.isArray(data?.matches) ? data.matches : Array.isArray(data?.history) ? data.history : [];
+  return arr.slice(0, 40).map((it) => {
+    const out: Row = {};
+    if (it && typeof it === "object") for (const [k, v] of Object.entries(it)) {
+      if (Object.keys(out).length >= 8) break;
+      if (keyOk(k) && (typeof v === "string" || typeof v === "number" || typeof v === "boolean") && String(v) !== "") out[k] = typeof v === "string" ? v.slice(0, 60) : v;
+    } else if (typeof it === "string" || typeof it === "number") out.value = String(it).slice(0, 60);
+    return out;
+  }).filter((r) => Object.keys(r).length > 0);
+}
+export async function getGroupList(groupId: string, kind: "history" | "players"): Promise<{ ok: true; rows: Row[] } | { ok: false; error: string }> {
+  if (!isSafeGroupId(groupId)) return { ok: false, error: "Invalid group." };
+  const r = await call("GET", `/api/v1/groups/${encodeURIComponent(groupId)}/${kind}`);
+  return r.ok ? { ok: true, rows: flattenRows(r.json) } : { ok: false, error: r.error || "Could not load." };
 }

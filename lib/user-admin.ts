@@ -266,3 +266,8 @@ export async function createAccount(
   await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: String(actor.id ?? ""), actor_username: actor.username, action: "user.create", target: username });
   return { ok: true as const, username, role, balance: funded, warning };
 }
+
+/** A customer asked the store admin to review a Guild Glory refund (visible in the audit log; no money moves automatically). */
+export async function logGuildRefundRequest(tenantId: string, username: string, groupId: string, detail: string) {
+  await supabaseAdmin.from("audit_log").insert({ tenant_id: tenantId, actor_user_id: username, actor_username: username, action: "guild.refund_requested", target: `${groupId} ${detail}`.slice(0, 200) });
+}

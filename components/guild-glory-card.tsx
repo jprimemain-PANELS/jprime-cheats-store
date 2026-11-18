@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, CheckCircle2, ChevronDown, Clock, Coins, Copy, Crown, Gift, Globe, Loader2, MapPin, Power, RefreshCw, Rocket, ShieldCheck, Sparkles, Square, Users, Wallet } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, Clock, Coins, Copy, Crown, Gift, Globe, History, Loader2, MapPin, Power, Trash2, Wallet as WalletIcon, RefreshCw, Rocket, ShieldCheck, Sparkles, Square, Users, Wallet } from "lucide-react";
 import type { Product } from "@/lib/products";
 
 const WALLET_BALANCE_EVENT = "wallet-balance-updated";
 const rupees = (v: unknown) => Number(String(v ?? "").replace(/[^\d.]/g, "")) || 0;
 type Region = { id: string; name: string; code: string };
-type Group = { ref: string; clan: string; regionName: string; at: string; status: string; refunded: boolean };
+type Group = { ref: string; clan: string; regionName: string; at: string; status: string; refunded: boolean; name?: string | null; ended?: boolean };
 
 async function post(url: string, body: unknown) {
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -15,23 +15,31 @@ async function post(url: string, body: unknown) {
   return { ok: res.ok && !!j.success, j };
 }
 
-type View = { groupId: string; name: string | null; level: number | null; clanId: string | null; region: string | null; status: string | null; members: number | null; maxMembers: number | null; captain: string | null; totalGlory: number | null; groupGlory: number | null; bots: number | null; uptime: string | null; goalPercent: number | null };
+type View = { groupId: string; name: string | null; level: number | null; clanId: string | null; region: string | null; status: string | null; members: number | null; maxMembers: number | null; captain: string | null; totalGlory: number | null; groupGlory: number | null; bots: number | null; uptime: string | null; goalPercent: number | null; lastMatch: string | null; weeklyGlory: number | null };
 const fmt = (n: number | null) => (n == null ? "–" : n.toLocaleString("en-IN"));
 const isRunning = (s?: string | null) => /run|active|online|start/i.test(String(s ?? ""));
 
-/** One live group card (like the seller's own dashboard): name, members, captain, glory, bots, uptime, goal + Restart / Stop. */
-function GroupPanel({ g }: { g: Group }) {
+type Row = Record<string, string | number | boolean>;
+const nice = (k: string) => k.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const niceVal = (v: string | number | boolean) => { const t = typeof v === "string" ? Date.parse(v) : NaN; return typeof v === "string" && /^\d{4}-\d\d-\d\dT/.test(v) && Number.isFinite(t) ? new Date(t).toLocaleString("en-IN") : String(v); };
+
+/** One live group card (like the seller's own dashboard): stats + Restart / Stop / Refresh / Match history / Players / Copy ID / Refund request / Delete. */
+function GroupPanel({ g, onRemoved }: { g: Group; onRemoved: () => void }) {
   const [v, setV] = useState<View | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");
+  const [list, setList] = useState<{ kind: "history" | "players"; rows: Row[] | null; error?: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [refundAsked, setRefundAsked] = useState(false);
 
   const load = useCallback(async (force = false) => {
+    if (g.ended) return;
     try {
       const j = await (await fetch(`/api/guild/group?ref=${encodeURIComponent(g.ref)}${force ? "&force=1" : ""}`, { cache: "no-store" })).json();
       if (j?.success) { setV(j.group); setErr(""); } else setErr(j?.error || "Could not load.");
     } catch { setErr("Network problem."); }
-  }, [g.ref]);
+  }, [g.ref, g.ended]);
 
   useEffect(() => {
     load();
@@ -39,27 +47,48 @@ function GroupPanel({ g }: { g: Group }) {
     return () => clearInterval(t);
   }, [load]);
 
-  async function act(action: "restart" | "stop") {
+  async function act(action: "restart" | "stop" | "refresh" | "delete" | "refund") {
     if (action === "stop" && !window.confirm("Stop this group? The bots will leave your guild.")) return;
+    if (action === "delete" && !window.confirm("Delete this group from your list? It is stopped first. This cannot be undone.")) return;
+    if (action === "refund" && !window.confirm("Send a refund request for this group to the admin?")) return;
     setBusy(action); setNote("");
     try {
       const { ok, j } = await post("/api/guild/group", { ref: g.ref, action });
-      setNote(ok ? (action === "restart" ? "Restart sent." : "Stop sent.") : j.error || "Action failed.");
-      if (ok) setTimeout(() => load(true), 1500);
+      if (ok && action === "delete") { onRemoved(); return; }
+      if (ok && action === "refund") setRefundAsked(true);
+      setNote(ok ? (j.message || (action === "restart" ? "Restart sent." : action === "stop" ? "Stop sent." : "Refreshed.")) : j.error || "Action failed.");
+      if (ok && action !== "refund") setTimeout(() => load(true), 1500);
     } catch { setNote("Network problem."); }
     setBusy("");
   }
 
-  const status = v?.status ?? g.status;
+  async function show(kind: "history" | "players") {
+    if (list?.kind === kind) { setList(null); return; }
+    setList({ kind, rows: null });
+    try {
+      const j = await (await fetch(`/api/guild/group?ref=${encodeURIComponent(g.ref)}&view=${kind}`, { cache: "no-store" })).json();
+      setList({ kind, rows: j?.success ? j.rows : [], error: j?.success ? undefined : j?.error || "Could not load." });
+    } catch { setList({ kind, rows: [], error: "Network problem." }); }
+  }
+
+  async function copyId() {
+    try { await navigator.clipboard.writeText(v?.groupId || g.ref); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch {}
+  }
+
+  const status = g.ended ? "ended" : v?.status ?? g.status;
   const running = isRunning(status);
-  const stat = "flex items-center gap-1.5 text-xs text-slate-300";
+  const name = v?.name || g.name || null;
+  const stat = "min-w-0";
+  const lab = "flex items-center gap-1.5 text-[11px] text-slate-500";
+  const val = "mt-0.5 break-words text-sm font-extrabold text-white";
+  const btn = "flex min-h-10 items-center justify-center gap-1.5 rounded-xl border text-xs font-bold disabled:opacity-40 cursor-pointer";
 
   return (
     <div className="space-y-3 rounded-2xl border border-amber-400/20 bg-[#0e0c07] p-3.5">
       <div className="flex items-center gap-3 rounded-xl border border-amber-400/20 bg-black/30 p-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-amber-400/40 bg-amber-400/10 text-sm font-extrabold text-amber-200">{v?.level != null ? `LV.${v.level}` : <Crown className="h-5 w-5" />}</div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-extrabold text-white">{v?.name || `Guild ${g.clan}`}</p>
+          <p className="truncate text-lg font-extrabold text-white">{name || `Guild ${g.clan}`}</p>
           <p className="truncate text-[11px] text-slate-400">ID: {g.clan} · {g.regionName}{v?.bots != null ? ` · ${v.bots} BOTS` : ""}</p>
         </div>
       </div>
@@ -69,31 +98,56 @@ function GroupPanel({ g }: { g: Group }) {
         <div><p className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-300/80"><Crown className="h-3 w-3" />Total glory</p><p className="text-lg font-extrabold leading-tight text-white">{fmt(v?.totalGlory ?? null)}</p></div>
       </div>
 
-      <div className="space-y-2.5 rounded-xl border border-white/10 bg-black/30 p-3">
+      <div className="space-y-3 rounded-xl border border-white/10 bg-black/30 p-3">
         <div className="flex items-center justify-between gap-2">
           <p className="flex items-center gap-1.5 truncate text-xs text-slate-400"><ShieldCheck className="h-4 w-4 text-amber-300" />ID: <span className="text-slate-200">{String(v?.groupId ?? g.ref).slice(0, 14)}</span></p>
-          <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase ${running ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}><span className={`h-1.5 w-1.5 rounded-full ${running ? "bg-emerald-400" : "bg-amber-400"}`} />{g.refunded ? "refunded" : status || "starting"}</span>
+          <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase ${running ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : g.ended || g.refunded ? "border-rose-500/30 bg-rose-500/10 text-rose-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}><span className={`h-1.5 w-1.5 rounded-full ${running ? "bg-emerald-400" : g.ended || g.refunded ? "bg-rose-400" : "bg-amber-400"}`} />{g.refunded ? "refunded" : status || "starting"}</span>
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-          <span className={stat}><Users className="h-3.5 w-3.5 text-slate-500" />Clan {g.clan}</span>
-          <span className={stat}><MapPin className="h-3.5 w-3.5 text-slate-500" />{g.regionName}</span>
-          {v?.bots != null && <span className={stat}>🤖 {v.bots} bots</span>}
-          {v?.uptime && <span className={stat}><Clock className="h-3.5 w-3.5 text-slate-500" />Uptime {v.uptime}</span>}
-          {v?.groupGlory != null && <span className={stat}><Crown className="h-3.5 w-3.5 text-amber-300" />Glory +{fmt(v.groupGlory)}</span>}
-        </div>
-        {v?.goalPercent != null && (
+
+        {g.ended ? (
+          <p className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs text-rose-300">This group is no longer active on the service. If you were charged and it never started, use Request Refund.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <div className={stat}><p className={lab}><ShieldCheck className="h-3.5 w-3.5" />Accounts</p><p className={val}>{v?.bots ?? "–"}</p></div>
+            <div className={stat}><p className={lab}><Clock className="h-3.5 w-3.5" />Uptime</p><p className={val}>{v?.uptime ?? "–"}</p></div>
+            <div className={stat}><p className={lab}><History className="h-3.5 w-3.5" />Last match</p><p className={val}>{v?.lastMatch ? niceVal(v.lastMatch) : "–"}</p></div>
+            <div className={stat}><p className={lab}><Users className="h-3.5 w-3.5" />Clan ID</p><p className={val}>{g.clan}</p></div>
+            <div className={stat}><p className={lab}><Crown className="h-3.5 w-3.5" />Weekly glory</p><p className={val}>{fmt(v?.weeklyGlory ?? v?.groupGlory ?? null)}</p></div>
+          </div>
+        )}
+        {v?.goalPercent != null && !g.ended && (
           <div>
             <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500"><span>8h goal</span><span>{Math.round(v.goalPercent)}%</span></div>
             <div className="h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-amber-400 transition-all duration-700" style={{ width: `${v.goalPercent}%` }} /></div>
           </div>
         )}
-        {err && !v && <p className="text-xs text-slate-500">{err}</p>}
+        {err && !v && !g.ended && <p className="text-xs text-slate-500">{err}</p>}
         {note && <p className="text-xs text-amber-300">{note}</p>}
-        <div className="grid grid-cols-3 gap-2">
-          <button onClick={() => act("restart")} disabled={!!busy || g.refunded} className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ffb800] text-xs font-extrabold text-[#1a1305] disabled:opacity-50 cursor-pointer">{busy === "restart" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}Restart</button>
-          <button onClick={() => act("stop")} disabled={!!busy || g.refunded} className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-white/15 text-xs font-bold text-white disabled:opacity-50 cursor-pointer">{busy === "stop" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5" />}Stop</button>
-          <button onClick={() => load(true)} className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-white/15 text-xs font-bold text-white cursor-pointer"><RefreshCw className="h-4 w-4" />Refresh</button>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => act("restart")} disabled={!!busy || g.refunded || g.ended} className={`${btn} border-white/10 bg-white/[0.04] text-slate-200`}>{busy === "restart" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}Restart</button>
+          <button onClick={() => act("stop")} disabled={!!busy || g.refunded || g.ended} className={`${btn} border-rose-500/30 bg-rose-500/10 text-rose-300`}>{busy === "stop" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5" />}Stop</button>
+          <button onClick={() => { act("refresh"); }} disabled={!!busy || g.ended} className={`${btn} border-transparent bg-gradient-to-r from-[#f1d9a0] to-[#d4a94c] text-[#2b1d03]`}>{busy === "refresh" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Refresh</button>
+          <button onClick={() => show("history")} disabled={g.ended} className={`${btn} border-sky-500/30 bg-sky-500/10 text-sky-300`}><Clock className="h-4 w-4" />Match History</button>
+          <button onClick={copyId} className={`${btn} border-white/10 bg-white/[0.04] text-slate-200`}>{copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}{copied ? "Copied" : "Copy ID"}</button>
+          <button onClick={() => act("refund")} disabled={!!busy || refundAsked} className={`${btn} border-emerald-500/30 bg-emerald-500/10 text-emerald-300`}>{busy === "refund" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WalletIcon className="h-4 w-4" />}{refundAsked ? "Refund requested" : "Request Refund"}</button>
+          <button onClick={() => act("delete")} disabled={!!busy || g.ended} className={`${btn} col-span-2 border-rose-500/30 bg-rose-500/10 text-rose-300`}>{busy === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Delete Group</button>
+          <button onClick={() => show("players")} disabled={g.ended} className={`${btn} col-span-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-300`}><Users className="h-4 w-4" />Players Info</button>
         </div>
+
+        {list && (
+          <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-xl border border-white/10 bg-black/40 p-2.5">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300/80">{list.kind === "history" ? "Match history" : "Players"}</p>
+            {list.rows === null ? <p className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading…</p>
+              : list.error ? <p className="text-xs text-rose-300">{list.error}</p>
+              : list.rows.length === 0 ? <p className="text-xs text-slate-500">Nothing to show yet.</p>
+              : list.rows.map((r, i) => (
+                <div key={i} className="flex flex-wrap gap-x-3 gap-y-0.5 rounded-lg bg-white/[0.03] px-2.5 py-1.5 text-xs">
+                  {Object.entries(r).map(([k, val2]) => <span key={k} className="text-slate-300"><span className="text-slate-500">{nice(k)}:</span> {niceVal(val2)}</span>)}
+                </div>
+              ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -309,7 +363,7 @@ export function GuildGloryCard({ product }: { product: Product }) {
         {groups.length > 0 && (
           <section className="space-y-3">
             <p className={step}>Your groups</p>
-            {groups.slice(0, 3).map((g) => <GroupPanel key={g.ref + g.at} g={g} />)}
+            {groups.slice(0, 3).map((g) => <GroupPanel key={g.ref + g.at} g={g} onRemoved={loadMe} />)}
           </section>
         )}
       </div>

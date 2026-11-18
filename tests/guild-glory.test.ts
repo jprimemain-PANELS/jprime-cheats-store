@@ -14,7 +14,8 @@ import { POST as launch } from "@/app/api/guild/launch/route";
 import { GET as groupGet, POST as groupPost } from "@/app/api/guild/group/route";
 import { GET as me } from "@/app/api/guild/me/route";
 import { GET as publicCatalog } from "@/app/api/catalog/route";
-import { creditsOfPlan, isGuildId, isTokenCode, makeTokenCode, normalizeGroup } from "@/lib/guild-glory";
+import { bindGroups, creditsOfPlan, flattenRows, isGuildId, isTokenCode, makeTokenCode, normalizeGroup } from "@/lib/guild-glory";
+import { readSetting, writeSetting } from "@/lib/tenant-db";
 
 const product = (kind: string) => ({
   tenant_id: OWNER_TENANT_ID, product_id: "gg", name: "Guild Glory Booster",
@@ -52,6 +53,9 @@ beforeEach(() => {
     if (u.endsWith("/groups/G-1")) return json({ ok: true, data: { group_id: "G-1", clan_id: "123456789", region: "in", status: "running", bots: 4, uptime_seconds: 5400, secret_internal: "x" } });
     if (u.endsWith("/groups/G-1/clan")) return json({ ok: true, data: { clan_name: "DHOLAKPUR", level: 7, members: "42/55", captain: "1630862612", total_glory: 12345 } });
     if (u.endsWith("/groups/G-1/glory")) return json({ ok: true, data: { glory: 80, goal_percent: 40 } });
+    if (u.endsWith("/groups/G-1/history")) return json({ ok: true, data: [{ result: "win", glory: 12, api_key: "SECRET", nested: { a: 1 } }] });
+    if (u.endsWith("/groups/G-1/players")) return json({ ok: true, data: { players: [{ uid: "111", name: "Bot1", token: "T" }] } });
+    if (u.endsWith("/groups/G-1") && init?.method === "DELETE") return json({ ok: true, data: {} });
     if (u.endsWith("/groups/G-1/actions") && init?.method === "POST") return json({ ok: true, data: {} });
     return json({ ok: false }, 404);
   }) as any);
@@ -203,10 +207,61 @@ describe("live group panel", () => {
     expect((await post(groupPost, "/api/guild/group", { ref: "G-1", action: "restart" })).status).toBe(200);
     const c = fetchSpy.mock.calls.find((x: any) => String(x[0]).endsWith("/groups/G-1/actions")) as any;
     expect(JSON.parse(c[1].body)).toEqual({ action: "restart" });
-    expect((await post(groupPost, "/api/guild/group", { ref: "G-1", action: "delete" })).status).toBe(400);
+    expect((await post(groupPost, "/api/guild/group", { ref: "G-1", action: "explode" })).status).toBe(400);
   });
   it("closed to co-admin stores", async () => {
     loginAs("rajB", TENANT_B, "raj", HOST_B);
     expect((await groupGet(req("/api/guild/group?ref=G-1", { host: HOST_B }))).status).toBe(403);
+  });
+});
+
+describe("stable group pairing + extra options", () => {
+  const saved = async () => ((await readSetting(OWNER_TENANT_ID, "guildgroups:raj")).data?.value ?? []) as any[];
+  beforeEach(async () => { tables.wallets.push({ id: "c1", tenant_id: OWNER_TENANT_ID, username: "gg:raj", balance: 5 }); await doLaunch(); });
+
+  it("name is read from the clan reply, never from a generic name in the group reply", () => {
+    expect(normalizeGroup("G", [{ data: { name: "jp-internal-label" } }, { data: { clan_name: "DHOLAKPUR" } }]).name).toBe("DHOLAKPUR");
+  });
+  it("remembers the seller group id and the guild name; the name survives a failed lookup", async () => {
+    await getG(); await getG();
+    expect((await saved())[0]).toMatchObject({ gid: "G-1", name: "DHOLAKPUR" });
+    fetchSpy.mockImplementation((async (url: any) => (String(url).endsWith("/regions") ? json({ data: [] }) : json({ ok: false }, 500))) as any);
+    const j = await (await me(req("/api/guild/me", { host: HOST_A }))).json();
+    expect(j.groups[0]).toMatchObject({ name: "DHOLAKPUR", ended: false });
+    expect(j.groups[0].status).not.toBe("ended");
+  });
+  function getG(ref = "G-1") { return groupGet(req(`/api/guild/group?ref=${ref}`, { host: HOST_A })); }
+
+  it("two groups for the same Guild ID are paired by creation time and each keeps its own id", () => {
+    const t0 = Date.parse("2026-11-18T04:00:00Z"), t1 = Date.parse("2026-11-18T04:25:00Z");
+    const recs: any[] = [{ ref: "jp-old", clan: "3048506227", region: "in", regionName: "India", at: new Date(t0).toISOString() }, { ref: "jp-new", clan: "3048506227", region: "in", regionName: "India", at: new Date(t1).toISOString() }];
+    bindGroups(recs, [{ group_id: "S-NEW", clan_id: "3048506227", region: "IN", status: "running", created: t1 + 20_000 }]);
+    expect(recs[0].gid).toBeUndefined(); expect(recs[1].gid).toBe("S-NEW");
+    expect(bindGroups(recs, [{ group_id: "S-NEW", clan_id: "3048506227", region: "IN", status: "running", created: t1 }])).toBe(false);
+  });
+  it("a group the service no longer lists is shown as ended after 10 minutes, with no controls reachable", async () => {
+    const list = await saved(); list[0] = { ...list[0], ref: "jp-gone", gid: undefined, at: new Date(Date.now() - 20 * 60_000).toISOString(), clan: "555555555" };
+    await writeSetting(OWNER_TENANT_ID, "guildgroups:raj", list);
+    const j = await (await me(req("/api/guild/me", { host: HOST_A }))).json();
+    expect(j.groups[0]).toMatchObject({ status: "ended", ended: true });
+    expect((await getG("jp-gone")).status).toBe(409);
+  });
+  it("match history and players are reduced to plain rows (no secrets, no nested objects)", async () => {
+    const h = await (await groupGet(req("/api/guild/group?ref=G-1&view=history", { host: HOST_A }))).json();
+    expect(h.rows).toEqual([{ result: "win", glory: 12 }]);
+    const p = await (await groupGet(req("/api/guild/group?ref=G-1&view=players", { host: HOST_A }))).json();
+    expect(p.rows).toEqual([{ uid: "111", name: "Bot1" }]);
+    expect(flattenRows({ data: "x" })).toEqual([]);
+  });
+  it("refresh maps to the seller's refresh-all; delete removes it from the list; refund is a one-time admin request", async () => {
+    await post(groupPost, "/api/guild/group", { ref: "G-1", action: "refresh" });
+    const c = fetchSpy.mock.calls.find((x: any) => String(x[0]).endsWith("/groups/G-1/actions")) as any;
+    expect(JSON.parse(c[1].body)).toEqual({ action: "refresh-all" });
+    const a = await (await post(groupPost, "/api/guild/group", { ref: "G-1", action: "refund" })).json();
+    expect(a.message).toMatch(/sent/i); expect(bal("gg:raj")).toBe(4);
+    expect((await (await post(groupPost, "/api/guild/group", { ref: "G-1", action: "refund" })).json()).message).toMatch(/already/i);
+    expect(tables.audit_log.filter((r: any) => r.action === "guild.refund_requested")).toHaveLength(1);
+    const d = await (await post(groupPost, "/api/guild/group", { ref: "G-1", action: "delete" })).json();
+    expect(d.removed).toBe(true); expect(await saved()).toHaveLength(0);
   });
 });

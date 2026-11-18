@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readSetting, writeSetting } from "@/lib/tenant-db";
 import { requireUser } from "@/lib/auth";
 import { creditWallet, getBalance } from "@/lib/wallet";
-import { GROUP_CREDITS, creditsKey, guildApiConfigured, listRegions, listSellerGroups } from "@/lib/guild-glory";
-import { NO_STORE, fail, guildGate } from "../_shared";
+import { GROUP_CREDITS, creditsKey, guildApiConfigured, listRegions } from "@/lib/guild-glory";
+import { NO_STORE, fail, guildGate, loadGroups } from "../_shared";
 
 export const dynamic = "force-dynamic";
 const DEAD = new Set(["failed", "refunded", "cancelled", "canceled", "error", "expired", "rejected"]);
@@ -17,30 +16,33 @@ export async function GET(request: NextRequest) {
   const blocked = guildGate(auth.tenant, tenantId);
   if (blocked) return blocked;
   try {
-    const cur = await readSetting(tenantId, `guildgroups:${username}`);
-    let list: any[] = Array.isArray(cur.data?.value) ? cur.data.value : [];
-    const [regions, seller] = guildApiConfigured() ? await Promise.all([listRegions(), list.length ? listSellerGroups() : Promise.resolve([])]) : [{ ok: false as const, error: "not connected" }, []];
+    const { recs, seller, save } = await loadGroups(tenantId, username, guildApiConfigured());
+    const regions = guildApiConfigured() ? await listRegions() : { ok: false as const, error: "not connected" };
 
     let changed = false;
-    list = list.map((g) => {
-      const s = seller.find((x) => x.group_id === g.ref) ?? seller.find((x) => x.clan_id === g.clan && x.region === g.region);
-      return s ? { ...g, status: s.status } : g;
+    const views = recs.map((g) => {
+      const s = (g.gid ? seller.find((x) => x.group_id === g.gid) : undefined) as any;
+      return { g, status: s?.status as string | undefined, gone: !s && !!g.gid && seller.length > 0 };
     });
-    for (const g of list) {
-      if (!g.refunded && DEAD.has(String(g.status ?? "").toLowerCase())) {
-        g.refunded = true; changed = true;
+    for (const v of views) {
+      if (!v.g.refunded && v.status && DEAD.has(v.status.toLowerCase())) {
+        v.g.refunded = true; changed = true;
         const back = await creditWallet(tenantId, creditsKey(username), GROUP_CREDITS);
-        if (!back.ok) { g.refunded = false; changed = changed && list.some((x) => x.refunded); }
+        if (!back.ok) { v.g.refunded = false; changed = recs.some((x) => x.refunded); }
       }
     }
-    if (changed) await writeSetting(tenantId, `guildgroups:${username}`, list.map(({ status, ...rest }) => ({ ...rest, ...(rest.refunded ? { status } : {}) })));
+    if (changed) await save();
     const credits = (await getBalance(tenantId, creditsKey(username))) ?? 0;
     return NextResponse.json({
       success: true,
       credits,
       connected: guildApiConfigured(),
       regions: regions.ok ? regions.regions : [],
-      groups: list.slice(0, 10).map((g) => ({ ref: g.ref, clan: g.clan, regionName: g.regionName, at: g.at, status: g.status ?? "starting", refunded: !!g.refunded })),
+      groups: views.slice(0, 10).map(({ g, status, gone }) => {
+        // not matched at all after 10 minutes (or removed on the service) = no longer active
+        const stale = !g.gid && Date.now() - (Date.parse(g.at) || 0) > 10 * 60_000 && guildApiConfigured();
+        return { ref: g.ref, clan: g.clan, regionName: g.regionName, at: g.at, name: g.name ?? null, status: status ?? (gone || stale ? "ended" : "starting"), refunded: !!g.refunded, ended: !g.refunded && (gone || stale) };
+      }),
     }, { headers: NO_STORE });
   } catch {
     return fail("Could not load Guild Glory.", 500);
