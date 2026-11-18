@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, CheckCircle2, ChevronDown, Coins, Copy, Gift, Globe, Loader2, Rocket, Sparkles, Users, Wallet } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, Clock, Coins, Copy, Crown, Gift, Globe, Loader2, MapPin, Power, RefreshCw, Rocket, ShieldCheck, Sparkles, Square, Users, Wallet } from "lucide-react";
 import type { Product } from "@/lib/products";
 
 const WALLET_BALANCE_EVENT = "wallet-balance-updated";
@@ -14,6 +14,92 @@ async function post(url: string, body: unknown) {
   const j = await res.json().catch(() => ({}));
   return { ok: res.ok && !!j.success, j };
 }
+
+type View = { groupId: string; name: string | null; level: number | null; clanId: string | null; region: string | null; status: string | null; members: number | null; maxMembers: number | null; captain: string | null; totalGlory: number | null; groupGlory: number | null; bots: number | null; uptime: string | null; goalPercent: number | null };
+const fmt = (n: number | null) => (n == null ? "–" : n.toLocaleString("en-IN"));
+const isRunning = (s?: string | null) => /run|active|online|start/i.test(String(s ?? ""));
+
+/** One live group card (like the seller's own dashboard): name, members, captain, glory, bots, uptime, goal + Restart / Stop. */
+function GroupPanel({ g }: { g: Group }) {
+  const [v, setV] = useState<View | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  const [note, setNote] = useState("");
+
+  const load = useCallback(async (force = false) => {
+    try {
+      const j = await (await fetch(`/api/guild/group?ref=${encodeURIComponent(g.ref)}${force ? "&force=1" : ""}`, { cache: "no-store" })).json();
+      if (j?.success) { setV(j.group); setErr(""); } else setErr(j?.error || "Could not load.");
+    } catch { setErr("Network problem."); }
+  }, [g.ref]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 20000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function act(action: "restart" | "stop") {
+    if (action === "stop" && !window.confirm("Stop this group? The bots will leave your guild.")) return;
+    setBusy(action); setNote("");
+    try {
+      const { ok, j } = await post("/api/guild/group", { ref: g.ref, action });
+      setNote(ok ? (action === "restart" ? "Restart sent." : "Stop sent.") : j.error || "Action failed.");
+      if (ok) setTimeout(() => load(true), 1500);
+    } catch { setNote("Network problem."); }
+    setBusy("");
+  }
+
+  const status = v?.status ?? g.status;
+  const running = isRunning(status);
+  const stat = "flex items-center gap-1.5 text-xs text-slate-300";
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-amber-400/20 bg-[#0e0c07] p-3.5">
+      <div className="flex items-center gap-3 rounded-xl border border-amber-400/20 bg-black/30 p-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-amber-400/40 bg-amber-400/10 text-sm font-extrabold text-amber-200">{v?.level != null ? `LV.${v.level}` : <Crown className="h-5 w-5" />}</div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-extrabold text-white">{v?.name || `Guild ${g.clan}`}</p>
+          <p className="truncate text-[11px] text-slate-400">ID: {g.clan} · {g.regionName}{v?.bots != null ? ` · ${v.bots} BOTS` : ""}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div><p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Members</p><p className="text-sm font-extrabold text-white">{v?.members != null ? `${v.members}${v.maxMembers != null ? `/${v.maxMembers}` : ""}` : "–"}</p></div>
+        <div><p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Captain</p><p className="truncate text-sm font-extrabold text-amber-300">{v?.captain ?? "–"}</p></div>
+        <div><p className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-300/80"><Crown className="h-3 w-3" />Total glory</p><p className="text-lg font-extrabold leading-tight text-white">{fmt(v?.totalGlory ?? null)}</p></div>
+      </div>
+
+      <div className="space-y-2.5 rounded-xl border border-white/10 bg-black/30 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 truncate text-xs text-slate-400"><ShieldCheck className="h-4 w-4 text-amber-300" />ID: <span className="text-slate-200">{String(v?.groupId ?? g.ref).slice(0, 14)}</span></p>
+          <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase ${running ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}><span className={`h-1.5 w-1.5 rounded-full ${running ? "bg-emerald-400" : "bg-amber-400"}`} />{g.refunded ? "refunded" : status || "starting"}</span>
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          <span className={stat}><Users className="h-3.5 w-3.5 text-slate-500" />Clan {g.clan}</span>
+          <span className={stat}><MapPin className="h-3.5 w-3.5 text-slate-500" />{g.regionName}</span>
+          {v?.bots != null && <span className={stat}>🤖 {v.bots} bots</span>}
+          {v?.uptime && <span className={stat}><Clock className="h-3.5 w-3.5 text-slate-500" />Uptime {v.uptime}</span>}
+          {v?.groupGlory != null && <span className={stat}><Crown className="h-3.5 w-3.5 text-amber-300" />Glory +{fmt(v.groupGlory)}</span>}
+        </div>
+        {v?.goalPercent != null && (
+          <div>
+            <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500"><span>8h goal</span><span>{Math.round(v.goalPercent)}%</span></div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-amber-400 transition-all duration-700" style={{ width: `${v.goalPercent}%` }} /></div>
+          </div>
+        )}
+        {err && !v && <p className="text-xs text-slate-500">{err}</p>}
+        {note && <p className="text-xs text-amber-300">{note}</p>}
+        <div className="grid grid-cols-3 gap-2">
+          <button onClick={() => act("restart")} disabled={!!busy || g.refunded} className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ffb800] text-xs font-extrabold text-[#1a1305] disabled:opacity-50 cursor-pointer">{busy === "restart" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}Restart</button>
+          <button onClick={() => act("stop")} disabled={!!busy || g.refunded} className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-white/15 text-xs font-bold text-white disabled:opacity-50 cursor-pointer">{busy === "stop" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5" />}Stop</button>
+          <button onClick={() => load(true)} className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-white/15 text-xs font-bold text-white cursor-pointer"><RefreshCw className="h-4 w-4" />Refresh</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const LAUNCH_STEPS = ["Checking your region…", "Guild found ✓", "Bot players are being added to your guild…", "Almost ready to launch…"];
 
 /**
  * Guild Glory: 1) buy tokens with the wallet  2) redeem a token into guild credits (shown top-right)
@@ -38,6 +124,7 @@ export function GuildGloryCard({ product }: { product: Product }) {
   const [region, setRegion] = useState("");
   const [guildId, setGuildId] = useState("");
   const [launching, setLaunching] = useState(false);
+  const [stage, setStage] = useState(0);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string; where: "buy" | "redeem" | "launch" } | null>(null);
 
   const loadMe = useCallback(async () => {
@@ -103,12 +190,14 @@ export function GuildGloryCard({ product }: { product: Product }) {
     if (!loggedIn) return say("launch", "err", "Please log in first.");
     if (!region) return say("launch", "err", "Choose your account region.");
     if (!/^[0-9]{5,20}$/.test(guildId.trim())) return say("launch", "err", "Enter the correct Guild / Clan ID (numbers only).");
-    setLaunching(true);
+    setLaunching(true); setStage(0);
+    const timer = setInterval(() => setStage((n) => Math.min(n + 1, LAUNCH_STEPS.length - 1)), 2200);
     try {
       const { ok, j } = await post("/api/guild/launch", { product_name: product.name, region, guild_id: guildId.trim() });
       if (ok) { setCredits(Number(j.credits) || 0); say("launch", "ok", `${j.message} Order ID: ${j.ref}`); setGuildId(""); loadMe(); }
       else { if (Number.isFinite(Number(j.credits))) setCredits(Number(j.credits)); say("launch", "err", j.error || "Could not start the bot."); }
     } catch { say("launch", "err", "Network problem. Please try again."); }
+    clearInterval(timer);
     setLaunching(false);
   }
 
@@ -200,21 +289,27 @@ export function GuildGloryCard({ product }: { product: Product }) {
             <input value={guildId} onChange={(e) => setGuildId(e.target.value.replace(/\D/g, "").slice(0, 20))} inputMode="numeric" placeholder="e.g. 123456789" className={field} />
           </label>
           {note("launch")}
+          {launching && (
+            <div className="space-y-2 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3" role="status" aria-live="polite">
+              {LAUNCH_STEPS.map((t, i) => (
+                <div key={t} className={`flex items-center gap-2.5 text-sm transition-opacity duration-500 ${i <= stage ? "opacity-100" : "opacity-30"}`}>
+                  {i < stage ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : i === stage ? <Loader2 className="h-4 w-4 animate-spin text-amber-300" /> : <span className="h-4 w-4 rounded-full border border-slate-600" />}
+                  <span className={i === stage ? "font-bold text-amber-200" : "text-slate-300"}>{t}</span>
+                </div>
+              ))}
+              <div className="h-1 overflow-hidden rounded-full bg-slate-800"><div className="h-full w-1/3 animate-pulse rounded-full bg-amber-400" style={{ marginLeft: `${Math.min(stage, 3) * 22}%`, transition: "margin 700ms" }} /></div>
+            </div>
+          )}
           <button onClick={launch} disabled={launching || maintenance} className="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-[#ffb800] text-base font-extrabold text-[#1a1305] shadow-[0_8px_30px_-8px_rgba(255,184,0,0.6)] hover:opacity-90 disabled:opacity-60 cursor-pointer">
-            {launching ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}{launching ? "Starting..." : "Launch Group  →  1 credit"}
+            {launching ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}{launching ? "Launching…" : "Launch Group  →  1 credit"}
           </button>
           <p className="text-center text-[11px] text-slate-500">If the bot cannot be started, your credit is returned automatically.</p>
         </section>
 
         {groups.length > 0 && (
-          <section className="space-y-2">
-            <p className={step}>Your recent groups</p>
-            {groups.map((g) => (
-              <div key={g.ref + g.at} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
-                <span className="min-w-0 truncate text-white"><b>{g.clan}</b> <span className="text-slate-400">· {g.regionName}</span></span>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${/run|start|active|ok/i.test(g.status) ? "bg-emerald-500/15 text-emerald-300" : g.refunded ? "bg-rose-500/15 text-rose-300" : "bg-amber-500/15 text-amber-300"}`}>{g.refunded ? "refunded" : g.status}</span>
-              </div>
-            ))}
+          <section className="space-y-3">
+            <p className={step}>Your groups</p>
+            {groups.slice(0, 3).map((g) => <GroupPanel key={g.ref + g.at} g={g} />)}
           </section>
         )}
       </div>

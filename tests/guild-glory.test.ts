@@ -11,9 +11,10 @@ import { OWNER_TENANT_ID, clearTenantCache } from "@/lib/tenant";
 import { POST as buy } from "@/app/api/guild/buy/route";
 import { POST as redeem } from "@/app/api/guild/redeem/route";
 import { POST as launch } from "@/app/api/guild/launch/route";
+import { GET as groupGet, POST as groupPost } from "@/app/api/guild/group/route";
 import { GET as me } from "@/app/api/guild/me/route";
 import { GET as publicCatalog } from "@/app/api/catalog/route";
-import { creditsOfPlan, isGuildId, isTokenCode, makeTokenCode } from "@/lib/guild-glory";
+import { creditsOfPlan, isGuildId, isTokenCode, makeTokenCode, normalizeGroup } from "@/lib/guild-glory";
 
 const product = (kind: string) => ({
   tenant_id: OWNER_TENANT_ID, product_id: "gg", name: "Guild Glory Booster",
@@ -48,6 +49,10 @@ beforeEach(() => {
       { id: "sg", name: "Singapore", code: "SG", available: false, maintenance: false }] });
     if (u.endsWith("/api/v1/groups") && init?.method === "POST") return groupsReply();
     if (u.endsWith("/api/v1/groups")) return json({ ok: true, data: [{ group_id: "G-1", clan_id: "123456789", region: "in", status: "running" }] });
+    if (u.endsWith("/groups/G-1")) return json({ ok: true, data: { group_id: "G-1", clan_id: "123456789", region: "in", status: "running", bots: 4, uptime_seconds: 5400, secret_internal: "x" } });
+    if (u.endsWith("/groups/G-1/clan")) return json({ ok: true, data: { clan_name: "DHOLAKPUR", level: 7, members: "42/55", captain: "1630862612", total_glory: 12345 } });
+    if (u.endsWith("/groups/G-1/glory")) return json({ ok: true, data: { glory: 80, goal_percent: 40 } });
+    if (u.endsWith("/groups/G-1/actions") && init?.method === "POST") return json({ ok: true, data: {} });
     return json({ ok: false }, 404);
   }) as any);
   loginAs("rajA", OWNER_TENANT_ID, "raj", HOST_A);
@@ -172,5 +177,36 @@ describe("me + catalog", () => {
     const j = await (await publicCatalog()).json();
     expect(j.products.find((x: any) => x.name === "Guild Glory Booster")).toMatchObject({ kind: "guild", category: "others", status: "MAINTENANCE" });
     expect(JSON.stringify(j)).not.toContain("supplier");
+  });
+});
+
+
+describe("live group panel", () => {
+  const getG = (ref = "G-1", q = "") => groupGet(req(`/api/guild/group?ref=${ref}${q}`, { host: HOST_A }));
+  beforeEach(async () => { tables.wallets.push({ id: "c1", tenant_id: OWNER_TENANT_ID, username: "gg:raj", balance: 2 }); await doLaunch(); });
+  it("normalizes the seller replies and hides unknown fields as null", () => {
+    expect(normalizeGroup("G", [{ data: { name: "A", level: "3" } }, null as any])).toMatchObject({ name: "A", level: 3, members: null, totalGlory: null, goalPercent: null });
+  });
+  it("shows name, members, captain, glory, bots, uptime and goal for the customer's own group", async () => {
+    const j = await (await getG()).json();
+    expect(j.group).toMatchObject({ groupId: "G-1", name: "DHOLAKPUR", level: 7, members: 42, maxMembers: 55, captain: "1630862612", totalGlory: 12345, groupGlory: 80, bots: 4, uptime: "1h 30m", goalPercent: 40 });
+    expect(JSON.stringify(j)).not.toContain("secret_internal"); expect(j.raw).toBeUndefined();
+  });
+  it("only the owner of the group can see it or control it", async () => {
+    expect((await getG("G-999")).status).toBe(404);
+    loginAs("ownerAdmin", OWNER_TENANT_ID, "boss", HOST_A);
+    expect((await getG()).status).toBe(404);
+    expect((await post(groupPost, "/api/guild/group", { ref: "G-1", action: "stop" })).status).toBe(404);
+    expect(fetchSpy.mock.calls.some((c: any) => String(c[0]).endsWith("/actions"))).toBe(false);
+  });
+  it("restart / stop go to the seller; other actions are refused", async () => {
+    expect((await post(groupPost, "/api/guild/group", { ref: "G-1", action: "restart" })).status).toBe(200);
+    const c = fetchSpy.mock.calls.find((x: any) => String(x[0]).endsWith("/groups/G-1/actions")) as any;
+    expect(JSON.parse(c[1].body)).toEqual({ action: "restart" });
+    expect((await post(groupPost, "/api/guild/group", { ref: "G-1", action: "delete" })).status).toBe(400);
+  });
+  it("closed to co-admin stores", async () => {
+    loginAs("rajB", TENANT_B, "raj", HOST_B);
+    expect((await groupGet(req("/api/guild/group?ref=G-1", { host: HOST_B }))).status).toBe(403);
   });
 });

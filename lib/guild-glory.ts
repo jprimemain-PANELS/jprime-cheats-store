@@ -88,3 +88,79 @@ export async function listSellerGroups(): Promise<{ group_id: string; clan_id: s
   const rows: any[] = r.ok && Array.isArray(r.json?.data) ? r.json.data : [];
   return rows.map((g) => ({ group_id: String(g.group_id ?? ""), clan_id: String(g.clan_id ?? ""), region: String(g.region ?? ""), status: String(g.status ?? "unknown") }));
 }
+
+/* ---------- live group panel (details / clan / glory / restart / stop) ---------- */
+const SAFE_ID = /^[A-Za-z0-9._-]{1,80}$/;
+export const isSafeGroupId = (v: unknown) => SAFE_ID.test(String(v ?? ""));
+
+/** Finds the first value stored under any of `keys` (case-insensitive) in nested JSON, up to 4 levels deep. */
+export function deepPick(obj: any, keys: string[], depth = 0): any {
+  if (obj == null || typeof obj !== "object" || depth > 4) return undefined;
+  const want = keys.map((k) => k.toLowerCase());
+  if (!Array.isArray(obj)) for (const k of Object.keys(obj)) if (want.includes(k.toLowerCase()) && obj[k] != null && obj[k] !== "") return obj[k];
+  for (const v of Object.values(obj)) { const r = deepPick(v, keys, depth + 1); if (r !== undefined) return r; }
+  return undefined;
+}
+const num = (v: any): number | null => { if (Array.isArray(v)) return v.length; const n = Number(typeof v === "string" ? v.replace(/[, ]/g, "") : v); return Number.isFinite(n) ? n : null; };
+const txt = (v: any, max = 60): string | null => (v == null || typeof v === "object" ? null : String(v).slice(0, max) || null);
+
+export type GroupView = {
+  groupId: string; name: string | null; level: number | null; clanId: string | null; region: string | null; status: string | null;
+  members: number | null; maxMembers: number | null; captain: string | null; totalGlory: number | null; groupGlory: number | null;
+  bots: number | null; uptime: string | null; goalPercent: number | null;
+};
+const fmtUptime = (v: any): string | null => {
+  if (v == null || typeof v === "object") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return txt(v, 20);
+  const s = Math.max(0, Math.round(n)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+};
+
+/** Turns the seller's group / clan / glory replies into one small, safe object. Unknown fields stay null (the UI hides them). */
+export function normalizeGroup(groupId: string, parts: any[]): GroupView {
+  const pick = (keys: string[]) => { for (const p of parts) { const r = deepPick(p, keys); if (r !== undefined) return r; } return undefined; };
+  let members = pick(["members", "member_count", "members_count", "current_members"]);
+  let maxMembers = pick(["max_members", "member_limit", "members_max", "capacity", "max_capacity"]);
+  if (typeof members === "string" && members.includes("/")) { const [a, b] = members.split("/"); members = a; if (maxMembers == null) maxMembers = b; }
+  if (members && typeof members === "object" && !Array.isArray(members)) members = deepPick(members, ["count", "current", "total"]);
+  const goal = num(pick(["goal_percent", "goal_progress", "eight_hour_goal", "goal_8h", "goal"]));
+  return {
+    groupId,
+    name: txt(pick(["clan_name", "guild_name", "name"])),
+    level: num(pick(["level", "clan_level", "guild_level"])),
+    clanId: txt(pick(["clan_id", "guild_id"]), 24),
+    region: txt(pick(["region", "region_code"]), 12),
+    status: txt(pick(["status", "state"]), 24),
+    members: num(members), maxMembers: num(maxMembers),
+    captain: txt(pick(["captain", "captain_id", "captain_uid", "leader", "leader_id"]), 24),
+    totalGlory: num(pick(["total_glory", "clan_glory", "glory_total", "glory_points"])),
+    groupGlory: num(pick(["group_glory", "gained_glory", "glory_gained", "glory"])),
+    bots: num(pick(["bots", "bot_count", "bots_count", "players", "player_count"])),
+    uptime: fmtUptime(pick(["uptime", "uptime_seconds", "uptime_text"])),
+    goalPercent: goal == null ? null : Math.max(0, Math.min(100, goal)),
+  };
+}
+
+const detailCache = new Map<string, { at: number; view: GroupView; raw: any[] }>();
+/** Live info for one group (cached 15 s so many customers cannot exhaust the seller's 60 requests / minute). */
+export async function getGroupInfo(groupId: string, force = false): Promise<{ ok: true; view: GroupView; raw: any[] } | { ok: false; error: string }> {
+  if (!isSafeGroupId(groupId)) return { ok: false, error: "Invalid group." };
+  const hit = detailCache.get(groupId);
+  if (!force && !process.env.VITEST && hit && Date.now() - hit.at < 15_000) return { ok: true, view: hit.view, raw: hit.raw };
+  const id = encodeURIComponent(groupId);
+  const [d, c, g] = await Promise.all([call("GET", `/api/v1/groups/${id}`), call("GET", `/api/v1/groups/${id}/clan`), call("GET", `/api/v1/groups/${id}/glory`)]);
+  if (!d.ok) return { ok: false, error: d.error || "Could not load the group." };
+  const raw = [d.json, c.ok ? c.json : null, g.ok ? g.json : null].filter(Boolean);
+  const view = normalizeGroup(groupId, raw);
+  if (detailCache.size > 500) detailCache.clear();
+  detailCache.set(groupId, { at: Date.now(), view, raw });
+  return { ok: true, view, raw };
+}
+
+export async function groupAction(groupId: string, action: "restart" | "stop"): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSafeGroupId(groupId)) return { ok: false, error: "Invalid group." };
+  const r = await call("POST", `/api/v1/groups/${encodeURIComponent(groupId)}/actions`, { action });
+  detailCache.delete(groupId);
+  return r.ok ? { ok: true } : { ok: false, error: r.error || "The action failed." };
+}
