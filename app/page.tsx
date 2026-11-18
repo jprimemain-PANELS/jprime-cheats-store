@@ -23,6 +23,8 @@ import { ProductCard } from "@/components/product-card";
 import { FloatingSupport } from "@/components/floating-support";
 import { Footer } from "@/components/footer";
 import { useCatalogProducts } from "@/lib/useCatalogProducts";
+import { cleanDesign } from "@/lib/store-designs";
+import { DesignedStore } from "@/components/designs/designed-store";
 
 const GRID_COLS: Record<number, string> = {
   2: "grid-cols-1 sm:grid-cols-2",
@@ -33,6 +35,7 @@ const GRID_COLS: Record<number, string> = {
 export default function Home() {
   const router = useRouter();
   const brand = useBrand();
+  const design = cleanDesign(brand.options.design);
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [userData, setUserData] = useState<any>(null);
@@ -155,7 +158,8 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#07040f] text-zinc-100 font-sans antialiased selection:bg-fuchsia-500 selection:text-white relative z-0">
-      {/* Ambient background glow */}
+      {/* Ambient background glow (classic design only) */}
+      {design === "classic" && (
       <div
         className="absolute inset-0 pointer-events-none -z-10 overflow-hidden"
         aria-hidden="true"
@@ -164,6 +168,7 @@ export default function Home() {
         <div className="jprime-glow-slow absolute top-[45%] right-[-8%] w-[420px] h-[420px] bg-fuchsia-500/[0.07] rounded-full blur-[110px]" />
         <div className="jprime-glow-slow absolute top-[75%] left-[-10%] w-[380px] h-[380px] bg-violet-500/[0.06] rounded-full blur-[110px]" />
       </div>
+      )}
 
       {/* Payment success modal */}
       {showSuccess && (
@@ -200,6 +205,23 @@ export default function Home() {
         </div>
       )}
 
+      {design !== "classic" ? (
+        <DesignedStore
+          design={design}
+          categoryIds={categoryIds}
+          active={activeCategory}
+          onCategory={setActiveCategory}
+          products={activeProducts}
+          loading={catalogLoading}
+          productsRef={productsRef}
+          onScroll={scrollToProducts}
+          onProfile={() => router.push("/profile")}
+          username={userData?.username ?? ""}
+          columns={brand.layout.columns}
+          renderProduct={(product, index) => (product.kind === "guild" ? <GuildGloryCard product={product} /> : <ProductCard product={product} index={index} />)}
+        />
+      ) : (
+        <>
       {/* Page content */}
       <div className="relative z-10 flex flex-col justify-between min-h-screen">
         <div>
@@ -317,6 +339,8 @@ export default function Home() {
         <span className="jprime-ping absolute inset-0 rounded-full bg-fuchsia-500/30" />
         <User className="h-4.5 w-4.5 sm:h-5 sm:w-5 relative" />
       </button>
+        </>
+      )}
 
       {/* Profile dialog */}
       {showProfile && (

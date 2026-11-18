@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import PlanPricing from "@/components/admin/PlanPricing";
+import { DESIGNS } from "@/lib/store-designs";
 import { AlertTriangle, Check, Loader2, Plus, RefreshCw, X } from "lucide-react";
 
 type Store = {
@@ -9,7 +10,7 @@ type Store = {
   telegram: string | null; createdAt: string; domains: { host: string; verified: boolean }[];
   customers: number; resellers: number; products: number; orders: number; walletTotal: number;
   lastPurchaseAt: string | null; paymentStatus: string; planExpiresAt?: string | null; payer?: string | null;
-  banned?: boolean; resellerLaunch?: boolean; launchMode?: "main" | "own";
+  banned?: boolean; resellerLaunch?: boolean; launchMode?: "main" | "own"; design?: string;
 };
 type App = {
   id: string; brandName: string; slug: string; telegram: string | null; inventoryMode: string;
@@ -34,6 +35,7 @@ export default function CoAdminManager() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [launchFor, setLaunchFor] = useState<Store | null>(null);
+  const [mainDesign, setMainDesign] = useState("classic");
   const [form, setForm] = useState({ brandName: "", slug: "", telegram: "", inventoryMode: "own_api", username: "", password: "", phone: "", email: "" });
 
   const load = useCallback(async () => {
@@ -42,7 +44,7 @@ export default function CoAdminManager() {
       const res = await fetch("/api/admin/tenants", { cache: "no-store" });
       const j = await res.json();
       if (!res.ok || !j.success) throw new Error(j.error || "Failed");
-      setStores(j.stores); setApps(j.applications); setRootDomain(j.rootDomain); if (j.domainInfo) setDInfo(j.domainInfo);
+      setStores(j.stores); setMainDesign(j.mainDesign || "classic"); setApps(j.applications); setRootDomain(j.rootDomain); if (j.domainInfo) setDInfo(j.domainInfo);
     } catch (e: any) {
       setMsg({ ok: false, text: e.message || "Could not load stores." });
     } finally { setLoading(false); }
@@ -86,6 +88,13 @@ export default function CoAdminManager() {
       </div>
 
       <PlanPricing title="Main website: subscription prices & free trial" help="This is what stores that pay on YOUR main website are charged, and how many days a new store gets free. Co-admins who use their own web set their own prices." />
+      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 flex flex-wrap items-center gap-3 text-sm text-slate-300">
+        <span className="font-semibold text-white">Main website design</span>
+        <select disabled={!!busy} value={mainDesign} onChange={(e) => act({ action: "set_design", id: "00000000-0000-0000-0000-000000000001", design: e.target.value }, "main-design")} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-white cursor-pointer">
+          {DESIGNS.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <span className="text-xs text-slate-500">{DESIGNS.find((d) => d.id === mainDesign)?.blurb} Customers see it after a minute.</span>
+      </div>
 
       {!loading && !rootDomain && (
         <div className="flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200">
@@ -161,6 +170,15 @@ export default function CoAdminManager() {
                           <button disabled={!!busy} onClick={() => { const r = window.prompt("Reason for reactivating (required):"); if (r && r.trim()) act({ action: "reactivate", id: s.id, reason: r }, s.id); }} className="px-3 py-1.5 rounded-lg border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs cursor-pointer disabled:opacity-50">Reactivate</button>
                         ) : null}
                       </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2">
+                      <label className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-200">Store design</span>
+                        <select disabled={!!busy} value={s.design || "classic"} onChange={(e) => act({ action: "set_design", id: s.id, design: e.target.value }, s.id)} className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white cursor-pointer">
+                          {DESIGNS.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                        <span className="text-slate-500">{DESIGNS.find((d) => d.id === (s.design || "classic"))?.blurb}</span>
+                      </label>
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2">
                       <span>Wallet that pays for this store (plan + JPRIME API stock): <b className="font-mono">{s.payer || "not linked"}</b></span>

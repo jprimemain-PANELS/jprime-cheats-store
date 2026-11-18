@@ -5,7 +5,8 @@ import {
   approveApplication, createStoreDirect, ownerOverview, rejectApplication, setSharedStockAllowed, setStoreStatus,
   setStorePayer,
 } from "@/lib/tenant-admin";
-import { resellerLaunchMap, setResellerLaunch } from "@/lib/store-options";
+import { getStoreOptions, resellerLaunchMap, setResellerLaunch, setStoreDesign } from "@/lib/store-options";
+import { OWNER_TENANT_ID } from "@/lib/tenant";
 import { ownerResetStoreAdmin } from "@/lib/user-admin";
 import { setStoreBanned, deleteStore, activateCustomDomain, ownerDomainInfo, ownerRemoveCustomDomain, setCustomDomainAllowed } from "@/lib/domains";
 
@@ -20,8 +21,9 @@ export async function GET(request: NextRequest) {
   try {
     const [ov, domainInfo] = await Promise.all([ownerOverview(), ownerDomainInfo()]);
     const launch = await resellerLaunchMap((ov.stores as any[]).map((s) => String(s.id)));
-    const stores = (ov.stores as any[]).map((s) => ({ ...s, resellerLaunch: launch[String(s.id)]?.on === true, launchMode: launch[String(s.id)]?.mode === "own" ? "own" : "main" }));
-    return NextResponse.json({ success: true, ...ov, stores, domainInfo }, { headers: NO_STORE });
+    const stores = (ov.stores as any[]).map((s) => ({ ...s, resellerLaunch: launch[String(s.id)]?.on === true, launchMode: launch[String(s.id)]?.mode === "own" ? "own" : "main", design: launch[String(s.id)]?.design ?? "classic" }));
+    const mainDesign = (await getStoreOptions(OWNER_TENANT_ID)).design;
+    return NextResponse.json({ success: true, ...ov, stores, domainInfo, mainDesign }, { headers: NO_STORE });
   } catch {
     return fail("Could not load stores.", 500);
   }
@@ -66,6 +68,10 @@ export async function POST(request: NextRequest) {
     case "reseller_launch":
       if (!isUuid(id)) return fail("Invalid id.");
       result = await setResellerLaunch(id, b?.allowed === true, b?.mode === "own" ? "own" : "main");
+      break;
+    case "set_design":
+      if (!isUuid(id)) return fail("Invalid id.");
+      result = await setStoreDesign(id, b?.design);
       break;
     case "delete_store":
       if (!isUuid(id)) return fail("Invalid id.");

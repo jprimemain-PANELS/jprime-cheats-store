@@ -2,6 +2,7 @@ import { OWNER_TENANT_ID } from "@/lib/tenant";
 import { readSetting, writeSetting, isUuid, settingKey } from "@/lib/tenant-db";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { parseVideoSource } from "@/lib/video";
+import { cleanDesign, isDesignId, type DesignId } from "@/lib/store-designs";
 
 /**
  * Per-store switches that are plain settings (no migration): stored as one JSON value in app_settings under
@@ -14,6 +15,7 @@ export type StoreOptions = {
   upgradePrice: number;     // rupees
   resellerLaunch: boolean;  // OWNER decides: may this store's resellers see "Launch your website"?
   launchMode: LaunchMode;   // OWNER decides who gets the plan money: "main" = the main website, "own" = this co-admin's own website
+  design: DesignId;         // OWNER picks the whole-page store design ("classic" = the original look)
 };
 export type LaunchMode = "main" | "own";
 export const OPTIONS_KEY = "store_options";
@@ -21,7 +23,7 @@ export const DEFAULT_UPGRADE_PRICE = 99;
 
 export function defaultOptions(tenantId: string): StoreOptions {
   // Owner keeps today's behaviour (box visible); co-admin stores start with it off until they add a link.
-  return { tutorialOn: tenantId === OWNER_TENANT_ID, tutorialUrl: "", upgradeOn: false, upgradePrice: DEFAULT_UPGRADE_PRICE, resellerLaunch: false, launchMode: "main" };
+  return { tutorialOn: tenantId === OWNER_TENANT_ID, tutorialUrl: "", upgradeOn: false, upgradePrice: DEFAULT_UPGRADE_PRICE, resellerLaunch: false, launchMode: "main", design: "classic" };
 }
 
 function clean(raw: any, tenantId: string): StoreOptions {
@@ -35,6 +37,7 @@ function clean(raw: any, tenantId: string): StoreOptions {
     upgradePrice: Number.isFinite(price) && price >= 1 && price <= 100000 ? price : d.upgradePrice,
     resellerLaunch: o.resellerLaunch === true,
     launchMode: o.launchMode === "own" ? "own" : "main",
+    design: cleanDesign(o.design),
   };
 }
 
@@ -110,20 +113,30 @@ export async function setResellerLaunch(tenantId: string, allowed: boolean, mode
   return w.error ? { ok: false as const, reason: "Could not save." } : { ok: true as const };
 }
 
+/** OWNER ONLY (route enforces): choose a store's page design. Works for any store, including the main one. */
+export async function setStoreDesign(tenantId: string, design: unknown) {
+  if (!isUuid(tenantId)) return { ok: false as const, reason: "Invalid store." };
+  if (!isDesignId(design)) return { ok: false as const, reason: "Unknown design." };
+  const cur = await getStoreOptions(tenantId);
+  const w = await writeSetting(tenantId, OPTIONS_KEY, { ...cur, design });
+  clearOptionsCache(tenantId);
+  return w.error ? { ok: false as const, reason: "Could not save." } : { ok: true as const };
+}
+
 /** For the owner's store cards: one query for every store. */
-export async function resellerLaunchMap(ids: string[]): Promise<Record<string, { on: boolean; mode: LaunchMode }>> {
-  const out: Record<string, { on: boolean; mode: LaunchMode }> = {};
+export async function resellerLaunchMap(ids: string[]): Promise<Record<string, { on: boolean; mode: LaunchMode; design: DesignId }>> {
+  const out: Record<string, { on: boolean; mode: LaunchMode; design: DesignId }> = {};
   const valid = ids.filter((i) => isUuid(i) && i !== OWNER_TENANT_ID);
   if (!valid.length) return out;
   const r = await supabaseAdmin.from("app_settings").select("key, value").in("key", valid.map((i) => settingKey(i, OPTIONS_KEY)));
   for (const row of ((r.data as any[]) ?? [])) {
     const id = String(row.key).split(":")[1];
-    out[id] = { on: row.value?.resellerLaunch === true, mode: row.value?.launchMode === "own" ? "own" : "main" };
+    out[id] = { on: row.value?.resellerLaunch === true, mode: row.value?.launchMode === "own" ? "own" : "main", design: cleanDesign(row.value?.design) };
   }
   return out;
 }
 
 /** What the browser may know (no secrets here, it is public store configuration). */
 export function publicOptions(o: StoreOptions) {
-  return { tutorialOn: o.tutorialOn, tutorialUrl: o.tutorialUrl, upgradeOn: o.upgradeOn, upgradePrice: o.upgradePrice, resellerLaunch: o.resellerLaunch, launchMode: o.launchMode };
+  return { tutorialOn: o.tutorialOn, tutorialUrl: o.tutorialUrl, upgradeOn: o.upgradeOn, upgradePrice: o.upgradePrice, resellerLaunch: o.resellerLaunch, launchMode: o.launchMode, design: o.design };
 }
