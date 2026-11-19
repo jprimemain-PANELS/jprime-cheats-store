@@ -14,6 +14,8 @@ import { headers } from 'next/headers'
 import { currentTenant } from '@/lib/tenant'
 import { publicBrand } from '@/lib/tenant-admin'
 import { buildThemeCss } from '@/lib/theme'
+import { cleanDesign } from '@/lib/store-designs'
+import { designCss } from '@/components/designs/design-css'
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -39,13 +41,17 @@ async function loadBrand() {
             heroImageUrl: pb.theme.heroImageUrl, loginCharacterUrl: pb.theme.loginCharacterUrl, loginPetUrl: pb.theme.loginPetUrl, loginCard: pb.theme.loginCard, loginBg: pb.theme.loginBg, ctaText: pb.theme.ctaText, columns: pb.theme.columns, showStats: pb.theme.showStats,
           } : DEFAULT_LAYOUT,
         };
-    return { tenant, brand, css: pb.theme ? buildThemeCss(pb.theme) : "" };
+    const design = cleanDesign(opt.design);
+    // site-wide design CSS goes AFTER the store theme; it merges the store's saved Branding (colours, font, corners) into the design
+    const css = (pb.theme ? buildThemeCss(pb.theme) : "") + (design !== "classic" ? designCss(design, pb.theme) : "");
+    return { tenant, brand, css, design };
   } catch {
     // Branding lookup failed: still serve the store (owner keeps its look; co-admin gets its name, default theme)
     return {
       tenant,
       brand: tenant.kind === "owner" ? OWNER_BRAND : { ...OWNER_BRAND, options: NO_OPTIONS, name: tenant.brandName, isOwner: false, telegram: tenant.telegramUsername },
       css: "",
+      design: "classic" as const,
     };
   }
 }
@@ -94,7 +100,7 @@ export default async function RootLayout({
     }
   }
   return (
-    <html lang="en" className="dark bg-background" suppressHydrationWarning>
+    <html lang="en" className="dark bg-background" data-design={loaded.design} suppressHydrationWarning>
       <head>{loaded.css ? <style id="store-theme" dangerouslySetInnerHTML={{ __html: loaded.css }} /> : null}</head>
       <body className="font-sans antialiased bg-background text-foreground" suppressHydrationWarning>
         <BrandProvider brand={loaded.brand}>

@@ -49,7 +49,7 @@ export interface CatalogProduct {
   features: string[];
   videoPlaceholder?: string;
   videoUrl?: string;
-  kind?: "guild"; // Guild Glory service product (owner store only)
+  kind?: "guild"; // Guild Glory service product (owner store, or a co-admin store with its own seller key)
   status: "ONLINE" | "MAINTENANCE";
   prices: CatalogTier[];
 }

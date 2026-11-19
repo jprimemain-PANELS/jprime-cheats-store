@@ -13,15 +13,14 @@ export function FloatGlass(p: DesignProps) {
   const w = useWallet();
   return (
     <div className="dz-glass min-h-screen relative overflow-x-clip">
-      <div className="dz-blob dz-blob-a" aria-hidden /><div className="dz-blob dz-blob-b" aria-hidden />
-
+      
       <nav aria-label="Categories" className="fixed z-40 bottom-3 left-1/2 -translate-x-1/2 md:bottom-auto md:left-4 md:top-1/2 md:-translate-y-1/2 md:translate-x-0">
         <div className="flex items-center gap-1 rounded-[2rem] border border-white/20 bg-white/10 p-2 backdrop-blur-xl shadow-[0_20px_50px_-15px_rgba(0,0,0,.6)] md:flex-col md:gap-2">
           <StoreLogo size={40} className="hidden md:block h-10 w-10 rounded-2xl mb-1" />
           {p.categoryIds.map((id) => {
             const I = catIcon(id); const on = id === p.active;
             return (
-              <button key={id} onClick={() => p.onCategory(id)} title={catName(id)} className={`group relative grid h-12 w-12 place-items-center rounded-2xl transition-all cursor-pointer ${on ? "bg-white text-[#3b1f8f] shadow-[0_8px_24px_-6px_rgba(255,255,255,.5)]" : "text-white/70 hover:bg-white/15"}`}>
+              <button key={id} onClick={() => p.onCategory(id)} title={catName(id)} className={`group relative grid h-12 w-12 place-items-center rounded-2xl transition-all cursor-pointer ${on ? "bg-white text-[color:var(--store-bg)] shadow-[0_8px_24px_-6px_rgba(255,255,255,.5)]" : "text-white/70 hover:bg-white/15"}`}>
                 <I className="h-5 w-5" />
                 <span className="pointer-events-none absolute left-14 hidden whitespace-nowrap rounded-lg bg-black/70 px-2 py-1 text-xs opacity-0 group-hover:opacity-100 md:block">{catName(id)}</span>
               </button>
@@ -49,7 +48,7 @@ export function FloatGlass(p: DesignProps) {
             <p className="mb-3 inline-block rounded-full bg-white/15 px-3 py-1 text-xs">{c.tag || "Digital store"}</p>
             <h1 className="text-3xl sm:text-5xl font-extrabold leading-tight tracking-tight">{c.title}</h1>
             <p className="mt-4 text-sm sm:text-base opacity-80">{c.sub}</p>
-            <button onClick={p.onScroll} className="mt-6 rounded-2xl bg-white px-7 py-3 text-sm font-bold text-[#3b1f8f] shadow-[0_12px_30px_-10px_rgba(255,255,255,.6)] hover:scale-[1.03] transition-transform cursor-pointer">{c.cta}</button>
+            <button onClick={p.onScroll} className="mt-6 rounded-2xl bg-white px-7 py-3 text-sm font-bold text-[color:var(--store-bg)] shadow-[0_12px_30px_-10px_rgba(255,255,255,.6)] hover:scale-[1.03] transition-transform cursor-pointer">{c.cta}</button>
           </div>
           {c.stats && (
             <div className="relative z-10 mt-8 flex flex-wrap gap-3 lg:absolute lg:right-10 lg:top-10 lg:mt-0 lg:w-56 lg:flex-col">

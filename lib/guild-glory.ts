@@ -5,13 +5,14 @@
  *   GET  {base}/api/v1/groups           -> { data: [{ group_id, clan_id, region, status }] }
  * All calls use  Authorization: Bearer <GUILD_API_KEY>.  The key never reaches the browser.
  *
- * Env (owner store): GUILD_API_URL = the seller website, e.g. https://automission.site   GUILD_API_KEY = key from their Developer Center.
+ * Env (owner store; a co-admin store saves its own key in Admin -> Guild Glory): GUILD_API_URL = the seller website, e.g. https://automission.site   GUILD_API_KEY = key from their Developer Center.
  *
  * Shop side (no SQL needed): customers buy TOKENS with their wallet, redeem a token into "guild credits", and launching
  * a group spends GROUP_CREDITS credit(s). Credits and tokens are held as hidden wallet rows, so they get the same
  * atomic debit/credit protection as money:  gg:<user> = a customer's credits,  ggt:<CODE> = an unredeemed token.
  */
 import { randomBytes } from "crypto";
+import { AsyncLocalStorage } from "async_hooks";
 
 export const GROUP_CREDITS = 1;
 export const creditsKey = (username: string) => `gg:${username}`;
@@ -31,22 +32,38 @@ export const makeTokenCode = () => {
   return `GG-${a.slice(0, 4)}-${a.slice(4, 8)}-${a.slice(8, 12)}-${a.slice(12, 16) || randomBytes(2).toString("hex").toUpperCase()}`;
 };
 
+/** Which seller account a request talks to. Owner store = env credentials; a co-admin store = its OWN key (never the owner's). */
+export type GuildCreds = { base: string; key: string } | null;
+const scope = new AsyncLocalStorage<GuildCreds>();
+/** Runs `fn` with the given credentials (null = this store has no Guild Glory connection). */
+export const runWithGuild = <T>(creds: GuildCreds, fn: () => Promise<T>) => scope.run(creds, fn);
+
 export function guildBase(): string {
   let v = (process.env.GUILD_API_URL || "").trim().replace(/\/+$/, "");
   while (v.endsWith("/api/v1")) v = v.slice(0, -7).replace(/\/+$/, "");
   return /^https:\/\/[^/\s]+/.test(v) ? v : "";
 }
+export function ownerGuildCreds(): GuildCreds {
+  const base = guildBase(), key = process.env.GUILD_API_KEY || "";
+  return base && key ? { base, key } : null;
+}
+/** The credentials of the current request (set by withGuild in the routes); outside a request they are the owner's. */
+function creds(): GuildCreds {
+  const c = scope.getStore();
+  return c === undefined ? ownerGuildCreds() : c;
+}
 export function guildApiConfigured(): boolean {
-  return !!guildBase() && !!process.env.GUILD_API_KEY;
+  return !!creds();
 }
 
 async function call(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, idem?: string): Promise<{ ok: boolean; status: number; json: any; error?: string }> {
-  if (!guildApiConfigured()) return { ok: false, status: 0, json: null, error: "Guild Glory service is not connected yet." };
+  const c = creds();
+  if (!c) return { ok: false, status: 0, json: null, error: "Guild Glory service is not connected yet." };
   try {
-    const headers: Record<string, string> = { Authorization: `Bearer ${process.env.GUILD_API_KEY}`, Accept: "application/json" };
+    const headers: Record<string, string> = { Authorization: `Bearer ${c.key}`, Accept: "application/json" };
     if (method === "POST") headers["Content-Type"] = "application/json";
     if (idem) headers["Idempotency-Key"] = idem;
-    const res = await fetch(guildBase() + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store", redirect: "manual" });
+    const res = await fetch(c.base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store", redirect: "manual" });
     const text = (await res.text()).replace(/^﻿/, "").trim();
     let json: any = null;
     try { json = JSON.parse(text); } catch {}
@@ -60,15 +77,17 @@ async function call(method: "GET" | "POST" | "DELETE", path: string, body?: unkn
   }
 }
 
-let regionCache: { at: number; list: GuildRegion[] } | null = null;
+const regionCache = new Map<string, { at: number; list: GuildRegion[] }>();
 /** Regions that are available right now (live from the seller; cached 60 s). */
 export async function listRegions(): Promise<{ ok: true; regions: GuildRegion[] } | { ok: false; error: string }> {
-  if (!process.env.VITEST && regionCache && Date.now() - regionCache.at < 60_000) return { ok: true, regions: regionCache.list };
+  const ck = creds()?.key ?? "";
+  const hitR = regionCache.get(ck);
+  if (!process.env.VITEST && hitR && Date.now() - hitR.at < 60_000) return { ok: true, regions: hitR.list };
   const r = await call("GET", "/api/v1/regions");
   if (!r.ok) return { ok: false, error: r.error || "Could not load regions." };
   const rows: any[] = Array.isArray(r.json?.data) ? r.json.data : [];
   const list = rows.filter((x) => x && x.available === true && !x.maintenance && x.id != null).map((x) => ({ id: String(x.id), name: String(x.name ?? x.id), code: String(x.code ?? "") }));
-  regionCache = { at: Date.now(), list };
+  regionCache.set(ck, { at: Date.now(), list });
   return { ok: true, regions: list };
 }
 
@@ -187,7 +206,8 @@ const detailCache = new Map<string, { at: number; view: GroupView; raw: any[] }>
 /** Live info for one group (cached 15 s so many customers cannot exhaust the seller's 60 requests / minute). */
 export async function getGroupInfo(groupId: string, force = false): Promise<{ ok: true; view: GroupView; raw: any[] } | { ok: false; error: string }> {
   if (!isSafeGroupId(groupId)) return { ok: false, error: "Invalid group." };
-  const hit = detailCache.get(groupId);
+  const dk = `${creds()?.key ?? ""}|${groupId}`;
+  const hit = detailCache.get(dk);
   if (!force && !process.env.VITEST && hit && Date.now() - hit.at < 15_000) return { ok: true, view: hit.view, raw: hit.raw };
   const id = encodeURIComponent(groupId);
   const [d, c, g] = await Promise.all([call("GET", `/api/v1/groups/${id}`), call("GET", `/api/v1/groups/${id}/clan`), call("GET", `/api/v1/groups/${id}/glory`)]);
@@ -195,14 +215,14 @@ export async function getGroupInfo(groupId: string, force = false): Promise<{ ok
   const raw = [d.json, c.ok ? c.json : null, g.ok ? g.json : null]; // position matters: [group, clan, glory]
   const view = normalizeGroup(groupId, raw);
   if (detailCache.size > 500) detailCache.clear();
-  detailCache.set(groupId, { at: Date.now(), view, raw });
+  detailCache.set(dk, { at: Date.now(), view, raw });
   return { ok: true, view, raw };
 }
 
 export async function groupAction(groupId: string, action: "restart" | "stop" | "refresh-all"): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!isSafeGroupId(groupId)) return { ok: false, error: "Invalid group." };
   const r = await call("POST", `/api/v1/groups/${encodeURIComponent(groupId)}/actions`, { action });
-  detailCache.delete(groupId);
+  detailCache.delete(`${creds()?.key ?? ""}|${groupId}`);
   return r.ok ? { ok: true } : { ok: false, error: r.error || "The action failed." };
 }
 
@@ -210,7 +230,7 @@ export async function groupAction(groupId: string, action: "restart" | "stop" | 
 export async function deleteGroup(groupId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!isSafeGroupId(groupId)) return { ok: false, error: "Invalid group." };
   const r = await call("DELETE", `/api/v1/groups/${encodeURIComponent(groupId)}`);
-  detailCache.delete(groupId);
+  detailCache.delete(`${creds()?.key ?? ""}|${groupId}`);
   return r.ok ? { ok: true } : { ok: false, error: r.error || "Could not delete the group." };
 }
 

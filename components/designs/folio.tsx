@@ -23,10 +23,11 @@ export function Folio(p: DesignProps) {
         </div>
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button onClick={() => w.setOpen(true)} className="flex items-center gap-2 border border-white/20 px-3 py-1.5 text-xs font-bold hover:border-[var(--store-accent)] hover:text-[var(--store-accent)] cursor-pointer"><Wallet className="h-3.5 w-3.5" />{w.text}</button>
-          <AuthButtons />
+          <div className="hidden sm:block"><AuthButtons /></div>
           <button onClick={p.onProfile} aria-label="Profile" className="grid h-8 w-8 place-items-center border border-white/20 hover:border-[var(--store-accent)] cursor-pointer"><User className="h-4 w-4" /></button>
         </div>
       </header>
+      <div className="flex justify-end border-b border-white/10 px-5 py-2 sm:hidden"><AuthButtons /></div>
 
       <section className="px-5 sm:px-10 pt-10 sm:pt-16 pb-10">
         <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.35em] text-[var(--store-accent)]">— {c.tag || "Digital store"}</p>
@@ -42,7 +43,7 @@ export function Folio(p: DesignProps) {
             </dl>
           )}
         </div>
-        <button onClick={p.onScroll} className="mt-10 inline-flex items-center gap-3 bg-[var(--store-accent)] px-7 py-3.5 text-sm font-black uppercase tracking-widest text-black hover:brightness-110 cursor-pointer">{c.cta}<ArrowDown className="h-4 w-4" /></button>
+        <button onClick={p.onScroll} className="mt-10 inline-flex items-center gap-3 bg-[var(--store-accent)] px-7 py-3.5 text-sm font-black uppercase tracking-widest text-[var(--store-on)] hover:brightness-110 cursor-pointer">{c.cta}<ArrowDown className="h-4 w-4" /></button>
       </section>
 
       <section ref={p.productsRef} className="scroll-mt-4 px-5 sm:px-10 pb-16">

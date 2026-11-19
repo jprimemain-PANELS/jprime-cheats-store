@@ -83,6 +83,12 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
   const [allProducts, setAllProducts] = useState<any[]>([]);
 
   const [storeApi, setStoreApi] = useState<{ jprimeAllowed: boolean; sellers: { seller: string; name: string; keyReady: boolean }[]; catalog: { productId: string; name: string; tiers: { duration: string; cost: number; price: number }[] }[] }>({ jprimeAllowed: false, sellers: [], catalog: [] });
+  // Guild Glory can be sold by the owner store, or by a co-admin store that connected its own seller key (Admin -> Guild Glory)
+  const [guildKey, setGuildKey] = useState(false);
+  useEffect(() => {
+    if (isOwner) { setGuildKey(true); return; }
+    fetch("/api/admin/guild-key", { cache: "no-store" }).then((r) => r.json()).then((j) => setGuildKey(!!j?.hasKey)).catch(() => {});
+  }, [isOwner]);
   useEffect(() => {
     if (isOwner) return;
     fetch("/api/admin/api-system?for=products", { cache: "no-store" }).then((r) => r.json()).then((j) => { if (j?.success) setStoreApi(j); }).catch(() => {});
@@ -183,7 +189,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
     setShowEditor(true);
   }
 
-  /** Guild Glory service: customers give Region + Guild ID instead of getting a key. Owner store only. */
+  /** Guild Glory service: customers give Region + Guild ID instead of getting a key. Owner store, or a co-admin store with its own Guild key. */
   function newGuildProduct() {
     setSelected({
       ...emptyProduct,
@@ -679,7 +685,7 @@ export default function ProductManager({ isOwner = true }: { isOwner?: boolean }
             Refresh
           </button>
 
-          {isOwner && (
+          {guildKey && (
             <button
               onClick={newGuildProduct}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-400 text-black font-bold hover:bg-amber-300 transition"

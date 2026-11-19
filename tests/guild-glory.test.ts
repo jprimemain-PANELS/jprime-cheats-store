@@ -78,7 +78,7 @@ describe("buy token", () => {
     expect(bal("raj")).toBe(700); expect(bal(`ggt:${j.code}`)).toBe(5);
     expect(tables.purchase_history.at(-1)).toMatchObject({ username: "raj", key_code: j.code, price_paid: "300" });
   });
-  it("rejects bad plans, non-guild products, maintenance, low balance and co-admin stores; no money moves", async () => {
+  it("rejects bad plans, non-guild products, maintenance, low balance and a co-admin store without the product; no money moves", async () => {
     expect((await doBuy("Token")).status).toBe(400);
     expect((await doBuy("1 Token", "Nope")).status).toBe(404);
     seed("products_catalog", [{ ...product(""), product_id: "plain", name: "Plain" }]);
@@ -88,7 +88,7 @@ describe("buy token", () => {
     expect((await doBuy()).status).toBe(409);
     expect(bal("raj")).toBe(1000);
     loginAs("rajB", TENANT_B, "raj", HOST_B);
-    expect((await post(buy, "/api/guild/buy", { product_name: "Guild Glory Booster", duration: "1 Token" }, HOST_B)).status).toBe(403);
+    expect((await post(buy, "/api/guild/buy", { product_name: "Guild Glory Booster", duration: "1 Token" }, HOST_B)).status).toBe(404);
     ctx.cookie = ""; expect((await doBuy()).status).toBe(401);
   });
 });
@@ -150,9 +150,9 @@ describe("launch group", () => {
     vi.stubEnv("GUILD_API_URL", "");
     const r = await doLaunch(); expect(r.status).toBe(502); expect(bal("gg:raj")).toBe(2); expect(fetchSpy).not.toHaveBeenCalled();
   });
-  it("closed to co-admin stores", async () => {
+  it("a co-admin store without the product cannot launch", async () => {
     loginAs("rajB", TENANT_B, "raj", HOST_B);
-    expect((await post(launch, "/api/guild/launch", { product_name: "x", region: "in", guild_id: "123456789" }, HOST_B)).status).toBe(403);
+    expect((await post(launch, "/api/guild/launch", { product_name: "x", region: "in", guild_id: "123456789" }, HOST_B)).status).toBe(404);
   });
 });
 
@@ -209,9 +209,9 @@ describe("live group panel", () => {
     expect(JSON.parse(c[1].body)).toEqual({ action: "restart" });
     expect((await post(groupPost, "/api/guild/group", { ref: "G-1", action: "explode" })).status).toBe(400);
   });
-  it("closed to co-admin stores", async () => {
+  it("a co-admin customer cannot read the owner's group", async () => {
     loginAs("rajB", TENANT_B, "raj", HOST_B);
-    expect((await groupGet(req("/api/guild/group?ref=G-1", { host: HOST_B }))).status).toBe(403);
+    expect((await groupGet(req("/api/guild/group?ref=G-1", { host: HOST_B }))).status).toBe(404);
   });
 });
 
@@ -263,5 +263,34 @@ describe("stable group pairing + extra options", () => {
     expect(tables.audit_log.filter((r: any) => r.action === "guild.refund_requested")).toHaveLength(1);
     const d = await (await post(groupPost, "/api/guild/group", { ref: "G-1", action: "delete" })).json();
     expect(d.removed).toBe(true); expect(await saved()).toHaveLength(0);
+  });
+});
+
+describe("co-admin stores use their OWN seller key", () => {
+  it("never the owner's env key: no key = not connected; with a key, its own Bearer is sent", async () => {
+    const { POST: keyPost, GET: keyGet } = await import("@/app/api/admin/guild-key/route");
+    loginAs("rajB", TENANT_B, "raj", HOST_B);
+    let j = await (await me(req("/api/guild/me", { host: HOST_B }))).json();
+    expect(j.connected).toBe(false); expect(j.regions).toEqual([]);
+    expect(fetchSpy.mock.calls.some((c: any) => String(c[1]?.headers?.Authorization ?? "").includes("secret-key"))).toBe(false);
+
+    loginAs("coadminB", TENANT_B, "andrew", HOST_B);
+    const bad = await keyPost(req("/api/admin/guild-key", { method: "POST", host: HOST_B, body: { key: "x" } }));
+    expect(bad.status).toBe(400);
+    const ok = await keyPost(req("/api/admin/guild-key", { method: "POST", host: HOST_B, body: { key: "andrew-seller-key-1234" } }));
+    expect(ok.status).toBe(200);
+    const view = await (await keyGet(req("/api/admin/guild-key", { host: HOST_B }))).json();
+    expect(view).toMatchObject({ hasKey: true, keyHint: "••••1234" }); expect(JSON.stringify(view)).not.toContain("andrew-seller");
+
+    loginAs("rajB", TENANT_B, "raj", HOST_B);
+    j = await (await me(req("/api/guild/me", { host: HOST_B }))).json();
+    expect(j.connected).toBe(true); expect(j.regions.length).toBe(1);
+    const call = fetchSpy.mock.calls.find((c: any) => String(c[0]).endsWith("/regions")) as any;
+    expect(call[1].headers.Authorization).toBe("Bearer andrew-seller-key-1234");
+  });
+  it("the owner main store cannot save a key here (it uses the server env)", async () => {
+    const { POST: keyPost } = await import("@/app/api/admin/guild-key/route");
+    loginAs("ownerAdmin", OWNER_TENANT_ID, "boss", HOST_A);
+    expect((await keyPost(req("/api/admin/guild-key", { method: "POST", host: HOST_A, body: { key: "owner-key-should-not-save" } }))).status).toBe(403);
   });
 });

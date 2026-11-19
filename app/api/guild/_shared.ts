@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
 import { tdb, readSetting, writeSetting } from "@/lib/tenant-db";
-import { bindGroups, listSellerGroups, type GroupRec, type SellerGroup } from "@/lib/guild-glory";
-import { OWNER_TENANT_ID, canTransact, SUSPENDED_MESSAGE } from "@/lib/tenant";
+import { bindGroups, listSellerGroups, runWithGuild, type GroupRec, type SellerGroup } from "@/lib/guild-glory";
+import { loadGuildCreds } from "@/lib/store-guild";
+import { canTransact, currentTenant, SUSPENDED_MESSAGE } from "@/lib/tenant";
 
 export const NO_STORE = { "Cache-Control": "no-store" };
 export const fail = (error: string, status: number, extra: Record<string, unknown> = {}) => NextResponse.json({ success: false, error, ...extra }, { status, headers: NO_STORE });
 
-/** Guild Glory runs on the main store only (the seller account is the owner's). Returns an error response or null. */
-export function guildGate(tenant: any, tenantId: string) {
+/** Runs a Guild route with THIS store's seller credentials: the owner store uses the server env key, a co-admin store uses its own saved key (never the owner's). */
+export function withGuild<A extends unknown[]>(handler: (...a: A) => Promise<Response>) {
+  return async (...a: A): Promise<Response> => {
+    const t = await currentTenant();
+    const creds = t ? await loadGuildCreds(t.id) : null;
+    return runWithGuild(creds, () => handler(...a));
+  };
+}
+/** Only an active store can sell Guild tokens (the store must also have a connection, which the routes report as "connected: false"). Returns an error response or null. */
+export function guildGate(tenant: any, _tenantId: string) {
   if (!canTransact(tenant)) return fail(SUSPENDED_MESSAGE, 403);
-  if (tenantId !== OWNER_TENANT_ID) return fail("This service is not available in this store.", 403);
   return null;
 }
 /** True when the named product exists and the admin marked it as a Guild product. */

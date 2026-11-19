@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { acquire, creditWallet, debitWallet, getBalance, logWalletTransaction, release } from "@/lib/wallet";
 import { creditsKey, isTokenCode, tokenKey } from "@/lib/guild-glory";
-import { NO_STORE, fail, guildGate } from "../_shared";
+import { NO_STORE, fail, guildGate, withGuild } from "../_shared";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  * Redeem a token into guild credits. The token is a hidden wallet row: taking its whole balance is one atomic
  * database step, so two people (or two clicks) can never both redeem the same token.
  */
-export async function POST(request: NextRequest) {
+export const POST = withGuild(async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
   const { username } = auth.user;
@@ -41,4 +41,4 @@ export async function POST(request: NextRequest) {
   } finally {
     release(lockKey);
   }
-}
+});

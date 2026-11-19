@@ -4,12 +4,12 @@ import { tdb, readSetting, writeSetting } from "@/lib/tenant-db";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { acquire, creditWallet, debitWallet, logWalletTransaction, release } from "@/lib/wallet";
 import { GROUP_CREDITS, createGuildGroup, creditsKey, isGuildId, listRegions } from "@/lib/guild-glory";
-import { NO_STORE, fail, guildGate, isGuildProduct } from "../_shared";
+import { NO_STORE, fail, guildGate, withGuild, isGuildProduct } from "../_shared";
 
 export const dynamic = "force-dynamic";
 
 /** Start a bot group for a Guild/Clan ID. Spends guild credits first; they are returned if the seller refuses. */
-export async function POST(request: NextRequest) {
+export const POST = withGuild(async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
   const { username } = auth.user;
@@ -60,4 +60,4 @@ export async function POST(request: NextRequest) {
   } finally {
     release(lockKey);
   }
-}
+});

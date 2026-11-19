@@ -3,7 +3,7 @@ import { requireUser, rateLimit } from "@/lib/auth";
 import { deleteGroup, getGroupInfo, getGroupList, groupAction } from "@/lib/guild-glory";
 import { writeSetting } from "@/lib/tenant-db";
 import { logGuildRefundRequest } from "@/lib/user-admin";
-import { NO_STORE, fail, guildGate, loadGroups } from "../_shared";
+import { NO_STORE, fail, guildGate, withGuild, loadGroups } from "../_shared";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,7 @@ async function ownGroup(request: NextRequest, ref: string) {
   return { groupId: s.group_id, rec, recs, tenantId, username: auth.user.username, save, admin: String(auth.user.role).toLowerCase() === "admin" };
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withGuild(async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const ref = String(url.searchParams.get("ref") ?? "").slice(0, 100);
@@ -39,9 +39,9 @@ export async function GET(request: NextRequest) {
     if (info.view.name && info.view.name !== o.rec.name) { o.rec.name = info.view.name; await o.save().catch(() => {}); } // remember the name
     return NextResponse.json({ success: true, group: info.view, ...(o.admin && url.searchParams.get("raw") === "1" ? { raw: info.raw } : {}) }, { headers: NO_STORE });
   } catch { return fail("Could not load the group.", 500); }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withGuild(async function POST(request: NextRequest) {
   try {
     const b = await request.json().catch(() => ({}));
     const action = ["restart", "stop", "refresh", "delete", "refund"].includes(b?.action) ? (b.action as string) : null;
@@ -66,4 +66,4 @@ export async function POST(request: NextRequest) {
     if (!r.ok) return fail(r.error, 502);
     return NextResponse.json({ success: true }, { headers: NO_STORE });
   } catch { return fail("The action failed.", 500); }
-}
+});

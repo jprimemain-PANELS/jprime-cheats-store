@@ -5,12 +5,12 @@ import { getTrustedQuote } from "@/lib/pricing";
 import { sendTelegramPurchase } from "@/lib/telegram";
 import { acquire, creditWallet, debitWallet, logWalletTransaction, release } from "@/lib/wallet";
 import { creditsOfPlan, makeTokenCode, tokenKey } from "@/lib/guild-glory";
-import { NO_STORE, fail, guildGate, isGuildProduct } from "../_shared";
+import { NO_STORE, fail, guildGate, withGuild, isGuildProduct } from "../_shared";
 
 export const dynamic = "force-dynamic";
 
 /** Buy Guild tokens (1, 2, 5 ... credits) with the wallet. Price is computed on the server; the token code is returned once and saved in purchase history. */
-export async function POST(request: NextRequest) {
+export const POST = withGuild(async function POST(request: NextRequest) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
   const { username, role } = auth.user;
@@ -59,4 +59,4 @@ export async function POST(request: NextRequest) {
   } finally {
     release(lockKey);
   }
-}
+});

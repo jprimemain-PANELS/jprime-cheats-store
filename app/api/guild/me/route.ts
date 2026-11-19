@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { creditWallet, getBalance } from "@/lib/wallet";
 import { GROUP_CREDITS, creditsKey, guildApiConfigured, listRegions } from "@/lib/guild-glory";
-import { NO_STORE, fail, guildGate, loadGroups } from "../_shared";
+import { NO_STORE, fail, guildGate, withGuild, loadGroups } from "../_shared";
 
 export const dynamic = "force-dynamic";
 const DEAD = new Set(["failed", "refunded", "cancelled", "canceled", "error", "expired", "rejected"]);
 
 /** Credits, available regions and this customer's groups (with live status). A group the seller failed/refunded gives the credit back once. */
-export async function GET(request: NextRequest) {
+export const GET = withGuild(async function GET(request: NextRequest) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
   const { username } = auth.user;
@@ -47,4 +47,4 @@ export async function GET(request: NextRequest) {
   } catch {
     return fail("Could not load Guild Glory.", 500);
   }
-}
+});

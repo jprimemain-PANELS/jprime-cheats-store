@@ -59,6 +59,7 @@ import SubscriptionManager from "@/components/admin/SubscriptionManager";
 import SubStoresManager from "@/components/admin/SubStoresManager";
 import ApiSystemManager from "@/components/admin/ApiSystemManager";
 import StoreTelegramManager from "@/components/admin/StoreTelegramManager";
+import GuildKeyManager from "@/components/admin/GuildKeyManager";
 import { useBrand } from "@/components/brand-provider";
 
 interface ManagedUser {
@@ -89,6 +90,7 @@ type Tab =
   | "vip"
   | "gateway"
   | "telegram"
+  | "guild"
   | "coadmins"
   | "branding"
   | "purchases"
@@ -774,6 +776,7 @@ export default function AdminPage() {
     { id: "branding", label: "Branding", icon: Palette },
     { id: "domain", label: "Domain", icon: Globe },
     { id: "guide", label: "Setup Guide", icon: BookOpen },
+    ...(!isOwnerAdmin ? ([{ id: "guild", label: "Guild Glory", icon: Crown }] as { id: Tab; label: string; icon: any; count?: number }[]) : []),
     ...(!isOwnerAdmin ? ([{ id: "subscription", label: "Subscription", icon: CreditCard }] as { id: Tab; label: string; icon: any; count?: number }[]) : []),
     ...(!isOwnerAdmin && ownWeb ? ([{ id: "substores", label: "Sub-stores", icon: Store }] as { id: Tab; label: string; icon: any; count?: number }[]) : []),
     { id: "purchases", label: "Purchases", icon: History, count: purchases.length },
@@ -783,7 +786,7 @@ export default function AdminPage() {
   const SIMPLE: Partial<Record<Tab, string>> = {
     // (names are the original simple ones: nothing renamed for co-admins)
   };
-  const COADMIN_ORDER: Tab[] = ["overview", "guide", "subscription", "substores", "api", "products", "pricing", "status", "gateway", "branding", "domain", "users", "purchases", "inventory", "vip", "telegram"];
+  const COADMIN_ORDER: Tab[] = ["overview", "guide", "subscription", "substores", "api", "products", "pricing", "status", "gateway", "branding", "domain", "users", "purchases", "inventory", "vip", "telegram", "guild"];
   const TABS = isOwnerAdmin
     ? ALL_TABS
     : COADMIN_ORDER.map((id) => ALL_TABS.find((t) => t.id === id)).filter(Boolean).map((t) => ({ ...t!, label: SIMPLE[t!.id] ?? t!.label }));
@@ -1359,6 +1362,8 @@ export default function AdminPage() {
 
         {/* TELEGRAM NOTIFICATIONS (bots, channels, key visibility) */}
         {activeTab === "telegram" && (isOwnerAdmin ? <TelegramManager /> : <StoreTelegramManager />)}
+
+        {activeTab === "guild" && !isOwnerAdmin && <GuildKeyManager />}
 
         {/* CO-ADMIN STORES (owner only) */}
         {isOwnerAdmin && activeTab === "coadmins" && <CoAdminManager />}
