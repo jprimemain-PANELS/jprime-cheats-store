@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
-import { Apple, Monitor, Package, ShieldCheck, Smartphone, Users, Zap } from "lucide-react";
+import { Apple, Code2, Monitor, Package, ShieldCheck, Smartphone, Users, Zap } from "lucide-react";
 import type { Product } from "@/lib/products";
-import { categoryLabel } from "@/lib/categories";
+import { categoryLabel, RESELLER_API_CATEGORY } from "@/lib/categories";
+import { ResellerApiPanel } from "@/components/reseller-api-panel";
 import { WalletModal } from "@/components/wallet-modal";
 import { useBrand } from "@/components/brand-provider";
 
@@ -22,7 +23,7 @@ export type DesignProps = {
   columns: number;
 };
 
-const ICONS: Record<string, any> = { mobile: Smartphone, pc: Monitor, ios: Apple };
+const ICONS: Record<string, any> = { mobile: Smartphone, pc: Monitor, ios: Apple, "reseller-api": Code2 };
 export const catIcon = (id: string) => ICONS[id] ?? Package;
 export const catName = (id: string) => categoryLabel(id);
 export const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -83,6 +84,7 @@ export const gridCols = (n: number, max = 4) => GRID[Math.min(n, max)] ?? GRID[3
 
 /** Loading spinner / empty message / the grid of cards. `wrap` lets a design add its own frame around each card. */
 export function ProductGrid({ p, cols, className = "", gap = "gap-6 sm:gap-8", wrap }: { p: DesignProps; cols?: number; className?: string; gap?: string; wrap?: (card: ReactNode, product: Product, i: number) => ReactNode }) {
+  if (p.active === RESELLER_API_CATEGORY) return <ResellerApiPanel />;
   if (p.loading) return <div className="py-16 flex justify-center"><div className="dz-spin h-8 w-8 rounded-full border-2 border-white/10 border-t-[var(--store-accent)]" /></div>;
   if (!p.products.length) return <div className="mx-auto max-w-xl rounded-2xl border border-white/10 px-6 py-12 text-center text-sm opacity-70">No {catName(p.active)} products available yet.</div>;
   return (

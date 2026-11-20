@@ -7,13 +7,15 @@ import {
   Monitor,
   Apple,
   Package,
+  Code2,
   User,
   ShoppingBag,
   ClipboardCheck,
   X,
 } from "lucide-react";
 
-import { categoriesFor, categoryLabel, categoryBlurb } from "@/lib/categories";
+import { categoriesFor, categoryLabel, categoryBlurb, RESELLER_API_CATEGORY } from "@/lib/categories";
+import { ResellerApiPanel } from "@/components/reseller-api-panel";
 import { Navbar } from "@/components/navbar";
 import { RecentActivity } from "@/components/recent-activity";
 import { Hero } from "@/components/hero";
@@ -51,13 +53,16 @@ export default function Home() {
     loading: catalogLoading,
   } = useCatalogProducts();
 
-  const categoryIds = categoriesFor(catalogProducts.map((p) => p.category));
+  const isReseller = String(userData?.role ?? "").trim().toLowerCase() === "reseller";
+  // resellers get an extra "API" tab (key, endpoints, product ids); everyone else never sees it
+  const categoryIds = [...categoriesFor(catalogProducts.map((p) => p.category)).filter((c) => c !== RESELLER_API_CATEGORY), ...(isReseller ? [RESELLER_API_CATEGORY] : [])];
   // Online products first, maintenance products at the bottom (otherwise the shop order is kept).
   const productsIn = (id: string) => {
     const list = catalogProducts.filter((product) => product.category === id);
     return [...list.filter((p) => p.status !== "MAINTENANCE"), ...list.filter((p) => p.status === "MAINTENANCE")];
   };
   const activeProducts = productsIn(activeCategory);
+  useEffect(() => { if (activeCategory === RESELLER_API_CATEGORY && userData && !isReseller) setActiveCategory("mobile"); }, [activeCategory, userData, isReseller]);
 
   const productsRef = useRef<HTMLDivElement>(null);
 
@@ -249,7 +254,7 @@ export default function Home() {
                 {categoryIds.map((id) => ({
                   id,
                   label: categoryLabel(id),
-                  icon: id === "mobile" ? Smartphone : id === "pc" ? Monitor : id === "ios" ? Apple : Package,
+                  icon: id === "mobile" ? Smartphone : id === "pc" ? Monitor : id === "ios" ? Apple : id === RESELLER_API_CATEGORY ? Code2 : Package,
                 })).map((cat) => {
                   const IconComponent = cat.icon;
                   const isSelected = activeCategory === cat.id;
@@ -289,8 +294,10 @@ export default function Home() {
                 </p>
               </div>
 
+              {activeCategory === RESELLER_API_CATEGORY && <ResellerApiPanel />}
+
               {/* Catalog loading indicator */}
-              {catalogLoading && (
+              {activeCategory !== RESELLER_API_CATEGORY && catalogLoading && (
                 <div className="py-16 flex justify-center">
                   <div className="relative w-8 h-8">
                     <div className="absolute inset-0 border-2 border-zinc-800 rounded-full" />
@@ -300,7 +307,7 @@ export default function Home() {
               )}
 
               {/* Products of the chosen category */}
-              {!catalogLoading && (
+              {activeCategory !== RESELLER_API_CATEGORY && !catalogLoading && (
                 activeProducts.length > 0 ? (
                   <div className={`grid ${GRID_COLS[brand.layout.columns] ?? GRID_COLS[3]} gap-6 sm:gap-8`}>
                     {activeProducts.map((product, index) => (

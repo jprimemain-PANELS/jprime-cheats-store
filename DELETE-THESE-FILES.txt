@@ -12,3 +12,7 @@ lib/price-book.ts
 lib/price-math.ts
 lib/useDiscounts.ts
 tests/pricing.test.mjs
+
+# v19: also delete these folders (old Guild key routes, they break the build)
+app/api/admin/guild-key
+app/api/guild/order

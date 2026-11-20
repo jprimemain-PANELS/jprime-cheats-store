@@ -12,13 +12,16 @@ export function normalizeCategory(input: unknown): string | null {
   return slug || null;
 }
 
+export const RESELLER_API_CATEGORY = "reseller-api";
+
 export function categoryLabel(id: string): string {
+  if (id === RESELLER_API_CATEGORY) return "API";
   const b = BUILTIN_CATEGORIES.find((c) => c.id === id);
   if (b) return b.label;
   return String(id).split("-").filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") || "Other";
 }
 
-export const categoryBlurb = (id: string) => BUILTIN_CATEGORIES.find((c) => c.id === id)?.blurb ?? "";
+export const categoryBlurb = (id: string) => (id === RESELLER_API_CATEGORY ? "Connect your own bot or website: API key, endpoints and product IDs" : BUILTIN_CATEGORIES.find((c) => c.id === id)?.blurb ?? "");
 
 /** Built-ins first (always shown), then any custom category that has at least one product. */
 export function categoriesFor(productCategories: string[]): string[] {

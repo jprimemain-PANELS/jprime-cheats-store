@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Menu, Smartphone, Monitor, Apple, Wallet, Package } from "lucide-react";
+import { Menu, Smartphone, Monitor, Apple, Wallet, Package, Code2 } from "lucide-react";
 import { categoryLabel } from "@/lib/categories";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -20,6 +20,7 @@ const BUILTIN_TABS: Record<string, { label: string; icon: any }> = {
   mobile: { label: "MOBILE PANEL", icon: Smartphone },
   pc: { label: "PC PANEL", icon: Monitor },
   ios: { label: "iOS PANEL", icon: Apple },
+  "reseller-api": { label: "API", icon: Code2 },
 };
 
 export function Navbar({ activeCategory, onCategoryChange, categoryIds = ["mobile", "pc", "ios"] }: NavbarProps) {
