@@ -16,6 +16,7 @@ import {
 
 import { categoriesFor, categoryLabel, categoryBlurb, RESELLER_API_CATEGORY } from "@/lib/categories";
 import { ResellerApiPanel } from "@/components/reseller-api-panel";
+import { ResellerJoinPopup } from "@/components/reseller-join-popup";
 import { Navbar } from "@/components/navbar";
 import { RecentActivity } from "@/components/recent-activity";
 import { Hero } from "@/components/hero";
@@ -174,6 +175,8 @@ export default function Home() {
         <div className="jprime-glow-slow absolute top-[75%] left-[-10%] w-[380px] h-[380px] bg-violet-500/[0.06] rounded-full blur-[110px]" />
       </div>
       )}
+
+      <ResellerJoinPopup role={userData?.role} />
 
       {/* Payment success modal */}
       {showSuccess && (
