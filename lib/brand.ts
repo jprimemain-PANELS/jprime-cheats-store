@@ -5,7 +5,7 @@ export type BrandLayout = {
 };
 export const DEFAULT_LAYOUT: BrandLayout = { heroLayout: "centered", heroTitle: "", heroSubtitle: "", heroImageUrl: "", loginCharacterUrl: "", loginPetUrl: "", loginCard: "original", loginBg: "original", ctaText: "", columns: 3, showStats: true };
 
-export type BrandOptions = { tutorialOn: boolean; tutorialUrl: string; upgradeOn: boolean; upgradePrice: number; resellerLaunch: boolean; design?: string };
+export type BrandOptions = { tutorialOn: boolean; tutorialUrl: string; upgradeOn: boolean; upgradePrice: number; resellerLaunch: boolean; launchHidden?: boolean; design?: string };
 export const OWNER_TUTORIAL_URL = "https://youtu.be/F0UKQlnyXE4?si=n6qZtG91u6nddqSa";
 export const NO_OPTIONS: BrandOptions = { tutorialOn: false, tutorialUrl: "", upgradeOn: false, upgradePrice: 99, resellerLaunch: false };
 

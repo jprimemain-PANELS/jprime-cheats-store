@@ -15,6 +15,7 @@ export type StoreOptions = {
   upgradePrice: number;     // rupees
   resellerLaunch: boolean;  // OWNER decides: may this store's resellers see "Launch your website"?
   launchMode: LaunchMode;   // OWNER decides who gets the plan money: "main" = the main website, "own" = this co-admin's own website
+  launchHidden: boolean;    // store admin switch: hide the "Launch your own website" button (temporary on/off)
   design: DesignId;         // OWNER picks the whole-page store design ("classic" = the original look)
 };
 export type LaunchMode = "main" | "own";
@@ -23,7 +24,7 @@ export const DEFAULT_UPGRADE_PRICE = 99;
 
 export function defaultOptions(tenantId: string): StoreOptions {
   // Owner keeps today's behaviour (box visible); co-admin stores start with it off until they add a link.
-  return { tutorialOn: tenantId === OWNER_TENANT_ID, tutorialUrl: "", upgradeOn: false, upgradePrice: DEFAULT_UPGRADE_PRICE, resellerLaunch: false, launchMode: "main", design: "classic" };
+  return { tutorialOn: tenantId === OWNER_TENANT_ID, tutorialUrl: "", upgradeOn: false, upgradePrice: DEFAULT_UPGRADE_PRICE, resellerLaunch: false, launchMode: "main", launchHidden: false, design: "classic" };
 }
 
 function clean(raw: any, tenantId: string): StoreOptions {
@@ -37,6 +38,7 @@ function clean(raw: any, tenantId: string): StoreOptions {
     upgradePrice: Number.isFinite(price) && price >= 1 && price <= 100000 ? price : d.upgradePrice,
     resellerLaunch: o.resellerLaunch === true,
     launchMode: o.launchMode === "own" ? "own" : "main",
+    launchHidden: o.launchHidden === true,
     design: cleanDesign(o.design),
   };
 }
@@ -68,6 +70,7 @@ export async function saveStoreOptions(tenantId: string, patch: any): Promise<{ 
     if (u && (u.length > 300 || !/^https:\/\//i.test(u) || !parseVideoSource(u))) return { ok: false, error: "Paste a full YouTube link that starts with https://" };
     next.tutorialUrl = u;
   }
+  if (patch?.launchHidden !== undefined) next.launchHidden = patch.launchHidden === true;
   if (patch?.upgradeOn !== undefined) next.upgradeOn = patch.upgradeOn === true;
   if (patch?.upgradePrice !== undefined) {
     const p = Math.round(Number(patch.upgradePrice));
@@ -138,5 +141,5 @@ export async function resellerLaunchMap(ids: string[]): Promise<Record<string, {
 
 /** What the browser may know (no secrets here, it is public store configuration). */
 export function publicOptions(o: StoreOptions) {
-  return { tutorialOn: o.tutorialOn, tutorialUrl: o.tutorialUrl, upgradeOn: o.upgradeOn, upgradePrice: o.upgradePrice, resellerLaunch: o.resellerLaunch, launchMode: o.launchMode, design: o.design };
+  return { tutorialOn: o.tutorialOn, tutorialUrl: o.tutorialUrl, upgradeOn: o.upgradeOn, upgradePrice: o.upgradePrice, resellerLaunch: o.resellerLaunch, launchMode: o.launchMode, launchHidden: o.launchHidden, design: o.design };
 }

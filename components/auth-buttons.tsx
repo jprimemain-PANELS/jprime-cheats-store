@@ -61,7 +61,7 @@ export function AuthButtons({ className = "" }: { className?: string }) {
         </button>
       )}
 
-      {canLaunch && (brand.isOwner || brand.options.resellerLaunch) && (
+      {canLaunch && !brand.options.launchHidden && (brand.isOwner || brand.options.resellerLaunch) && (
         <button
           onClick={() => router.push("/launch")}
           className="hidden md:inline-flex items-center bg-gradient-to-r from-violet-600 to-fuchsia-600 px-2.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold text-white hover:brightness-110 transition-all whitespace-nowrap"
@@ -97,7 +97,7 @@ export function LaunchMenuButton({ onGo }: { onGo?: () => void }) {
       } catch {}
     })();
   }, []);
-  if (!ok || !(brand.isOwner || brand.options.resellerLaunch)) return null;
+  if (!ok || brand.options.launchHidden || !(brand.isOwner || brand.options.resellerLaunch)) return null;
   return (
     <button onClick={() => { onGo?.(); router.push("/launch"); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600">
       Launch Your Own Website

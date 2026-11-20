@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Save, Youtube, BadgeIndianRupee } from "lucide-react";
 
-type Opt = { tutorialOn: boolean; tutorialUrl: string; upgradeOn: boolean; upgradePrice: number };
+type Opt = { tutorialOn: boolean; tutorialUrl: string; upgradeOn: boolean; upgradePrice: number; launchHidden?: boolean };
 const field = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500";
 
 function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -36,7 +36,7 @@ export default function StoreOptionsCard() {
     setSaving(true); setMsg(null);
     try {
       const res = await fetch("/api/admin/store-options", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tutorialOn: o.tutorialOn, tutorialUrl: o.tutorialUrl, upgradeOn: o.upgradeOn, upgradePrice: o.upgradePrice }) });
+        body: JSON.stringify({ tutorialOn: o.tutorialOn, tutorialUrl: o.tutorialUrl, upgradeOn: o.upgradeOn, upgradePrice: o.upgradePrice, launchHidden: o.launchHidden === true }) });
       const j = await res.json();
       if (j.success) { setO(j.options); setMsg({ ok: true, text: "Saved." }); } else setMsg({ ok: false, text: j.error || "Could not save." });
     } catch { setMsg({ ok: false, text: "Network error." }); }
@@ -66,6 +66,12 @@ export default function StoreOptionsCard() {
         <label className="block text-xs text-slate-400">Price (Rs)
           <input className={field} type="number" min={1} max={100000} value={o.upgradePrice} onChange={(e) => setO({ ...o, upgradePrice: Number(e.target.value) })} />
         </label>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 border-t border-slate-800 pt-3">
+        <div className="min-w-0"><p className="text-sm font-semibold text-white">Show "Launch Your Own Website" button</p>
+          <p className="text-[11px] text-slate-400">Switch OFF to hide the button for everyone (temporary). Switch ON to show it again.</p></div>
+        <Switch on={o.launchHidden !== true} onChange={(v) => setO({ ...o, launchHidden: !v })} label="Show launch button" />
       </div>
 
       <button onClick={save} disabled={saving} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-50 cursor-pointer">
