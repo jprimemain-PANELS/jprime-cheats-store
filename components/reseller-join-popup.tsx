@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Crown, X } from "lucide-react";
 import { useBrand } from "@/components/brand-provider";
 
-/** Centre pop-up after login (main store, normal users only). Once per browser session. Click -> profile page (reseller upgrade). */
+/** Centre pop-up after login (main store, normal users only). Shows every time the home page opens after login, until the user becomes a reseller. Click -> profile page (reseller upgrade). */
 export function ResellerJoinPopup({ role }: { role?: string }) {
   const router = useRouter();
   const brand = useBrand();
@@ -14,12 +14,11 @@ export function ResellerJoinPopup({ role }: { role?: string }) {
 
   useEffect(() => {
     if (!eligible) return;
-    try { if (sessionStorage.getItem("reseller-popup-seen")) return; } catch {}
     const t = setTimeout(() => setOpen(true), 800);
     return () => clearTimeout(t);
   }, [eligible]);
 
-  const close = () => { setOpen(false); try { sessionStorage.setItem("reseller-popup-seen", "1"); } catch {} };
+  const close = () => setOpen(false);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={close} role="dialog" aria-modal="true">
