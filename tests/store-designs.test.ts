@@ -17,10 +17,10 @@ const tpost = (host: string, body: any) => tenantsPost(req("/api/admin/tenants",
 beforeEach(() => { buildWorld(); clearTenantCache(); clearOptionsCache(); });
 
 describe("store designs", () => {
-  it("lists classic + 7 designs with unique ids and names; bad values fall back to classic", () => {
-    expect(DESIGNS).toHaveLength(8);
-    expect(new Set(DESIGN_IDS).size).toBe(8);
-    expect(new Set(DESIGNS.map((d) => d.name)).size).toBe(8);
+  it("lists classic + 17 designs with unique ids and names; bad values fall back to classic", () => {
+    expect(DESIGNS).toHaveLength(18);
+    expect(new Set(DESIGN_IDS).size).toBe(18);
+    expect(new Set(DESIGNS.map((d) => d.name)).size).toBe(18);
     expect(cleanDesign("nope")).toBe("classic"); expect(cleanDesign(undefined)).toBe("classic"); expect(cleanDesign("neon")).toBe("neon");
     expect(isDesignId("<script>")).toBe(false);
   });

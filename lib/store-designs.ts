@@ -8,6 +8,16 @@ export const DESIGNS = [
   { id: "arena", name: "Arena", blurb: "Esports HUD: red + black, slanted headline, angled cut-corner cards, scoreboard stats." },
   { id: "console", name: "Console", blurb: "Clean dashboard: blue navy, left sidebar, KPI tiles, panel-style cards." },
   { id: "retrowave", name: "Retrowave", blurb: "Synthwave sunset: pink and amber sun over a perspective grid, chunky italic type." },
+  { id: "travel", name: "Travel Freely", blurb: "Warm ivory + deep teal, giant condensed headline. SIDE SLIDE-OUT MENU (hamburger opens a left drawer)." },
+  { id: "lime", name: "Lime Studio", blurb: "Clean ivory with black type and a neon-lime sphere. Outline pills, text nav, split hero." },
+  { id: "midnight", name: "Midnight Studio", blurb: "Pure black, centred headline, centred menu, two buttons and a glowing arch below." },
+  { id: "blackridge", name: "Blackridge", blurb: "Charcoal + cherry red, light-weight headline, dropdown-style menu, proof strip." },
+  { id: "tidewell", name: "Tidewell Ink", blurb: "Ink navy + pearl, glass droplet hero. BOTTOM FLOATING MENU DOCK (categories, wallet, profile)." },
+  { id: "coraltide", name: "Coral Tide", blurb: "Cream + coral, centred nav card, wave band, chunky pill buttons." },
+  { id: "mossgrove", name: "Mossgrove", blurb: "Deep green glass: floating capsule nav, glowing moss orb, glass stat tiles." },
+  { id: "forest", name: "Forest Serif", blurb: "Green + serif headline, split layout with a vertical category rail." },
+  { id: "crimson", name: "Crimson Slide", blurb: "Black + red, huge slide numbering, bold uppercase, numbered category tabs." },
+  { id: "serene", name: "Serene Sand", blurb: "Warm sand, thin serif headline, vertical numerals, calm text menu." },
 ] as const;
 export type DesignId = (typeof DESIGNS)[number]["id"];
 export const DESIGN_IDS: string[] = DESIGNS.map((d) => d.id);
