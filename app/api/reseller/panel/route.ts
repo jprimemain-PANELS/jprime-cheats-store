@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   const { username } = auth.user; const tenantId = auth.tenant.id;
   if (!rateLimit(`rapi-keygen:${tenantId}:${username}`, 8, 60_000)) return out({ success: false, error: "Too many requests." }, 429);
   const b = await request.json().catch(() => ({}));
-  if (b?.action === "generate") { const r = await generateKey(tenantId, username); return r.ok ? out({ success: true, key: r.key }) : out({ success: false, error: r.error }, 500); }
+  if (b?.action === "generate") { const r = await generateKey(tenantId, username); return r.ok ? out({ success: true, key: r.key, master: r.master }) : out({ success: false, error: r.error }, 500); }
   if (b?.action === "revoke") return (await revokeKey(tenantId, username)) ? out({ success: true }) : out({ success: false, error: "Could not revoke." }, 500);
   return out({ success: false, error: "Unknown action." }, 400);
 }

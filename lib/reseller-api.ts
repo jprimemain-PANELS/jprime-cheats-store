@@ -17,13 +17,14 @@ import { acquire, creditWallet, debitWallet, getBalance, logWalletTransaction, r
  * exactly like a purchase on the site. Keys are stored only as SHA-256 hashes and are shown once.
  * Three request styles are accepted (see app/api/reseller/compat) so bots written for the common seller APIs connect with just a new base URL + key.
  */
-export type ResellerKey = { username: string; hash: string; hint: string; createdAt: string; lastUsed?: string };
+export type ResellerKey = { username: string; hash: string; hint: string; createdAt: string; lastUsed?: string; masterHash?: string; masterHint?: string };
 const KEYS = "reseller_api_keys";
 const PIDS = "reseller_api_pids";
 const MAX_KEYS = 2000;
 const FIRST_PID = 1001;
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 export const KEY_RE = /^rk_[a-f0-9]{48}$/;
+export const MASTER_RE = /^rm_[a-f0-9]{32}$/;
 
 async function loadKeys(tenantId: string): Promise<ResellerKey[]> {
   const { data, error } = await readSetting(tenantId, KEYS);
@@ -34,17 +35,18 @@ const saveKeys = (tenantId: string, list: ResellerKey[]) => writeSetting(tenantI
 
 export async function getKeyInfo(tenantId: string, username: string) {
   const k = (await loadKeys(tenantId)).find((x) => x.username === username);
-  return k ? { hasKey: true, hint: k.hint, createdAt: k.createdAt, lastUsed: k.lastUsed ?? null } : { hasKey: false, hint: "", createdAt: null, lastUsed: null };
+  return k ? { hasKey: true, hint: k.hint, masterHint: k.masterHint ?? "", createdAt: k.createdAt, lastUsed: k.lastUsed ?? null } : { hasKey: false, hint: "", masterHint: "", createdAt: null, lastUsed: null };
 }
 
 /** Creates (or replaces) the user's key. The key is returned ONCE; only its hash is kept. */
-export async function generateKey(tenantId: string, username: string): Promise<{ ok: true; key: string } | { ok: false; error: string }> {
+export async function generateKey(tenantId: string, username: string): Promise<{ ok: true; key: string; master: string } | { ok: false; error: string }> {
   const list = await loadKeys(tenantId);
   const others = list.filter((k) => k.username !== username);
   if (others.length >= MAX_KEYS) return { ok: false, error: "Too many API keys on this store." };
   const key = `rk_${randomBytes(24).toString("hex")}`;
-  const r = await saveKeys(tenantId, [...others, { username, hash: sha(key), hint: `••••${key.slice(-4)}`, createdAt: new Date().toISOString() }]);
-  return r.error ? { ok: false, error: "Could not save the key." } : { ok: true, key };
+  const master = `rm_${randomBytes(16).toString("hex")}`;
+  const r = await saveKeys(tenantId, [...others, { username, hash: sha(key), hint: `••••${key.slice(-4)}`, masterHash: sha(master), masterHint: `••••${master.slice(-4)}`, createdAt: new Date().toISOString() }]);
+  return r.error ? { ok: false, error: "Could not save the key." } : { ok: true, key, master };
 }
 
 export async function revokeKey(tenantId: string, username: string) {
@@ -53,7 +55,7 @@ export async function revokeKey(tenantId: string, username: string) {
 }
 
 /** The reseller who owns this key on THIS store, or null. The account must still have the reseller role. */
-export async function resellerFromKey(tenantId: string, raw: unknown): Promise<{ username: string; role: string } | null> {
+export async function resellerFromKey(tenantId: string, raw: unknown): Promise<{ username: string; role: string; masterHash?: string } | null> {
   const k = String(raw ?? "").trim();
   if (!KEY_RE.test(k)) return null;
   const h = Buffer.from(sha(k), "hex");
@@ -72,7 +74,16 @@ export async function resellerFromKey(tenantId: string, raw: unknown): Promise<{
     found.lastUsed = new Date().toISOString();
     await saveKeys(tenantId, list).catch(() => {});
   }
-  return { username: found.username, role: "reseller" };
+  return { username: found.username, role: "reseller", masterHash: found.masterHash };
+}
+
+/** Master key check for bots that always send one (Style 1). Empty = skipped; a value that is sent must be right. */
+export function masterOk(masterHash: string | undefined, given: unknown): boolean {
+  const g = String(given ?? "").trim();
+  if (!g) return true;
+  if (!masterHash || !MASTER_RE.test(g)) return false;
+  const a = Buffer.from(sha(g), "hex"), b = Buffer.from(masterHash, "hex");
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 /* ---------------- products with stable numeric Product IDs ---------------- */
@@ -89,7 +100,7 @@ async function assignPids(tenantId: string, keys: string[]): Promise<Record<stri
   return book.map;
 }
 
-export type ApiItem = { product_id: number; product: string; duration: string; category: string; price: number; status: "ONLINE" | "MAINTENANCE"; delivery: "instant-api" | "local-stock"; stock: number | null; in_stock: boolean };
+export type ApiItem = { product_id: number; group_id: number; product: string; duration: string; category: string; price: number; status: "ONLINE" | "MAINTENANCE"; delivery: "instant-api" | "local-stock"; stock: number | null; in_stock: boolean };
 
 async function loadCatalogRows(tenantId: string): Promise<{ name: string; category: string; status: string; tiers: any[]; fulfillmentType: any }[]> {
   const { data, error } = await tdb(tenantId).from("products_catalog").select("name, data");
@@ -123,7 +134,7 @@ export async function listItems(tenantId: string, username: string, opts: { fres
 
   const raw: { p: any; t: any; duration: string }[] = [];
   for (const p of cat) for (const t of p.tiers) { const duration = String(t?.duration ?? "").trim(); if (duration && rupees(t?.priceINR) != null) raw.push({ p, t, duration }); }
-  const pids = await assignPids(tenantId, raw.map((x) => pidKey(x.p.name, x.duration)));
+  const pids = await assignPids(tenantId, [...raw.map((x) => pidKey(x.p.name, x.duration)), ...Array.from(new Set(raw.map((x) => `group::${x.p.name.trim()}`)))]);
 
   const items: ApiItem[] = [];
   for (const { p, t, duration } of raw) {
@@ -136,7 +147,7 @@ export async function listItems(tenantId: string, username: string, opts: { fres
     let stock: number | null = null;
     if (mode === "LOCAL") { const c = await countLocalStock(tenantId, p.name, duration, { fresh: opts.fresh }); stock = c.ok ? c.data : null; }
     const status = p.status === "MAINTENANCE" || maint.has(p.name) ? "MAINTENANCE" : "ONLINE";
-    items.push({ product_id: pids[k], product: p.name, duration, category: p.category, price, status, delivery: mode === "LOCAL" ? "local-stock" : "instant-api", stock, in_stock: status === "ONLINE" && (mode === "API" || (stock ?? 0) > 0) });
+    items.push({ product_id: pids[k], group_id: pids[`group::${p.name.trim()}`], product: p.name, duration, category: p.category, price, status, delivery: mode === "LOCAL" ? "local-stock" : "instant-api", stock, in_stock: status === "ONLINE" && (mode === "API" || (stock ?? 0) > 0) });
   }
   return items.sort((a, b) => a.product_id - b.product_id);
 }

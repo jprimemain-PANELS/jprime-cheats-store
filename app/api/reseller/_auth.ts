@@ -24,7 +24,7 @@ export async function readBody(request: NextRequest): Promise<Record<string, unk
   } catch { return {}; }
 }
 
-export type Authed = { ok: true; tenant: Tenant; username: string } | { ok: false; status: number; error: string };
+export type Authed = { ok: true; tenant: Tenant; username: string; masterHash?: string } | { ok: false; status: number; error: string };
 
 export async function authenticate(request: NextRequest, body?: Record<string, unknown>): Promise<Authed> {
   const tenant = await currentTenant();
@@ -36,7 +36,7 @@ export async function authenticate(request: NextRequest, body?: Record<string, u
   if (!who) return { ok: false, status: 401, error: "Invalid API key." };
   if (!canTransact(tenant)) return { ok: false, status: 403, error: "This store is not active." };
   if (!rateLimit(`rapi:${tenant.id}:${who.username}`, 120, 60_000)) return { ok: false, status: 429, error: "Too many requests (max 120 per minute)." };
-  return { ok: true, tenant, username: who.username };
+  return { ok: true, tenant, username: who.username, masterHash: who.masterHash };
 }
 
 export const json = (body: Record<string, unknown>, status = 200) => NextResponse.json(body, { status, headers: NO_STORE });

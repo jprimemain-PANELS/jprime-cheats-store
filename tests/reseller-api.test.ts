@@ -27,13 +27,14 @@ beforeEach(() => {
   seed("wallets", [{ tenant_id: OWNER_TENANT_ID, username: "reseller1", balance: 150 }]);
 });
 
+let MASTER = "";
 async function makeKey(userKey = "rajA", host = HOST_A) {
   // promote raj to reseller session-wise by logging in as the seeded reseller instead
   ctx.host = host; ctx.cookie = "";
   const { createSessionToken } = await import("@/lib/auth");
   ctx.cookie = createSessionToken("reseller1", "x", "u-res", OWNER_TENANT_ID);
   const r = await panelPost(req("/api/reseller/panel", { method: "POST", body: { action: "generate" }, host }));
-  return (await r.json()).key as string;
+  const j = await r.json(); MASTER = j.master; return j.key as string;
 }
 const auth = (key: string, extra: Record<string, string> = {}) => ({ authorization: `Bearer ${key}`, ...extra });
 
@@ -96,8 +97,18 @@ describe("reseller API", () => {
     const raw = (path: string, body: string, headers: Record<string, string>) => new (require("next/server").NextRequest)(`https://${HOST_A}${path}`, { method: "POST", headers: { host: HOST_A, ...headers }, body });
     const s1 = await (await compatPost(raw("/api/reseller/compat/s1", form({ api_key: key, action: "buy", product_id: "1001" }), { "content-type": "application/x-www-form-urlencoded" }), kprm("s1"))).json();
     expect(s1.status).toBe("success"); expect(["KEY-ONE", "KEY-TWO"]).toContain(s1.data.key);
+    // bb-team style: master key + group id + duration text
+    const info = await (await (async () => { const { createSessionToken } = await import("@/lib/auth"); ctx.cookie = createSessionToken("reseller1", "x", "u-res", OWNER_TENANT_ID); const r = await panelGet(req("/api/reseller/panel")); ctx.cookie = ""; return r; })()).json();
+    const gid = info.items[0].group_id; expect(gid).not.toBe(info.items[0].product_id);
+    const badM = await compatPost(raw("/api/reseller/compat/s1", form({ api_key: key, action: "buy", product_id: String(gid), duration: "1 day" }), { "content-type": "application/x-www-form-urlencoded", "x-master-key": "rm_" + "0".repeat(32) }), kprm("s1"));
+    expect(badM.status).toBe(401);
+    const s1b = await (await compatPost(raw("/api/reseller/compat/s1", form({ api_key: key, action: "buy", product_id: String(gid), duration: "1 day" }), { "content-type": "application/x-www-form-urlencoded", "x-master-key": MASTER }), kprm("s1"))).json();
+    expect(s1b.status).toBe("success"); expect(s1b.data.key).not.toBe(s1.data.key);
+    expect((await compatPost(raw("/api/reseller/compat/s1", form({ api_key: key, action: "buy", product_id: String(gid), duration: "9 years" }), { "content-type": "application/x-www-form-urlencoded" }), kprm("s1"))).status).toBe(400);
+    tables.wallets.find((w) => w.username === "reseller1")!.balance = 500;
+    tables.stock_keys.push({ tenant_id: OWNER_TENANT_ID, product_name: "PUBG X", duration: "1 day", key_code: "KEY-THREE", is_used: false });
     const s2 = await (await compatPost(raw("/api/reseller/compat/s2", form({ variant_id: "1001", quantity: "1" }), { "content-type": "application/x-www-form-urlencoded", "x-api-token": key }), kprm("s2"))).json();
-    expect(s2.success).toBe(true); expect(s2.keys[0]).not.toBe(s1.data.key); expect(["KEY-ONE", "KEY-TWO"]).toContain(s2.keys[0]);
+    expect(s2.success).toBe(true); expect(s2.keys[0]).not.toBe(s1.data.key); expect(s2.keys[0]).not.toBe(s1b.data.key); expect(["KEY-ONE", "KEY-TWO", "KEY-THREE"]).toContain(s2.keys[0]);
     const bad = await compatPost(raw("/api/reseller/compat/s3", JSON.stringify({ product_id: 1001, quantity: 1 }), { "content-type": "application/json", authorization: "Bearer nope" }), kprm("s3"));
     expect(bad.status).toBe(401); expect(await bad.json()).toMatchObject({ ok: false, error: { message: "Invalid API key." } });
     tables.wallets.find((w) => w.username === "reseller1")!.balance = 500;

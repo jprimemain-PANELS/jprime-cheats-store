@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Copy, KeyRound, Loader2, RefreshCw, Search, ShieldAlert, Trash2, Wallet } from "lucide-react";
 
-type Item = { product_id: number; product: string; duration: string; category: string; price: number; status: string; delivery: string; stock: number | null; in_stock: boolean };
-type Panel = { key: { hasKey: boolean; hint: string; createdAt: string | null; lastUsed: string | null }; items: Item[]; balance: number };
+type Item = { product_id: number; group_id: number; product: string; duration: string; category: string; price: number; status: string; delivery: string; stock: number | null; in_stock: boolean };
+type Panel = { key: { hasKey: boolean; hint: string; masterHint: string; createdAt: string | null; lastUsed: string | null }; items: Item[]; balance: number };
 
 function Copy1({ text, label = "Copy", className = "" }: { text: string; label?: string; className?: string }) {
   const [ok, setOk] = useState(false);
@@ -29,6 +29,7 @@ export function ResellerApiPanel() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [fresh, setFresh] = useState("");
+  const [freshMaster, setFreshMaster] = useState("");
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<"native" | "s1" | "s2" | "s3">("native");
   const [lang, setLang] = useState<"node" | "php" | "python">("node");
@@ -51,7 +52,7 @@ export function ResellerApiPanel() {
     try {
       const r = await fetch("/api/reseller/panel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
       const j = await r.json();
-      if (!j?.success) setErr(j?.error || "Failed."); else { setFresh(action === "generate" ? j.key : ""); await load(); }
+      if (!j?.success) setErr(j?.error || "Failed."); else { setFresh(action === "generate" ? j.key : ""); setFreshMaster(action === "generate" ? j.master : ""); await load(); }
     } catch { setErr("Failed. Try again."); }
     setBusy(false);
   };
@@ -63,6 +64,8 @@ export function ResellerApiPanel() {
   const sample = items.find((i) => i.in_stock) ?? data?.items[0];
   const pid = sample?.product_id ?? 1001;
   const KEY = fresh || "YOUR_API_KEY";
+  const grp = sample?.group_id ?? 1;
+  const dur = sample?.duration ?? "1 day";
 
   const docs: Record<typeof tab, { title: string; hint: string; url: string; code: string }> = {
     native: { title: "Standard JSON API", hint: "Best for new bots and websites.", url: `${base}/api/reseller/v1`, code:
@@ -78,10 +81,13 @@ curl -X POST ${base}/api/reseller/v1/buy \\
   -d '{"product_id": ${pid}, "idempotency_key": "order-1001"}'
 
 # -> {"success":true,"key":"...","order":"RA-...","price":120,"balance":880}` },
-    s1: { title: "Style 1 (form + api_key)", hint: "For bots already made for 'bb team' style sellers. Change only the URL, key and product id.", url: `${base}/api/reseller/compat/s1`, code:
+    s1: { title: "Style 1 (bb team style: api key + master key + product id + duration)", hint: "For websites and bots made for bb team: fill API key, Master key, Product ID and Duration from this tab. If your bot has no master key field, leave it empty.", url: `${base}/api/reseller/compat/s1`, code:
 `curl -X POST ${base}/api/reseller/compat/s1 \\
-  -d "api_key=${KEY}" -d "action=buy" -d "product_id=${pid}"
+  -H "x-master-key: YOUR_MASTER_KEY" \\
+  -d "api_key=${KEY}" -d "action=buy" -d "product_id=${grp}" -d "duration=${dur}"
 
+# product_id = the Group ID of the product (see list below), duration = the plan name (or its number)
+# you can also send just the plan's Product ID:  -d "product_id=${pid}"
 # -> {"status":"success","data":{"key":"...","balance":880}}
 # extra actions: action=balance, action=products, action=stock&product_id=${pid}` },
     s2: { title: "Style 2 (X-API-Token + variant_id)", hint: "For bots already made for 'whitex' style sellers. variant_id = Product ID.", url: `${base}/api/reseller/compat/s2`, code:
@@ -140,9 +146,11 @@ print(j["key"] if j.get("success") else j.get("error"))`,
             <>
               <p className="flex items-center gap-2 text-sm font-bold text-amber-300"><ShieldAlert className="h-4 w-4" />Copy your key now. It is shown only once.</p>
               <div className="mt-3 flex flex-wrap items-center gap-2"><code className="min-w-0 flex-1 break-all rounded-lg bg-black/40 px-3 py-2 text-xs">{fresh}</code><Copy1 text={fresh} label="Copy key" /></div>
+              {freshMaster && <><p className="mt-3 text-xs font-bold text-white/70">Master key (only needed by bots / websites that ask for a "master key", e.g. bb team style)</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><code className="min-w-0 flex-1 break-all rounded-lg bg-black/40 px-3 py-2 text-xs">{freshMaster}</code><Copy1 text={freshMaster} label="Copy master" /></div></>}
             </>
           ) : data.key.hasKey ? (
-            <p className="text-sm">API key <b>rk_{data.key.hint}</b> is active{data.key.lastUsed ? <span className="text-white/60"> · last used {new Date(data.key.lastUsed).toLocaleString()}</span> : <span className="text-white/60"> · not used yet</span>}</p>
+            <p className="text-sm">API key <b>rk_{data.key.hint}</b> is active{data.key.masterHint ? <span className="text-white/60"> · master key rm_{data.key.masterHint}</span> : null}{data.key.lastUsed ? <span className="text-white/60"> · last used {new Date(data.key.lastUsed).toLocaleString()}</span> : <span className="text-white/60"> · not used yet</span>}</p>
           ) : (
             <p className="text-sm text-white/70">You do not have an API key yet. Create one to start.</p>
           )}
@@ -210,7 +218,7 @@ print(j["key"] if j.get("success") else j.get("error"))`,
           {items.map((i) => (
             <li key={i.product_id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-3">
               <button type="button" onClick={() => navigator.clipboard?.writeText(String(i.product_id)).catch(() => {})} title="Copy Product ID" className="shrink-0 rounded-lg bg-violet-500/20 px-2.5 py-1 font-mono text-xs font-bold text-violet-200 cursor-pointer">{i.product_id}</button>
-              <div className="min-w-0 flex-1 basis-40"><p className="truncate text-sm font-bold">{i.product}</p><p className="text-xs text-white/60">{i.duration} · {i.category}</p></div>
+              <div className="min-w-0 flex-1 basis-40"><p className="truncate text-sm font-bold">{i.product}</p><p className="text-xs text-white/60">{i.duration} · {i.category}</p><p className="text-[10px] text-white/40">Style 1: product_id {i.group_id} + duration "{i.duration}"</p></div>
               <span className="text-sm font-extrabold">₹{i.price}</span>
               <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${i.status === "MAINTENANCE" ? "bg-amber-500/20 text-amber-300" : i.in_stock ? "bg-emerald-500/20 text-emerald-300" : "bg-red-500/20 text-red-300"}`}>{i.status === "MAINTENANCE" ? "Maintenance" : i.in_stock ? (i.stock != null ? `${i.stock} in stock` : "Available") : "Out of stock"}</span>
             </li>
