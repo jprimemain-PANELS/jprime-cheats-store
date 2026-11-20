@@ -4,6 +4,7 @@ import {
   SELLERS, approvedSellers, createConnection, deleteConnection, jprimeAccess, jprimeCatalog, jprimeHidden, listConnections,
   ownerDecide, ownerListConnections, updateConnectionKeys,
 } from "@/lib/api-system";
+import { guildCostPerGroup } from "@/lib/store-guild";
 import { subscriptionState } from "@/lib/subscription";
 import { OWNER_TENANT_ID } from "@/lib/tenant";
 
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
       success: true, jprimeAllowed: access.allowed,
       sellers: await approvedSellers(auth.tenant.id),
       catalog: access.allowed ? await jprimeCatalog(access.payer) : [],
+      guildCost: access.allowed ? await guildCostPerGroup(access.payer) : 0,
     }, { headers: NO_STORE });
   }
   const [conns, sub] = await Promise.all([listConnections(auth.tenant.id), subscriptionState(auth.tenant.id)]);

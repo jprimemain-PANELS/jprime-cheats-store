@@ -3,7 +3,7 @@ import { guardStoreTiers } from "@/lib/api-system";
 import { tdb } from "@/lib/tenant-db";
 import { requireTenantAdmin } from "@/lib/auth";
 import { cleanProductId, cleanProductText } from "@/lib/text-clean";
-import { getGuildKeyView } from "@/lib/store-guild";
+import { jprimeAccess } from "@/lib/api-system";
 
 export const dynamic = "force-dynamic";
 
@@ -107,9 +107,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // The Guild Glory service: the owner store (server key) or a co-admin store that saved its OWN seller key can sell it.
+    // The Guild Glory service: the owner store, or a co-admin store allowed to use JPRIME API stock (it runs on the owner's seller account).
     if ((product as any).kind !== "guild") delete (product as any).kind;
-    else if (auth.tenant.kind !== "owner" && !(await getGuildKeyView(auth.tenant.id)).hasKey) delete (product as any).kind;
+    else if (auth.tenant.kind !== "owner" && !(await jprimeAccess(auth.tenant.id)).allowed) delete (product as any).kind;
 
     if (!productId || !productName) {
       return NextResponse.json(

@@ -4,6 +4,7 @@ import { canTransact, OWNER_TENANT_ID, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { releaseProduct } from "@/lib/release-product";
 import { sendTelegramPurchase } from "@/lib/telegram";
+import { isResellerRole } from "@/lib/roles";
 import {
   gatewayNeedsUtr,
   getGatewayConfig,
@@ -480,6 +481,7 @@ export async function POST(request: NextRequest) {
         duration: order.duration,
         amount: Number(order.amount),
         method: "UPI",
+        reseller: isResellerRole(auth.user.role),
         key: generatedKey,
         tenantId,
       });

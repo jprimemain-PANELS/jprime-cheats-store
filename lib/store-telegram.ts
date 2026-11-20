@@ -65,7 +65,7 @@ export async function testStoreTelegram(tenantId: string): Promise<{ ok: boolean
   return r.ok ? { ok: true, message: "Test message sent. Check Telegram." } : { ok: false, message: r.error || "Failed." };
 }
 
-export type StoreNotice = { username: string; product: string; duration: string; amount: number; method?: string; key?: string };
+export type StoreNotice = { username: string; product: string; duration: string; amount: number; method?: string; key?: string; reseller?: boolean };
 
 /** Best effort, never throws: a Telegram problem must never lose a customer's key. */
 export async function sendStorePurchase(tenantId: string, n: StoreNotice, storeName = "Store") {
@@ -75,7 +75,7 @@ export async function sendStorePurchase(tenantId: string, n: StoreNotice, storeN
     const key = String(n.key ?? "").trim();
     const mode = modes.includes(c.key_mode as any) ? c.key_mode! : "hidden";
     const keyLine = !key || mode === "hidden" ? "" : mode === "masked" ? `\n🔑 <b>Key</b>: <code>${esc(key.slice(0, 3))}••••${esc(key.slice(-3))}</code>` : `\n🔑 <b>Key</b>: <code>${esc(key)}</code>`;
-    const text = `🛒 <b>NEW PURCHASE</b> · ${esc(storeName)}${n.method ? ` · ${esc(n.method)}` : ""}\n👤 ${esc(n.username)}\n📦 ${esc(n.product)}\n⏳ ${esc(n.duration)}\n💰 ₹${esc(n.amount)}${keyLine}`;
+    const text = `🛒 <b>NEW PURCHASE</b> · ${esc(storeName)}${n.method ? ` · ${esc(n.method)}` : ""}\n👤 ${esc(n.username)}\n📦 ${esc(n.product)}\n⏳ ${esc(n.duration)}${n.reseller ? "\n🏷 Reseller" : `\n💰 ₹${esc(n.amount)}`}${keyLine}`;
     const r = await tg(c.bot_token, "sendMessage", { chat_id: c.chat_id, text, parse_mode: "HTML", disable_web_page_preview: true });
     if (!r.ok) console.error("STORE TELEGRAM FAILED:", r.error);
   } catch {

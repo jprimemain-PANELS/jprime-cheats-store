@@ -266,31 +266,98 @@ describe("stable group pairing + extra options", () => {
   });
 });
 
-describe("co-admin stores use their OWN seller key", () => {
-  it("never the owner's env key: no key = not connected; with a key, its own Bearer is sent", async () => {
-    const { POST: keyPost, GET: keyGet } = await import("@/app/api/admin/guild-key/route");
+describe("co-admin stores run on the OWNER's seller API and pay from the payer wallet", () => {
+  const setupB = (payerBal: number, withPayer = true) => {
+    const t: any = tables.tenants.find((x: any) => x.id === TENANT_B);
+    t.kind = "coadmin"; t.status = "active"; t.payer_username = withPayer ? "payerB" : null;
+    seed("products_catalog", [{ ...product("guild"), tenant_id: TENANT_B }]);
+    tables.wallets.push({ tenant_id: OWNER_TENANT_ID, username: "payerB", balance: payerBal });
+    tables.wallets.push({ tenant_id: TENANT_B, username: "gg:raj", balance: 1 });
     loginAs("rajB", TENANT_B, "raj", HOST_B);
-    let j = await (await me(req("/api/guild/me", { host: HOST_B }))).json();
-    expect(j.connected).toBe(false); expect(j.regions).toEqual([]);
+  };
+  const owner = (u: string) => Number(tables.wallets.find((w: any) => w.tenant_id === OWNER_TENANT_ID && w.username === u)?.balance ?? 0);
+  const custCredits = () => Number(tables.wallets.find((w: any) => w.tenant_id === TENANT_B && w.username === "gg:raj")?.balance ?? 0);
+
+  it("without a linked payer wallet the service is off for that store (and the owner's key is not used)", async () => {
+    setupB(100, false);
+    const j = await (await me(req("/api/guild/me", { host: HOST_B }))).json();
+    expect(j.connected).toBe(false);
+    expect((await post(launch, "/api/guild/launch", { product_name: "Guild Glory Booster", region: "in", guild_id: "123456789" }, HOST_B)).status).toBeGreaterThanOrEqual(400);
     expect(fetchSpy.mock.calls.some((c: any) => String(c[1]?.headers?.Authorization ?? "").includes("secret-key"))).toBe(false);
-
-    loginAs("coadminB", TENANT_B, "andrew", HOST_B);
-    const bad = await keyPost(req("/api/admin/guild-key", { method: "POST", host: HOST_B, body: { key: "x" } }));
-    expect(bad.status).toBe(400);
-    const ok = await keyPost(req("/api/admin/guild-key", { method: "POST", host: HOST_B, body: { key: "andrew-seller-key-1234" } }));
-    expect(ok.status).toBe(200);
-    const view = await (await keyGet(req("/api/admin/guild-key", { host: HOST_B }))).json();
-    expect(view).toMatchObject({ hasKey: true, keyHint: "••••1234" }); expect(JSON.stringify(view)).not.toContain("andrew-seller");
-
-    loginAs("rajB", TENANT_B, "raj", HOST_B);
-    j = await (await me(req("/api/guild/me", { host: HOST_B }))).json();
-    expect(j.connected).toBe(true); expect(j.regions.length).toBe(1);
-    const call = fetchSpy.mock.calls.find((c: any) => String(c[0]).endsWith("/regions")) as any;
-    expect(call[1].headers.Authorization).toBe("Bearer andrew-seller-key-1234");
+    expect(custCredits()).toBe(1);
   });
-  it("the owner main store cannot save a key here (it uses the server env)", async () => {
-    const { POST: keyPost } = await import("@/app/api/admin/guild-key/route");
-    loginAs("ownerAdmin", OWNER_TENANT_ID, "boss", HOST_A);
-    expect((await keyPost(req("/api/admin/guild-key", { method: "POST", host: HOST_A, body: { key: "owner-key-should-not-save" } }))).status).toBe(403);
+  it("a launch charges the payer wallet the owner's price for one token and uses the owner's API", async () => {
+    setupB(100);
+    const r = await post(launch, "/api/guild/launch", { product_name: "Guild Glory Booster", region: "in", guild_id: "123456789" }, HOST_B);
+    expect(r.status).toBe(200);
+    expect(owner("payerB")).toBe(30); // 100 - 70 (retail: the payer is not a reseller in this fixture)
+    expect(custCredits()).toBe(0);
+    const c = fetchSpy.mock.calls.find((x: any) => String(x[0]).endsWith("/api/v1/groups") && x[1]?.method === "POST") as any;
+    expect(c[1].headers.Authorization).toBe("Bearer secret-key");
+  });
+  it("low payer credit: nothing is bought and the customer keeps the credit", async () => {
+    setupB(10);
+    const r = await post(launch, "/api/guild/launch", { product_name: "Guild Glory Booster", region: "in", guild_id: "123456789" }, HOST_B);
+    expect(r.status).toBe(409); expect((await r.json()).error).toMatch(/credit is low/i);
+    expect(owner("payerB")).toBe(10); expect(custCredits()).toBe(1);
+  });
+  it("seller failure returns BOTH the payer's money and the customer's credit", async () => {
+    setupB(100);
+    groupsReply = () => json({ ok: false, error: "no" }, 500);
+    const r = await post(launch, "/api/guild/launch", { product_name: "Guild Glory Booster", region: "in", guild_id: "123456789" }, HOST_B);
+    expect(r.status).toBe(502);
+    expect(owner("payerB")).toBe(100); expect(custCredits()).toBe(1);
+  });
+});
+
+describe("partner API (other websites sell through this website)", () => {
+  const ctxOf = (...path: string[]) => ({ params: Promise.resolve({ path }) });
+  const call = async (method: string, key: string | null, path: string[], body?: any, extra: Record<string, string> = {}) => {
+    const mod = await import("@/app/api/partner/guild/[...path]/route");
+    const headers: Record<string, string> = { ...(key ? { authorization: `Bearer ${key}` } : {}), ...extra };
+    const r = req("/api/partner/guild/" + path.join("/"), { method, host: HOST_A, body, headers });
+    return (mod as any)[method](r, ctxOf(...path));
+  };
+  const mk = async (balance: number, cost = 0) => {
+    const { createPartner } = await import("@/lib/guild-partners");
+    const u = { username: "acme_partner" };
+    seed("users", [{ id: "u-acme", tenant_id: OWNER_TENANT_ID, username: u.username, role: "user", password: "x", email: "a@x.test", mobile_number: "9999999999" }]);
+    tables.wallets.push({ tenant_id: OWNER_TENANT_ID, username: u.username, balance });
+    const r: any = await createPartner({ name: "Acme", username: u.username, cost: cost || "" });
+    expect(r.ok).toBe(true);
+    return { key: r.key as string, username: u.username as string };
+  };
+
+  it("rejects missing / wrong / disabled keys", async () => {
+    expect((await call("GET", null, ["account"])).status).toBe(401);
+    expect((await call("GET", "gp_" + "0".repeat(48), ["account"])).status).toBe(401);
+  });
+  it("charges the partner wallet per group, never double-charges an Idempotency-Key, refunds on seller failure", async () => {
+    const { key, username } = await mk(200);
+    const acc = await (await call("GET", key, ["account"])).json();
+    expect(acc.balance).toBe(200); expect(acc.cost_per_group).toBe(70);
+    const b = { region: "in", clan_id: "123456789" };
+    const a = await call("POST", key, ["groups"], b, { "idempotency-key": "order-0001-abc" });
+    expect(a.status).toBe(201); expect(bal(username)).toBe(130);
+    const again = await (await call("POST", key, ["groups"], b, { "idempotency-key": "order-0001-abc" })).json();
+    expect(again.duplicate).toBe(true); expect(bal(username)).toBe(130);
+    groupsReply = () => json({ ok: false }, 500);
+    expect((await call("POST", key, ["groups"], b)).status).toBe(502); expect(bal(username)).toBe(130);
+  });
+  it("low wallet = 402 and nothing starts; bad input = 400", async () => {
+    const { key, username } = await mk(5);
+    expect((await call("POST", key, ["groups"], { region: "in", clan_id: "123456789" })).status).toBe(402);
+    expect(bal(username)).toBe(5);
+    expect((await call("POST", key, ["groups"], { region: "in", clan_id: "abc" })).status).toBe(400);
+    expect((await call("POST", key, ["groups"], { region: "zz", clan_id: "123456789" })).status).toBe(400);
+  });
+  it("a partner only sees its own groups and the key is stored hashed", async () => {
+    const { key } = await mk(200);
+    await call("POST", key, ["groups"], { region: "in", clan_id: "123456789" });
+    const list = await (await call("GET", key, ["groups"])).json();
+    expect(list.groups).toHaveLength(1);
+    expect((await call("GET", key, ["groups", "NOT-MINE"])).status).toBe(404);
+    const stored = JSON.stringify((await readSetting(OWNER_TENANT_ID, "guild_partners")).data?.value);
+    expect(stored).not.toContain(key);
   });
 });

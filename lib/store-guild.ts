@@ -1,42 +1,51 @@
-import { readSetting, writeSetting } from "@/lib/tenant-db";
+import { tdb } from "@/lib/tenant-db";
 import { OWNER_TENANT_ID } from "@/lib/tenant";
-import { guildBase, ownerGuildCreds, type GuildCreds } from "@/lib/guild-glory";
+import { ownerGuildCreds, creditsOfPlan, type GuildCreds } from "@/lib/guild-glory";
+import { jprimeAccess, payerPricing } from "@/lib/api-system";
 
 /**
- * Guild Glory connection of a CO-ADMIN store: its own seller API key (from the seller's Developer Center), saved under
- * that store's own prefixed settings key. The key never goes back to the browser (only the last 4 characters) and is never
- * logged. The owner store keeps using the GUILD_API_KEY environment variable. The seller website address is shared (GUILD_API_URL).
+ * Guild Glory for CO-ADMIN stores runs on the OWNER's seller account (like JPRIME API stock): the store never holds a seller key.
+ * Each group a customer launches costs the store's linked "payer" wallet on the main site the owner's price for one token
+ * (reseller price, or a VIP price the owner set). Allowed only when the same conditions as JPRIME API stock are met
+ * (store active + payer wallet linked). Server only.
  */
-const KEY = "guild_api";
-const KEY_OK = /^[A-Za-z0-9._~+\/=-]{16,200}$/;
 
-async function loadKey(tenantId: string): Promise<string> {
-  const { data, error } = await readSetting(tenantId, KEY);
-  const v = !error && data?.value && typeof data.value === "object" ? String((data.value as any).key ?? "") : "";
-  return KEY_OK.test(v) ? v : "";
-}
-
-/** Credentials for one store (null = not connected). */
+/** Credentials for one store (null = not connected / not allowed). */
 export async function loadGuildCreds(tenantId: string): Promise<GuildCreds> {
   if (tenantId === OWNER_TENANT_ID) return ownerGuildCreds();
-  const base = guildBase(), key = await loadKey(tenantId);
-  return base && key ? { base, key } : null;
+  const access = await jprimeAccess(tenantId);
+  return access.allowed ? ownerGuildCreds() : null;
 }
 
-export async function getGuildKeyView(tenantId: string) {
-  const owner = tenantId === OWNER_TENANT_ID;
-  const key = owner ? process.env.GUILD_API_KEY || "" : await loadKey(tenantId);
-  return { owner, serviceReady: !!guildBase(), hasKey: !!key, keyHint: key ? `••••${key.slice(-4)}` : "" };
-}
+const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return Number.isFinite(n) ? n : 0; };
 
-export async function saveGuildKey(tenantId: string, input: any): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (tenantId === OWNER_TENANT_ID) return { ok: false, error: "The main store uses the server setting GUILD_API_KEY." };
-  if (input?.clear === true) {
-    const { error } = await writeSetting(tenantId, KEY, {});
-    return error ? { ok: false, error: "Could not save." } : { ok: true };
+/** What ONE group costs this payer: the owner's Guild product, the 1-token plan (or the cheapest per-token plan), with the owner's price edits and the payer's own prices applied. */
+export async function guildCostPerGroup(payer: string | null | undefined): Promise<number> {
+  const cat = await tdb(OWNER_TENANT_ID).from("products_catalog").select("name, data");
+  if (cat.error) return 0;
+  const row = ((cat.data as any[]) ?? []).find((r) => r?.data?.kind === "guild");
+  if (!row) return 0;
+  const name = String(row.name ?? row.data?.name ?? "").trim();
+  const tiers: any[] = Array.isArray(row.data?.prices) ? row.data.prices : [];
+  const [pr, ov] = await Promise.all([
+    payerPricing(payer),
+    tdb(OWNER_TENANT_ID).from("product_prices").select("duration, price_inr, reseller_price").eq("product_name", name),
+  ]);
+  const over = new Map<string, any>(((ov.data as any[]) ?? []).map((o) => [String(o.duration ?? "").trim(), o]));
+  let best = 0;
+  for (const t of tiers) {
+    const dur = String(t?.duration ?? "").trim();
+    const credits = creditsOfPlan(dur);
+    if (!credits) continue;
+    const o = over.get(dur);
+    const retail = Number(o?.price_inr) > 0 ? Number(o.price_inr) : num(t?.priceINR);
+    const resell = Number(o?.reseller_price) > 0 ? Number(o.reseller_price) : num(t?.resellerPrice);
+    const own = pr.overrides.get(`${name}|${dur}`);
+    const total = own || (pr.reseller ? resell || retail : retail);
+    if (!(total > 0)) continue;
+    const per = Math.ceil((total / credits) * 100) / 100;
+    if (credits === 1) return per;
+    if (!best || per < best) best = per;
   }
-  const k = String(input?.key ?? "").trim();
-  if (!KEY_OK.test(k)) return { ok: false, error: "That key does not look right. Copy it from your Guild Glory seller's Developer Center." };
-  const { error } = await writeSetting(tenantId, KEY, { key: k });
-  return error ? { ok: false, error: "Could not save." } : { ok: true };
+  return best;
 }

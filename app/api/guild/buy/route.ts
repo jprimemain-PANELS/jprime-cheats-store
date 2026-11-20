@@ -3,6 +3,7 @@ import { tdb } from "@/lib/tenant-db";
 import { requireUser, rateLimit } from "@/lib/auth";
 import { getTrustedQuote } from "@/lib/pricing";
 import { sendTelegramPurchase } from "@/lib/telegram";
+import { isResellerRole } from "@/lib/roles";
 import { acquire, creditWallet, debitWallet, logWalletTransaction, release } from "@/lib/wallet";
 import { creditsOfPlan, makeTokenCode, tokenKey } from "@/lib/guild-glory";
 import { NO_STORE, fail, guildGate, withGuild, isGuildProduct } from "../_shared";
@@ -51,7 +52,7 @@ export const POST = withGuild(async function POST(request: NextRequest) {
     const at = new Date().toISOString();
     const h = await tdb(tenantId).from("purchase_history").insert([{ username, product_name: productName, duration, key_code: code, price_paid: String(quote.price), purchased_at: at, created_at: at }]);
     if (h.error) console.error("GUILD HISTORY INSERT FAILED:", h.error.message);
-    try { await sendTelegramPurchase({ username, product: productName, duration, amount: quote.price, method: "Wallet", key: code, tenantId }); } catch {}
+    try { await sendTelegramPurchase({ username, product: productName, duration, amount: quote.price, method: "Wallet", reseller: isResellerRole(role), key: code, tenantId }); } catch {}
     return NextResponse.json({ success: true, code, credits, newBalance: debit.balance }, { headers: NO_STORE });
   } catch (e) {
     console.error("GUILD BUY ERROR:", e instanceof Error ? e.message : "unknown");

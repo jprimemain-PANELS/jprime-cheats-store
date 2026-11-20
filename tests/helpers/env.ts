@@ -13,14 +13,14 @@ export function nextHeadersMock() {
   };
 }
 
-export function req(path: string, init: { method?: string; body?: unknown; host?: string } = {}) {
+export function req(path: string, init: { method?: string; body?: unknown; host?: string; headers?: Record<string, string> } = {}) {
   const host = init.host ?? ctx.host;
   // In a real server, headers() reflects the request being served; mirror that here.
   ctx.host = host;
   const method = init.method ?? "GET";
   return new NextRequest(`https://${host}${path}`, {
     method,
-    headers: { host, origin: `https://${host}`, "content-type": "application/json" },
+    headers: { host, origin: `https://${host}`, "content-type": "application/json", ...(init.headers ?? {}) },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
 }

@@ -5,6 +5,7 @@ import { requireUser, rateLimit } from "@/lib/auth";
 import { getTrustedQuote } from "@/lib/pricing";
 import { releaseProduct } from "@/lib/release-product";
 import { sendTelegramPurchase } from "@/lib/telegram";
+import { isResellerRole } from "@/lib/roles";
 import {
   acquire,
   creditWallet,
@@ -141,6 +142,7 @@ export async function POST(request: NextRequest) {
         duration,
         amount: quote.price,
         method: "Wallet",
+        reseller: isResellerRole(role),
         key,
         tenantId,
       });

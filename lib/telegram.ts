@@ -207,6 +207,8 @@ export interface PurchaseNotice {
   duration: string;
   amount: number;
   method?: string;
+  /** True when the buyer is a reseller / VIP reseller: the notification then never shows the price (reseller prices stay private). */
+  reseller?: boolean;
   /** The released key. Each destination decides how much of it to show. */
   key?: string;
   /**
@@ -263,7 +265,7 @@ function buildPurchaseMessage(n: PurchaseNotice, mode: KeyMode): string {
     cardRow("👤", "User", n.username),
     cardRow("📦", "Product", n.product),
     cardRow("⏳", "Duration", n.duration),
-    cardRow("💰", "Paid", `₹${n.amount}`),
+    ...(n.reseller ? [cardRow("🏷", "Type", "Reseller")] : [cardRow("💰", "Paid", `₹${n.amount}`)]),
     cardRow("🕒", "Time", time),
   ].join("\n");
 
