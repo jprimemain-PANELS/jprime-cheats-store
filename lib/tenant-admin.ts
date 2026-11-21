@@ -217,6 +217,20 @@ export async function publicBrand(tenant: Tenant): Promise<PublicBrand> {
   return { name: tenant.brandName, slug: tenant.slug, kind: tenant.kind, telegram: tenant.telegramUsername, theme: await getTheme(tenant.id) };
 }
 
+/** The theme fields that change how the DESIGN looks (colours, font, corners, cards, background, login style). Logo, texts and pictures are NOT touched. */
+const LOOK_KEYS = ["preset", "primary", "accent", "background", "surface", "foreground", "font", "fontScale", "radius", "cardStyle", "cardHover", "buttonStyle", "backdrop", "backdropImageUrl", "loginCard", "loginBg"] as const;
+
+/** Back to the original look of the chosen design: clears the store's own colour / font / corner overrides (keeps logo, name, texts, links). */
+export async function resetDesignLook(tenantId: string): Promise<{ ok: boolean; error?: string }> {
+  const cur = await getTheme(tenantId);
+  if (!cur) return { ok: true };
+  const next: any = { ...cur };
+  for (const k of LOOK_KEYS) next[k] = (DEFAULT_THEME as any)[k];
+  const up = await supabaseAdmin.from("tenant_settings").upsert({ tenant_id: tenantId, theme: next, updated_at: new Date().toISOString() }, { onConflict: "tenant_id" });
+  clearThemeCache(tenantId);
+  return up.error ? { ok: false, error: "Could not reset." } : { ok: true };
+}
+
 /** A store admin edits ONLY their own store (tenant comes from the verified session/host, never the body). */
 export async function saveBranding(tenant: Tenant, actor: Actor, input: any):
   Promise<{ ok: true; theme: Theme } | { ok: false; error: string }> {

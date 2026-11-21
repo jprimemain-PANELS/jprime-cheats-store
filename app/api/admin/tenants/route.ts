@@ -3,7 +3,7 @@ import { rateLimit, requireAdmin } from "@/lib/auth";
 import { isUuid } from "@/lib/tenant-db";
 import {
   approveApplication, createStoreDirect, ownerOverview, rejectApplication, setSharedStockAllowed, setStoreStatus,
-  setStorePayer,
+  setStorePayer, resetDesignLook,
 } from "@/lib/tenant-admin";
 import { getStoreOptions, resellerLaunchMap, setResellerLaunch, setStoreDesign } from "@/lib/store-options";
 import { OWNER_TENANT_ID } from "@/lib/tenant";
@@ -71,7 +71,12 @@ export async function POST(request: NextRequest) {
       break;
     case "set_design":
       if (!isUuid(id)) return fail("Invalid id.");
-      result = await setStoreDesign(id, b?.design);
+      {
+        const before = (await getStoreOptions(id)).design;
+        result = await setStoreDesign(id, b?.design);
+        // a different design arrives in ITS OWN original colours: the store's old branding overrides are cleared
+        if ((result as any)?.ok && before !== b?.design) await resetDesignLook(id);
+      }
       break;
     case "delete_store":
       if (!isUuid(id)) return fail("Invalid id.");

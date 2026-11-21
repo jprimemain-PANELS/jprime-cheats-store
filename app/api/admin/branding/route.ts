@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, requireTenantAdmin } from "@/lib/auth";
-import { getTheme, saveBranding } from "@/lib/tenant-admin";
+import { getTheme, resetDesignLook, saveBranding } from "@/lib/tenant-admin";
 import { DEFAULT_THEME, PRESETS, FONTS, STRUCTURE_DEFAULTS } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +24,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Too many requests." }, { status: 429, headers: NO_STORE });
   }
   const b = await request.json().catch(() => ({}));
+  if (b?.action === "reset-design") {
+    const rr = await resetDesignLook(auth.tenant.id);
+    return rr.ok ? NextResponse.json({ success: true, theme: (await getTheme(auth.tenant.id)) ?? DEFAULT_THEME }, { headers: NO_STORE }) : NextResponse.json({ success: false, error: rr.error }, { status: 500, headers: NO_STORE });
+  }
   const r = await saveBranding(auth.tenant, { id: auth.user.id, username: auth.user.username }, b);
   return r.ok
     ? NextResponse.json({ success: true, theme: r.theme }, { headers: NO_STORE })

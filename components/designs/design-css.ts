@@ -1,4 +1,5 @@
 import type { DesignId } from "@/lib/store-designs";
+import { pageLayoutCss } from "./page-layouts";
 import { DEFAULT_THEME, FONTS, contrastRatio, type Radius, type Theme } from "@/lib/theme";
 
 /**
@@ -279,5 +280,5 @@ function rules(id: Id, p: FullPal): string {
 
 export function designCss(id: Id, theme?: Theme | null): string {
   const p = designPalette(id, theme);
-  return COMMON + base(id, p) + rules(id, p);
+  return COMMON + base(id, p) + rules(id, p) + pageLayoutCss(id);
 }

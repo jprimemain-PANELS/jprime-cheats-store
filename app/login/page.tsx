@@ -810,7 +810,7 @@ export default function LoginPage() {
   const showPet = brand.isOwner || (cardKind === "original" && bgKind === "original") || !!brand.layout?.loginPetUrl;
 
   return (
-    <div data-login-card={cardKind} className="min-h-screen bg-[#07040f] text-white flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden font-sans antialiased selection:bg-fuchsia-500 selection:text-white">
+    <div data-login-card={cardKind} data-brand={brand.isOwner ? "JPRIME STORE" : brand.name} className="min-h-screen bg-[#07040f] text-white flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden font-sans antialiased selection:bg-fuchsia-500 selection:text-white">
       {bgKind === "original" ? <BackgroundLayer /> : <LoginBackground kind={bgKind as LoginBgKind} />}
 
       <main className="relative z-10 w-full flex flex-col" style={{ maxWidth: SIZES.cardMaxWidth }}>

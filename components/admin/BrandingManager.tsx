@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import StoreOptionsCard from "@/components/admin/StoreOptionsCard";
+import LaunchButtonToggle from "@/components/admin/LaunchButtonToggle";
 import LivePreview from "@/components/admin/LivePreview";
 import ImageUploader from "@/components/admin/ImageUploader";
 
@@ -80,6 +81,16 @@ export default function BrandingManager() {
     setSaving(false);
   }
 
+  async function resetDesign() {
+    if (!confirm("Undo all colour, font and style changes and go back to the original look of your website design? Your logo, name and texts stay.")) return;
+    setSaving(true); setMsg(null);
+    try {
+      const j = await (await fetch("/api/admin/branding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reset-design" }) })).json();
+      if (j.success) { setTheme(j.theme); setSnap(JSON.stringify([j.theme, brandName, telegram])); setPreviewVersion((n) => n + 1); setMsg({ ok: true, text: "Done. Your website is back to its original design." }); }
+      else setMsg({ ok: false, text: j.error || "Could not reset." });
+    } catch { setMsg({ ok: false, text: "Network error." }); }
+    setSaving(false);
+  }
   const dirty = snap !== "" && snap !== JSON.stringify([theme, brandName, telegram]);
   const undo = () => { try { const [t, b, g] = JSON.parse(snap); setTheme(t); setBrandName(b); setTelegram(g); setMsg(null); } catch {} };
   const swatch = (name: string, p: Partial<Theme>) => (
@@ -110,6 +121,10 @@ export default function BrandingManager() {
         <p className="text-xs text-slate-400">Colors, font, logo and text for your customers' website.</p>
       </div>
       {msg && <div className={`rounded-lg border px-3 py-2 text-xs ${msg.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>{msg.text}</div>}
+
+      <LaunchButtonToggle />
+
+      <button type="button" onClick={resetDesign} disabled={saving} className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-300 cursor-pointer disabled:opacity-50">&#8634; Undo all changes: back to the original website design</button>
 
       <StoreOptionsCard />
 
